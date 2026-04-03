@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import path from "path";
 import fs from "fs/promises";
 import matter from "gray-matter";
-import { DATA_DIR } from "@/lib/storage/path-utils";
+import { getCabinetRoots } from "@/lib/config/cabinet-roots";
 
-const LIBRARY_DIR = path.join(DATA_DIR, ".agents", ".library");
+const LIBRARY_DIR = path.join(getCabinetRoots().runtimeAgentsRoot, ".library");
 
 export async function GET() {
   try {

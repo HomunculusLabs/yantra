@@ -1,7 +1,7 @@
 import path from "path";
 import matter from "gray-matter";
 import cron from "node-cron";
-import { DATA_DIR } from "@/lib/storage/path-utils";
+import { getCabinetRoots } from "@/lib/config/cabinet-roots";
 import {
   readFileContent,
   writeFileContent,
@@ -12,8 +12,10 @@ import {
 import { runHeartbeat } from "./heartbeat";
 import { getGoalState } from "./goal-manager";
 import type { GoalMetric, AgentType } from "@/types/agents";
+import type { AgentLaunchConfig } from "@/types/launchers";
 
-const AGENTS_DIR = path.join(DATA_DIR, ".agents");
+const { runtimeAgentsRoot } = getCabinetRoots();
+const AGENTS_DIR = runtimeAgentsRoot;
 const MEMORY_DIR = path.join(AGENTS_DIR, ".memory");
 const MESSAGES_DIR = path.join(AGENTS_DIR, ".messages");
 const HISTORY_DIR = path.join(AGENTS_DIR, ".history");
@@ -50,6 +52,7 @@ export interface AgentPersona {
   goals: GoalMetric[];
   channels: string[];     // Agent Slack channels
   workspace: string;      // relative path under data/.agents/{slug}/
+  launcher?: AgentLaunchConfig;
   // Computed
   slug: string;
   body: string; // markdown body (persona instructions)
@@ -194,6 +197,7 @@ export async function readPersona(slug: string): Promise<AgentPersona | null> {
     goals: (data.goals as AgentPersona["goals"]) || [],
     channels: (data.channels as string[]) || ["general"],
     workspace: (data.workspace as string) || `workspace`,
+    launcher: data.launcher as AgentLaunchConfig | undefined,
     slug,
     body: content.trim(),
   };
@@ -257,6 +261,7 @@ export async function writePersona(slug: string, persona: Partial<AgentPersona> 
     department: merged.department || "general",
     type: merged.type || "specialist",
     workspace: merged.workspace || "workspace",
+    ...(merged.launcher ? { launcher: merged.launcher } : {}),
     ...(merged.goals && merged.goals.length > 0 ? { goals: merged.goals } : {}),
     ...(merged.channels && merged.channels.length > 0 ? { channels: merged.channels } : {}),
   };

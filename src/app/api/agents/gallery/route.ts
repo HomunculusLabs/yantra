@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import path from "path";
 import fs from "fs/promises";
 import matter from "gray-matter";
-import { DATA_DIR } from "@/lib/storage/path-utils";
+import { getCabinetRoots } from "@/lib/config/cabinet-roots";
+import { toRuntimeVirtualPath } from "@/lib/storage/path-utils";
 import { listPersonas } from "@/lib/agents/persona-manager";
 
 interface GalleryItem {
@@ -151,12 +152,13 @@ export async function GET() {
   try {
     const personas = await listPersonas();
     const allItems: GalleryItem[] = [];
+    const { runtimeAgentsRoot } = getCabinetRoots();
 
     for (const persona of personas) {
       if (persona.slug === "editor") continue;
 
-      const workspaceDir = path.join(DATA_DIR, ".agents", persona.slug, "workspace");
-      const basePath = `.agents/${persona.slug}/workspace`;
+      const workspaceDir = path.join(runtimeAgentsRoot, persona.slug, "workspace");
+      const basePath = toRuntimeVirtualPath(`.agents/${persona.slug}/workspace`);
       const items = await scanWorkspace(
         workspaceDir,
         persona.name,

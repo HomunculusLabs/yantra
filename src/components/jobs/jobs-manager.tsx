@@ -35,6 +35,11 @@ interface JobConfig {
   prompt: string;
   timeout?: number;
   agentSlug: string;
+  execution?: {
+    launcherId?: string;
+    cwd?: string;
+    inheritAgent?: boolean;
+  };
   createdAt?: string;
   updatedAt?: string;
 }
@@ -64,7 +69,14 @@ export function JobsManager() {
   const [createAgentSlug, setCreateAgentSlug] = useState<string>("");
   const [editJob, setEditJob] = useState<JobConfig | null>(null);
   const [editOpen, setEditOpen] = useState(false);
-  const [form, setForm] = useState({ name: "", schedule: "0 9 * * *", prompt: "", timeout: 600 });
+  const [form, setForm] = useState({
+    name: "",
+    schedule: "0 9 * * *",
+    prompt: "",
+    timeout: 600,
+    executionLauncherId: "",
+    executionCwd: "",
+  });
   const [running, setRunning] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -106,7 +118,14 @@ export function JobsManager() {
 
   const openCreate = (slug: string) => {
     setCreateAgentSlug(slug);
-    setForm({ name: "", schedule: "0 9 * * *", prompt: "", timeout: 600 });
+    setForm({
+      name: "",
+      schedule: "0 9 * * *",
+      prompt: "",
+      timeout: 600,
+      executionLauncherId: "",
+      executionCwd: "",
+    });
     setCreateOpen(true);
   };
 
@@ -115,7 +134,20 @@ export function JobsManager() {
     await fetch(`/api/agents/${createAgentSlug}/jobs`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
+      body: JSON.stringify({
+        name: form.name,
+        schedule: form.schedule,
+        prompt: form.prompt,
+        timeout: form.timeout,
+        execution:
+          form.executionLauncherId || form.executionCwd
+            ? {
+                inheritAgent: !form.executionLauncherId,
+                launcherId: form.executionLauncherId || undefined,
+                cwd: form.executionCwd || undefined,
+              }
+            : undefined,
+      }),
     });
     setCreateOpen(false);
     refresh();
@@ -123,7 +155,14 @@ export function JobsManager() {
 
   const openEdit = (job: JobConfig) => {
     setEditJob(job);
-    setForm({ name: job.name, schedule: job.schedule, prompt: job.prompt, timeout: job.timeout || 600 });
+    setForm({
+      name: job.name,
+      schedule: job.schedule,
+      prompt: job.prompt,
+      timeout: job.timeout || 600,
+      executionLauncherId: job.execution?.launcherId || "",
+      executionCwd: job.execution?.cwd || "",
+    });
     setEditOpen(true);
   };
 
@@ -132,7 +171,20 @@ export function JobsManager() {
     await fetch(`/api/agents/${editJob.agentSlug}/jobs/${editJob.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
+      body: JSON.stringify({
+        name: form.name,
+        schedule: form.schedule,
+        prompt: form.prompt,
+        timeout: form.timeout,
+        execution:
+          form.executionLauncherId || form.executionCwd
+            ? {
+                inheritAgent: !form.executionLauncherId,
+                launcherId: form.executionLauncherId || undefined,
+                cwd: form.executionCwd || undefined,
+              }
+            : undefined,
+      }),
     });
     setEditOpen(false);
     setEditJob(null);
@@ -334,9 +386,27 @@ export function JobsManager() {
               <textarea
                 value={form.prompt}
                 onChange={(e) => setForm((f) => ({ ...f, prompt: e.target.value }))}
-                placeholder="What should Claude do each run?"
+                placeholder="What should this job do each run?"
                 rows={4}
                 className="mt-1 w-full px-3 py-2 text-[13px] rounded-md border border-border bg-background focus:outline-none focus:ring-1 focus:ring-ring resize-none"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] text-muted-foreground uppercase tracking-wide">Launcher ID</label>
+              <Input
+                value={form.executionLauncherId}
+                onChange={(e) => setForm((f) => ({ ...f, executionLauncherId: e.target.value }))}
+                placeholder="inherit agent launcher"
+                className="mt-1 h-8 text-[13px]"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] text-muted-foreground uppercase tracking-wide">Working Directory</label>
+              <Input
+                value={form.executionCwd}
+                onChange={(e) => setForm((f) => ({ ...f, executionCwd: e.target.value }))}
+                placeholder="relative to configured vault"
+                className="mt-1 h-8 text-[13px]"
               />
             </div>
           </div>

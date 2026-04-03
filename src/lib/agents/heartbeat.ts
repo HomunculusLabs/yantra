@@ -1,4 +1,5 @@
 import path from "path";
+import { getCabinetRoots, resolveVaultPath } from "@/lib/config/cabinet-roots";
 import { DATA_DIR } from "@/lib/storage/path-utils";
 import {
   readPersona,
@@ -28,8 +29,23 @@ interface HeartbeatContext {
   startTime: number;
 }
 
+function resolveHeartbeatWorkdir(workdir: string): string {
+  if (!workdir || workdir === "/data") return DATA_DIR;
+  if (workdir.startsWith("/data/")) {
+    return resolveVaultPath(workdir.slice("/data/".length));
+  }
+  if (path.isAbsolute(workdir)) {
+    return resolveVaultPath(workdir);
+  }
+  const normalized = workdir.startsWith("/data/")
+    ? workdir.slice("/data/".length)
+    : workdir.replace(/^\/+/, "");
+  return resolveVaultPath(normalized);
+}
+
 async function buildHeartbeatContext(slug: string): Promise<HeartbeatContext | null> {
   const startTime = Date.now();
+  const roots = getCabinetRoots();
   const persona = await readPersona(slug);
   if (!persona || !persona.active) return null;
 
@@ -44,7 +60,7 @@ async function buildHeartbeatContext(slug: string): Promise<HeartbeatContext | n
 
   let focusContext = "";
   for (const focusPath of persona.focus) {
-    const indexPath = path.join(DATA_DIR, focusPath, "index.md");
+    const indexPath = resolveVaultPath(path.join(focusPath, "index.md"));
     if (await fileExists(indexPath)) {
       const content = await readFileContent(indexPath);
       focusContext += `\n### ${focusPath}\n${content.slice(0, 500)}...\n`;
@@ -140,7 +156,7 @@ ARTIFACT: relative/path/to/created-or-updated-kb-file
 
 Now execute your heartbeat. Check your focus areas, process inbox, review goals, and take action.`;
 
-  const cwd = persona.workdir === "/data" ? DATA_DIR : path.join(DATA_DIR, persona.workdir);
+  const cwd = resolveHeartbeatWorkdir(persona.workdir);
   return { prompt, persona, inbox, cwd, startTime };
 }
 
@@ -152,6 +168,7 @@ async function processHeartbeatOutput(
   inbox: Array<{ from: string; timestamp: string; message: string }>,
   startTime: number,
 ): Promise<void> {
+  const roots = getCabinetRoots();
   // Parse memory block from output
   const memoryMatch = output.match(/```memory\n([\s\S]*?)```/);
   if (memoryMatch) {
@@ -286,7 +303,7 @@ async function processHeartbeatOutput(
   // Auto-generate workspace index
   try {
     const fs = await import("fs/promises");
-    const wsDir = path.join(DATA_DIR, ".agents", slug, "workspace");
+    const wsDir = path.join(roots.runtimeAgentsRoot, slug, "workspace");
     const stats = await fs.stat(wsDir).catch(() => null);
     if (stats?.isDirectory()) {
       const entries = await fs.readdir(wsDir, { withFileTypes: true });

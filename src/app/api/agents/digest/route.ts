@@ -2,10 +2,13 @@ import { NextResponse } from "next/server";
 import { spawn } from "child_process";
 import { DATA_DIR } from "@/lib/storage/path-utils";
 import path from "path";
+import {
+  startConversationRun,
+  waitForConversationCompletion,
+} from "@/lib/agents/conversation-runner";
 
 export async function POST() {
   try {
-    // Get yesterday's git activity
     let gitLog = "";
     try {
       const gitProc = await new Promise<string>((resolve, reject) => {
@@ -23,7 +26,6 @@ export async function POST() {
       gitLog = "No git history available.";
     }
 
-    // Read task board for completed tasks
     let taskInfo = "";
     try {
       const yaml = (await import("js-yaml")).default;
@@ -32,9 +34,9 @@ export async function POST() {
       const raw = await fs.readFile(boardPath, "utf-8");
       const board = yaml.load(raw) as { columns: { name: string; tasks: { title: string }[] }[] };
       if (board?.columns) {
-        const done = board.columns.find(c => c.name === "Done");
-        const inProgress = board.columns.find(c => c.name === "In Progress");
-        taskInfo = `Done tasks: ${done?.tasks?.map(t => t.title).join(", ") || "none"}\nIn progress: ${inProgress?.tasks?.map(t => t.title).join(", ") || "none"}`;
+        const done = board.columns.find((c) => c.name === "Done");
+        const inProgress = board.columns.find((c) => c.name === "In Progress");
+        taskInfo = `Done tasks: ${done?.tasks?.map((t) => t.title).join(", ") || "none"}\nIn progress: ${inProgress?.tasks?.map((t) => t.title).join(", ") || "none"}`;
       }
     } catch {
       taskInfo = "No task data available.";
@@ -55,23 +57,27 @@ Format the digest as a concise markdown summary with:
 
 Keep it under 200 words. Be specific about what changed.`;
 
-    const result = await new Promise<string>((resolve, reject) => {
-      const proc = spawn(
-        "claude",
-        ["--dangerously-skip-permissions", "-p", prompt, "--output-format", "text"],
-        { cwd: DATA_DIR, stdio: ["pipe", "pipe", "pipe"] }
-      );
-      let stdout = "";
-      proc.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
-      proc.on("close", (code) => {
-        if (code === 0) resolve(stdout.trim());
-        else reject(new Error(`Exit code ${code}`));
-      });
-      proc.on("error", reject);
-      setTimeout(() => { proc.kill(); reject(new Error("Timeout")); }, 60_000);
+    const conversation = await startConversationRun({
+      agentSlug: "general",
+      title: "Daily digest",
+      trigger: "manual",
+      prompt,
+      timeoutSeconds: 60,
     });
 
-    return NextResponse.json({ ok: true, digest: result });
+    const completion = await waitForConversationCompletion(conversation.id);
+    if (completion.status !== "completed") {
+      return NextResponse.json(
+        { error: completion.output || "Digest generation failed" },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      ok: true,
+      digest: completion.output,
+      conversationId: conversation.id,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

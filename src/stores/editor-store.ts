@@ -6,6 +6,7 @@ interface EditorState {
   currentPath: string | null;
   content: string;
   frontmatter: FrontMatter | null;
+  pageKind: "markdown" | "directory-index" | "text" | "pdf" | "csv" | null;
   saveStatus: SaveStatus;
   isDirty: boolean;
 
@@ -23,6 +24,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   currentPath: null,
   content: "",
   frontmatter: null,
+  pageKind: null,
   saveStatus: "idle",
   isDirty: false,
 
@@ -34,9 +36,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     try {
       const page = await fetchPage(path);
       set({
-        currentPath: path,
+        currentPath: page.path || path,
         content: page.content,
         frontmatter: page.frontmatter,
+        pageKind: page.kind || "markdown",
         saveStatus: "idle",
         isDirty: false,
       });
@@ -45,6 +48,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         currentPath: path,
         content: "",
         frontmatter: null,
+        pageKind: null,
         saveStatus: "error",
         isDirty: false,
       });
@@ -96,6 +100,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       currentPath: null,
       content: "",
       frontmatter: null,
+      pageKind: null,
       saveStatus: "idle",
       isDirty: false,
     });

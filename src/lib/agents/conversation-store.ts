@@ -7,7 +7,8 @@ import type {
   ConversationStatus,
   ConversationTrigger,
 } from "../../types/conversations";
-import { DATA_DIR, sanitizeFilename, virtualPathFromFs } from "../storage/path-utils";
+import { getCabinetRoots } from "@/lib/config/cabinet-roots";
+import { DATA_DIR, RUNTIME_DIR, sanitizeFilename, virtualPathFromFs } from "../storage/path-utils";
 import {
   ensureDirectory,
   fileExists,
@@ -16,7 +17,10 @@ import {
   writeFileContent,
 } from "../storage/fs-operations";
 
-export const CONVERSATIONS_DIR = path.join(DATA_DIR, ".agents", ".conversations");
+export const CONVERSATIONS_DIR = path.join(
+  getCabinetRoots().runtimeAgentsRoot,
+  ".conversations"
+);
 
 interface CreateConversationInput {
   agentSlug: string;
@@ -92,6 +96,10 @@ function normalizeArtifactPath(rawPath: string): string | null {
   }
 
   if (trimmed.startsWith(DATA_DIR)) {
+    return virtualPathFromFs(trimmed);
+  }
+
+  if (trimmed.startsWith(RUNTIME_DIR)) {
     return virtualPathFromFs(trimmed);
   }
 

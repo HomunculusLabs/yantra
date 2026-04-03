@@ -1,8 +1,11 @@
 import path from "path";
 import fs from "fs/promises";
-import { DATA_DIR } from "@/lib/storage/path-utils";
+import { getCabinetRoots } from "@/lib/config/cabinet-roots";
 
-const CONFIG_FILE = path.join(DATA_DIR, ".agents", ".config", "integrations.json");
+const CONFIG_FILE = path.join(
+  getCabinetRoots().runtimeConfigRoot,
+  "integrations.json"
+);
 
 interface NotificationConfig {
   notifications: {
@@ -10,6 +13,13 @@ interface NotificationConfig {
     telegram: { enabled: boolean; bot_token: string; chat_id: string };
     slack_webhook: { enabled: boolean; url: string };
     email: { enabled: boolean; frequency: string; to: string };
+    nextcloud_talk?: {
+      enabled: boolean;
+      server_url: string;
+      username: string;
+      app_password: string;
+      default_room_token: string;
+    };
   };
 }
 
@@ -23,8 +33,7 @@ async function loadConfig(): Promise<NotificationConfig | null> {
 }
 
 /**
- * Send a notification to all configured channels.
- * Called when agents post to #alerts or @human is mentioned.
+ * Send a notification to configured channels.
  */
 export async function sendNotification(opts: {
   title: string;
@@ -39,9 +48,12 @@ export async function sendNotification(opts: {
 
   const sent: string[] = [];
   const { title, message, agentName, agentEmoji, severity } = opts;
+  const requestedChannel = opts.channel || "default";
+  const shouldSend = (channel: string) =>
+    requestedChannel === "default" || requestedChannel === channel;
 
   // Telegram
-  if (config.notifications.telegram?.enabled) {
+  if (config.notifications.telegram?.enabled && shouldSend("telegram")) {
     const { bot_token, chat_id } = config.notifications.telegram;
     if (bot_token && chat_id) {
       try {
@@ -68,7 +80,7 @@ export async function sendNotification(opts: {
   }
 
   // Slack webhook
-  if (config.notifications.slack_webhook?.enabled) {
+  if (config.notifications.slack_webhook?.enabled && shouldSend("slack_webhook")) {
     const { url } = config.notifications.slack_webhook;
     if (url) {
       try {
@@ -86,6 +98,56 @@ export async function sendNotification(opts: {
         });
         if (res.ok) sent.push("slack_webhook");
       } catch { /* ignore slack errors */ }
+    }
+  }
+
+  const nextcloud = config.notifications.nextcloud_talk;
+  const nextcloudRequested =
+    requestedChannel === "nextcloud" || requestedChannel.startsWith("nextcloud:");
+  if (nextcloud?.enabled && (requestedChannel === "default" || nextcloudRequested)) {
+    const roomToken = requestedChannel.startsWith("nextcloud:")
+      ? requestedChannel.slice("nextcloud:".length)
+      : nextcloud.default_room_token;
+
+    if (
+      nextcloud.server_url &&
+      nextcloud.username &&
+      nextcloud.app_password &&
+      roomToken
+    ) {
+      try {
+        const icon = severity === "critical" ? "🚨" : severity === "warning" ? "⚠️" : "📣";
+        const text = [
+          `${icon} ${title}`,
+          agentEmoji && agentName ? `${agentEmoji} ${agentName}` : "",
+          message,
+        ].filter(Boolean).join("\n");
+
+        const base = nextcloud.server_url.replace(/\/+$/, "");
+        const res = await fetch(
+          `${base}/ocs/v2.php/apps/spreed/api/v1/chat/${encodeURIComponent(roomToken)}`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded",
+              Accept: "application/json",
+              "OCS-APIRequest": "true",
+              Authorization: `Basic ${Buffer.from(
+                `${nextcloud.username}:${nextcloud.app_password}`
+              ).toString("base64")}`,
+            },
+            body: new URLSearchParams({ message: text }).toString(),
+          }
+        );
+        if (res.ok) {
+          sent.push("nextcloud");
+        } else {
+          const errorText = await res.text().catch(() => "");
+          console.error("Nextcloud Talk notification failed:", res.status, errorText);
+        }
+      } catch {
+        /* ignore nextcloud errors */
+      }
     }
   }
 

@@ -1,12 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
-import { spawn } from "child_process";
-import path from "path";
+import {
+  startConversationRun,
+  waitForConversationCompletion,
+} from "@/lib/agents/conversation-runner";
 
-const DATA_DIR = path.join(process.cwd(), "data");
+function makeTitle(text: string): string {
+  const firstLine = text.split("\n").map((line) => line.trim()).find(Boolean) || "Headless run";
+  return firstLine.slice(0, 80);
+}
 
 export async function POST(req: NextRequest) {
   try {
-    const { prompt, workdir, captureOutput = true } = await req.json();
+    const body = await req.json();
+    const prompt =
+      typeof body.prompt === "string" && body.prompt.trim()
+        ? body.prompt.trim()
+        : typeof body.instruction === "string" && body.instruction.trim()
+          ? body.instruction.trim()
+          : typeof body.userMessage === "string" && body.userMessage.trim()
+            ? body.userMessage.trim()
+            : "";
+    const captureOutput = body.captureOutput !== false;
+    const workdir =
+      typeof body.workdir === "string" && body.workdir.trim()
+        ? body.workdir.trim()
+        : undefined;
+    const timeoutSeconds =
+      typeof body.timeoutSeconds === "number" ? body.timeoutSeconds : 120;
+    const agentSlug =
+      typeof body.agentSlug === "string" && body.agentSlug.trim()
+        ? body.agentSlug.trim()
+        : "general";
 
     if (!prompt) {
       return NextResponse.json(
@@ -15,52 +39,26 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const cwd = workdir ? path.join(DATA_DIR, workdir) : DATA_DIR;
-
-    const result = await new Promise<string>((resolve, reject) => {
-      const proc = spawn(
-        "claude",
-        ["--dangerously-skip-permissions", "-p", prompt, "--output-format", "text"],
-        {
-          cwd,
-          env: { ...process.env },
-          stdio: ["pipe", "pipe", "pipe"],
-        }
-      );
-
-      let stdout = "";
-      let stderr = "";
-
-      proc.stdout.on("data", (data: Buffer) => {
-        stdout += data.toString();
-      });
-
-      proc.stderr.on("data", (data: Buffer) => {
-        stderr += data.toString();
-      });
-
-      proc.on("close", (code: number | null) => {
-        if (code === 0) {
-          resolve(stdout.trim());
-        } else {
-          reject(new Error(stderr || `Exited with code ${code}`));
-        }
-      });
-
-      proc.on("error", (err: Error) => {
-        reject(new Error(`Failed to spawn claude: ${err.message}`));
-      });
-
-      setTimeout(() => {
-        proc.kill();
-        reject(new Error("Timed out after 2 minutes"));
-      }, 120_000);
+    const conversation = await startConversationRun({
+      agentSlug,
+      title: makeTitle(prompt),
+      trigger: "manual",
+      prompt,
+      cwd: workdir,
+      timeoutSeconds,
     });
 
+    const completion = await waitForConversationCompletion(conversation.id);
+
     return NextResponse.json({
-      ok: true,
-      output: captureOutput ? result : undefined,
-      message: "Completed successfully",
+      ok: completion.status === "completed",
+      status: completion.status,
+      conversationId: conversation.id,
+      output: captureOutput ? completion.output : undefined,
+      message:
+        completion.status === "completed"
+          ? "Completed successfully"
+          : "Run failed",
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

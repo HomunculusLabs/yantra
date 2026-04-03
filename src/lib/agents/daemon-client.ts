@@ -1,9 +1,10 @@
 import { getDaemonUrl, getOrCreateDaemonToken } from "./daemon-auth";
+import type { ResolvedLaunchSpec } from "@/types/launchers";
 
 interface CreateDaemonSessionInput {
   id: string;
   prompt: string;
-  cwd?: string;
+  launch: ResolvedLaunchSpec;
   timeoutSeconds?: number;
 }
 

@@ -1,7 +1,10 @@
 import type { JobConfig, JobRun, JobPostAction } from "@/types/jobs";
 import type { ConversationMeta } from "@/types/conversations";
+import path from "path";
+import { resolveVaultPath } from "@/lib/config/cabinet-roots";
 import { readPage } from "../storage/page-io";
 import { DATA_DIR } from "../storage/path-utils";
+import { getCabinetRoots } from "@/lib/config/cabinet-roots";
 import {
   appendConversationTranscript,
   createConversation,
@@ -10,6 +13,9 @@ import {
 } from "./conversation-store";
 import { createDaemonSession, getDaemonSessionOutput } from "./daemon-client";
 import { readPersona, type AgentPersona } from "./persona-manager";
+import { resolveLaunchSpec } from "./launcher-manager";
+import { sendNotification } from "./notification-service";
+import type { ResolvedLaunchSpec } from "@/types/launchers";
 
 export interface ConversationCompletion {
   meta: ConversationMeta;
@@ -26,6 +32,7 @@ interface StartConversationInput {
   jobId?: string;
   jobName?: string;
   cwd?: string;
+  launch?: ResolvedLaunchSpec;
   timeoutSeconds?: number;
   onComplete?: (completion: ConversationCompletion) => Promise<void> | void;
 }
@@ -43,7 +50,7 @@ function buildAgentContextHeader(persona: AgentPersona | null, agentSlug: string
   if (!persona) {
     return [
       "You are Cabinet's General agent.",
-      "Handle the request directly and use the knowledge base as your working area.",
+      "Handle the request directly and use the configured vault as your working area.",
     ].join("\n");
   }
 
@@ -57,6 +64,20 @@ function buildAgentContextHeader(persona: AgentPersona | null, agentSlug: string
 function makeTitle(text: string): string {
   const firstLine = text.split("\n").map((line) => line.trim()).find(Boolean) || "New conversation";
   return firstLine.slice(0, 80);
+}
+
+function resolveVaultWorkdir(workdir?: string): string {
+  if (!workdir || workdir === "/data") return DATA_DIR;
+  if (workdir.startsWith("/data/")) {
+    return resolveVaultPath(workdir.slice("/data/".length));
+  }
+  if (path.isAbsolute(workdir)) {
+    return resolveVaultPath(workdir);
+  }
+  const normalized = workdir.startsWith("/data/")
+    ? workdir.slice("/data/".length)
+    : workdir.replace(/^\/+/, "");
+  return resolveVaultPath(normalized);
 }
 
 async function buildMentionContext(mentionedPaths: string[]): Promise<string> {
@@ -92,16 +113,13 @@ export async function buildManualConversationPrompt(input: {
     ? null
     : await readPersona(input.agentSlug);
   const mentionContext = await buildMentionContext(input.mentionedPaths || []);
-  const cwd =
-    persona?.workdir && persona.workdir !== "/data"
-      ? `${DATA_DIR}/${persona.workdir.replace(/^\/+/, "")}`
-      : DATA_DIR;
+  const cwd = resolveVaultWorkdir(persona?.workdir);
 
   const prompt = [
     buildAgentContextHeader(persona, input.agentSlug),
     "",
-    "Work in the Cabinet knowledge base at /data.",
-    "Reflect useful outputs in KB files, not only in terminal text.",
+    "Work in the configured Obsidian vault.",
+    "Reflect useful outputs in vault files, not only in terminal text.",
     buildCabinetEpilogueInstructions(),
     "",
     `User request:\n${input.userMessage}${mentionContext}`,
@@ -129,18 +147,15 @@ export async function buildEditorConversationPrompt(input: {
     new Set([input.pagePath, ...(input.mentionedPaths || [])])
   );
   const mentionContext = await buildMentionContext(combinedMentionedPaths);
-  const cwd =
-    persona?.workdir && persona.workdir !== "/data"
-      ? `${DATA_DIR}/${persona.workdir.replace(/^\/+/, "")}`
-      : DATA_DIR;
+  const cwd = resolveVaultWorkdir(persona?.workdir);
 
   const prompt = [
     buildAgentContextHeader(persona, "editor"),
     "",
-    `You are editing the page at /data/${input.pagePath}.`,
-    `Prefer making the requested changes directly in ${input.pagePath} unless the task clearly belongs in another KB file.`,
-    "Work in the Cabinet knowledge base at /data.",
-    "Edit KB files directly and reflect useful outputs in the KB, not only in terminal text.",
+    `You are editing the page at ${input.pagePath}.`,
+    `Prefer making the requested changes directly in ${input.pagePath} unless the task clearly belongs in another vault file.`,
+    "Work in the configured Obsidian vault.",
+    "Edit vault files directly and reflect useful outputs in the vault, not only in terminal text.",
     buildCabinetEpilogueInstructions(),
     "",
     `User request:\n${input.userMessage}${mentionContext}`,
@@ -168,10 +183,19 @@ export async function startConversationRun(
   });
 
   try {
+    const launch =
+      input.launch ||
+      (await resolveLaunchSpec({
+        prompt: input.prompt,
+        persona:
+          input.agentSlug === "general" ? null : await readPersona(input.agentSlug),
+        cwd: input.cwd,
+      }));
+
     await createDaemonSession({
       id: meta.id,
       prompt: input.prompt,
-      cwd: input.cwd,
+      launch,
       timeoutSeconds: input.timeoutSeconds,
     });
   } catch (error) {
@@ -281,7 +305,7 @@ async function processPostActions(
     try {
       if (action.action === "git_commit") {
         const simpleGit = (await import("simple-git")).default;
-        const git = simpleGit(DATA_DIR);
+        const git = simpleGit(getCabinetRoots().vaultRoot);
         await git.add(".");
         await git.commit(
           substituteTemplateVars(
@@ -289,6 +313,17 @@ async function processPostActions(
             job
           )
         );
+      }
+      if (action.action === "notify") {
+        await sendNotification({
+          title: job.name,
+          message: substituteTemplateVars(
+            action.message || `Job ${job.name} completed at {{datetime}}`,
+            job
+          ),
+          channel: action.channel,
+          severity: "info",
+        });
       }
     } catch (error) {
       console.error(`Post-action ${action.action} failed:`, error);
@@ -299,12 +334,7 @@ async function processPostActions(
 export async function startJobConversation(job: JobConfig): Promise<JobRun> {
   const persona = job.agentSlug ? await readPersona(job.agentSlug) : null;
   const jobPrompt = substituteTemplateVars(job.prompt, job);
-  const cwd =
-    job.workdir && job.workdir !== "/data"
-      ? `${DATA_DIR}/${job.workdir.replace(/^\/+/, "")}`
-      : persona?.workdir && persona.workdir !== "/data"
-        ? `${DATA_DIR}/${persona.workdir.replace(/^\/+/, "")}`
-        : DATA_DIR;
+  const cwd = resolveVaultWorkdir(job.workdir || persona?.workdir);
 
   const prompt = [
     buildAgentContextHeader(persona, job.agentSlug || "agent"),
@@ -316,6 +346,13 @@ export async function startJobConversation(job: JobConfig): Promise<JobRun> {
     `Job instructions:\n${jobPrompt}`,
   ].join("\n");
 
+  const launch = await resolveLaunchSpec({
+    prompt,
+    persona,
+    job,
+    cwd,
+  });
+
   const meta = await startConversationRun({
     agentSlug: job.agentSlug || "agent",
     title: job.name,
@@ -324,6 +361,7 @@ export async function startJobConversation(job: JobConfig): Promise<JobRun> {
     jobId: job.id,
     jobName: job.name,
     cwd,
+    launch,
     timeoutSeconds: job.timeout || 600,
     onComplete: async (completion) => {
       if (completion.status === "completed") {

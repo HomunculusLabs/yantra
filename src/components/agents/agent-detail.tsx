@@ -23,10 +23,17 @@ import {
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAppStore } from "@/stores/app-store";
+import { useTreeStore } from "@/stores/tree-store";
 import { WebTerminal } from "@/components/terminal/web-terminal";
 import { cn } from "@/lib/utils";
 
 type TabId = "definition" | "jobs" | "sessions";
+
+interface AgentLauncherConfig {
+  launcherId: string;
+  cwd?: string;
+  vars?: Record<string, string>;
+}
 
 interface AgentPersona {
   name: string;
@@ -41,9 +48,26 @@ interface AgentPersona {
   workspace: string;
   tags: string[];
   focus: string[];
+  launcher?: AgentLauncherConfig | null;
   heartbeatsUsed?: number;
   lastHeartbeat?: string;
   nextHeartbeat?: string;
+}
+
+interface AgentRelatedFile {
+  label: string;
+  path: string;
+  scope: "vault" | "runtime";
+  kind:
+    | "persona"
+    | "stack"
+    | "context"
+    | "instruction"
+    | "extension"
+    | "skill";
+  description?: string;
+  exists: boolean;
+  creatable?: boolean;
 }
 
 interface HeartbeatRecord {
@@ -249,6 +273,108 @@ function HeartbeatField({
   );
 }
 
+function LauncherConfigCard({
+  value,
+  onSave,
+}: {
+  value?: AgentLauncherConfig | null;
+  onSave: (value: AgentLauncherConfig | null) => void;
+}) {
+  const [launcherId, setLauncherId] = useState(value?.launcherId || "");
+  const [cwd, setCwd] = useState(value?.cwd || "");
+  const [varsJson, setVarsJson] = useState(
+    JSON.stringify(value?.vars || {}, null, 2)
+  );
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setLauncherId(value?.launcherId || "");
+    setCwd(value?.cwd || "");
+    setVarsJson(JSON.stringify(value?.vars || {}, null, 2));
+    setError("");
+  }, [value]);
+
+  const handleSave = () => {
+    try {
+      const parsedVars = varsJson.trim() ? JSON.parse(varsJson) : {};
+      if (parsedVars && typeof parsedVars !== "object") {
+        throw new Error("Vars must be a JSON object");
+      }
+      if (!launcherId.trim() && !cwd.trim() && Object.keys(parsedVars || {}).length === 0) {
+        onSave(null);
+      } else {
+        if (!launcherId.trim()) {
+          throw new Error("Launcher ID is required when launcher config is set");
+        }
+        onSave({
+          launcherId: launcherId.trim(),
+          cwd: cwd.trim() || undefined,
+          vars: Object.keys(parsedVars || {}).length > 0 ? parsedVars : undefined,
+        });
+      }
+      setError("");
+    } catch {
+      setError("Vars must be valid JSON object syntax");
+    }
+  };
+
+  return (
+    <div className="bg-muted/20 border border-border rounded-lg p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
+            Launcher
+          </p>
+          <p className="text-[11px] text-muted-foreground/70 mt-1">
+            Set the agent’s CLI launcher and variables. Use vars.stackFile for pi-agent-stack.
+          </p>
+        </div>
+        <div className="flex gap-1">
+          <Button variant="ghost" size="sm" className="h-7 text-[10px]" onClick={() => onSave(null)}>
+            Clear
+          </Button>
+          <Button size="sm" className="h-7 text-[10px] gap-1" onClick={handleSave}>
+            <Save className="h-3 w-3" />
+            Save
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <p className="text-[10px] text-muted-foreground mb-1.5">Launcher ID</p>
+          <input
+            value={launcherId}
+            onChange={(e) => setLauncherId(e.target.value)}
+            placeholder="claude-code or pi-agent-stack"
+            className="w-full bg-background border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-primary/50"
+          />
+        </div>
+        <div>
+          <p className="text-[10px] text-muted-foreground mb-1.5">Working Directory</p>
+          <input
+            value={cwd}
+            onChange={(e) => setCwd(e.target.value)}
+            placeholder="relative to vault"
+            className="w-full bg-background border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-primary/50"
+          />
+        </div>
+      </div>
+
+      <div>
+        <p className="text-[10px] text-muted-foreground mb-1.5">Vars JSON</p>
+        <textarea
+          value={varsJson}
+          onChange={(e) => setVarsJson(e.target.value)}
+          className="w-full bg-background border border-border rounded px-2 py-1.5 text-[12px] font-mono focus:outline-none focus:ring-1 focus:ring-primary/50 resize-none min-h-[110px]"
+          spellCheck={false}
+        />
+        {error && <p className="text-[10px] text-red-400 mt-1">{error}</p>}
+      </div>
+    </div>
+  );
+}
+
 /* ─── Definition Tab ─── */
 function DefinitionTab({
   persona,
@@ -259,10 +385,15 @@ function DefinitionTab({
   slug: string;
   onRefresh: () => void;
 }) {
+  const setSection = useAppStore((s) => s.setSection);
+  const selectPage = useTreeStore((s) => s.selectPage);
   const [bodyEdit, setBodyEdit] = useState("");
   const [editingBody, setEditingBody] = useState(false);
   const [saving, setSaving] = useState(false);
   const [bodyHtml, setBodyHtml] = useState("");
+  const [relatedFiles, setRelatedFiles] = useState<AgentRelatedFile[]>([]);
+  const [filesLoading, setFilesLoading] = useState(true);
+  const [openingPath, setOpeningPath] = useState<string | null>(null);
 
   // Render markdown to HTML for display
   useEffect(() => {
@@ -276,11 +407,69 @@ function DefinitionTab({
       .catch(() => {});
   }, [persona.body]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setFilesLoading(true);
+    fetch(`/api/agents/personas/${slug}/files`)
+      .then((r) => (r.ok ? r.json() : { files: [] }))
+      .then((data) => {
+        if (!cancelled) {
+          setRelatedFiles(Array.isArray(data.files) ? data.files : []);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setRelatedFiles([]);
+      })
+      .finally(() => {
+        if (!cancelled) setFilesLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, persona.launcher]);
+
+  const encodePagePath = (virtualPath: string) =>
+    virtualPath
+      .split("/")
+      .filter(Boolean)
+      .map(encodeURIComponent)
+      .join("/");
+
+  const openRelatedFile = async (file: AgentRelatedFile) => {
+    setOpeningPath(file.path);
+    try {
+      if (!file.exists && file.creatable) {
+        await fetch(`/api/pages/${encodePagePath(file.path)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            content: "",
+            frontmatter: { title: file.label },
+          }),
+        });
+      }
+      selectPage(file.path);
+      setSection({ type: "page" });
+    } finally {
+      setOpeningPath(null);
+    }
+  };
+
   const saveField = async (field: string, value: string) => {
     await fetch(`/api/agents/personas/${slug}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ [field]: value }),
+    });
+    onRefresh();
+  };
+
+  const saveLauncher = async (launcher: AgentLauncherConfig | null) => {
+    await fetch(`/api/agents/personas/${slug}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ launcher }),
     });
     onRefresh();
   };
@@ -321,6 +510,70 @@ function DefinitionTab({
           mono
           onSave={(v) => saveField("workspace", v)}
         />
+      </div>
+
+      <LauncherConfigCard value={persona.launcher} onSave={saveLauncher} />
+
+      <div className="bg-muted/20 border border-border rounded-lg p-4 space-y-3">
+        <div>
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
+            Agent Files
+          </p>
+          <p className="text-[11px] text-muted-foreground/70 mt-1">
+            Open the actual stack, instruction, extension, and runtime context files used by this agent.
+          </p>
+        </div>
+
+        {filesLoading ? (
+          <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading agent files...
+          </div>
+        ) : relatedFiles.length === 0 ? (
+          <p className="text-[12px] text-muted-foreground">
+            No linked files detected for this agent yet.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {relatedFiles.map((file) => (
+              <div
+                key={file.path}
+                className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background/60 px-3 py-2"
+              >
+                <div className="min-w-0">
+                  <p className="text-[12px] font-medium text-foreground">
+                    {file.label}
+                  </p>
+                  <p className="truncate text-[11px] font-mono text-muted-foreground">
+                    {file.path}
+                  </p>
+                  {file.description ? (
+                    <p className="text-[10px] text-muted-foreground/80 mt-1">
+                      {file.description}
+                    </p>
+                  ) : null}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 shrink-0 text-[10px]"
+                  onClick={() => void openRelatedFile(file)}
+                  disabled={openingPath === file.path}
+                >
+                  {openingPath === file.path ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : file.exists ? (
+                    "Open"
+                  ) : file.creatable ? (
+                    "Create & open"
+                  ) : (
+                    "Open"
+                  )}
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {persona.tags.length > 0 && (
@@ -415,6 +668,11 @@ interface AgentJob {
   schedule: string;
   prompt: string;
   timeout?: number;
+  execution?: {
+    launcherId?: string;
+    cwd?: string;
+    inheritAgent?: boolean;
+  };
 }
 
 function JobsTab({ slug }: { slug: string }) {
@@ -424,9 +682,13 @@ function JobsTab({ slug }: { slug: string }) {
   const [newName, setNewName] = useState("");
   const [newCron, setNewCron] = useState("0 9 * * 1-5");
   const [newPrompt, setNewPrompt] = useState("");
+  const [newLauncherId, setNewLauncherId] = useState("");
+  const [newCwd, setNewCwd] = useState("");
   const [editingJob, setEditingJob] = useState<string | null>(null);
   const [editCron, setEditCron] = useState("");
   const [editPrompt, setEditPrompt] = useState("");
+  const [editLauncherId, setEditLauncherId] = useState("");
+  const [editCwd, setEditCwd] = useState("");
   const [running, setRunning] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -453,12 +715,22 @@ function JobsTab({ slug }: { slug: string }) {
         name: newName.trim(),
         schedule: newCron,
         prompt: newPrompt.trim(),
+        execution:
+          newLauncherId || newCwd
+            ? {
+                inheritAgent: !newLauncherId,
+                launcherId: newLauncherId || undefined,
+                cwd: newCwd || undefined,
+              }
+            : undefined,
       }),
     });
     setAdding(false);
     setNewName("");
     setNewCron("0 9 * * 1-5");
     setNewPrompt("");
+    setNewLauncherId("");
+    setNewCwd("");
     refresh();
   };
 
@@ -473,6 +745,16 @@ function JobsTab({ slug }: { slug: string }) {
     const updates: Record<string, unknown> = {};
     if (editCron && editCron !== job.schedule) updates.schedule = editCron;
     if (editPrompt !== job.prompt) updates.prompt = editPrompt;
+    if (editLauncherId !== (job.execution?.launcherId || "") || editCwd !== (job.execution?.cwd || "")) {
+      updates.execution =
+        editLauncherId || editCwd
+          ? {
+              inheritAgent: !editLauncherId,
+              launcherId: editLauncherId || undefined,
+              cwd: editCwd || undefined,
+            }
+          : undefined;
+    }
     if (Object.keys(updates).length > 0) {
       await fetch(`/api/agents/${slug}/jobs/${jobId}`, {
         method: "PUT",
@@ -544,8 +826,26 @@ function JobsTab({ slug }: { slug: string }) {
             <textarea
               value={newPrompt}
               onChange={(e) => setNewPrompt(e.target.value)}
-              placeholder="What should this job do? This is the prompt sent to Claude..."
+              placeholder="What should this job do?"
               className="w-full bg-background border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-primary/50 resize-none min-h-[80px]"
+            />
+          </div>
+          <div>
+            <p className="text-[10px] text-muted-foreground mb-1.5">Launcher ID</p>
+            <input
+              value={newLauncherId}
+              onChange={(e) => setNewLauncherId(e.target.value)}
+              placeholder="inherit agent launcher"
+              className="w-full bg-background border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-primary/50"
+            />
+          </div>
+          <div>
+            <p className="text-[10px] text-muted-foreground mb-1.5">Working Directory</p>
+            <input
+              value={newCwd}
+              onChange={(e) => setNewCwd(e.target.value)}
+              placeholder="relative to configured vault"
+              className="w-full bg-background border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-primary/50"
             />
           </div>
           <div className="flex gap-1 justify-end">
@@ -600,7 +900,7 @@ function JobsTab({ slug }: { slug: string }) {
                 Run
               </Button>
               <button
-                onClick={() => { setEditingJob(editingJob === job.id ? null : job.id); setEditCron(job.schedule); setEditPrompt(job.prompt); }}
+                onClick={() => { setEditingJob(editingJob === job.id ? null : job.id); setEditCron(job.schedule); setEditPrompt(job.prompt); setEditLauncherId(job.execution?.launcherId || ""); setEditCwd(job.execution?.cwd || ""); }}
                 className={cn(
                   "text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded hover:bg-muted/80 transition-colors",
                   editingJob === job.id ? "ring-1 ring-primary/50" : ""
@@ -641,6 +941,24 @@ function JobsTab({ slug }: { slug: string }) {
                   className="w-full bg-background border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-primary/50 resize-none min-h-[80px]"
                 />
               </div>
+              <div>
+                <p className="text-[10px] text-muted-foreground mb-1.5">Launcher ID</p>
+                <input
+                  value={editLauncherId}
+                  onChange={(e) => setEditLauncherId(e.target.value)}
+                  placeholder="inherit agent launcher"
+                  className="w-full bg-background border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-primary/50"
+                />
+              </div>
+              <div>
+                <p className="text-[10px] text-muted-foreground mb-1.5">Working Directory</p>
+                <input
+                  value={editCwd}
+                  onChange={(e) => setEditCwd(e.target.value)}
+                  placeholder="relative to configured vault"
+                  className="w-full bg-background border border-border rounded px-2 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-primary/50"
+                />
+              </div>
               <div className="flex gap-1 justify-end">
                 <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={() => setEditingJob(null)}>
                   Cancel
@@ -658,7 +976,7 @@ function JobsTab({ slug }: { slug: string }) {
   );
 }
 
-/* ─── Sessions Tab (Claude Code terminal style) ─── */
+/* ─── Sessions Tab (launcher-backed terminal) ─── */
 function SessionsTab({
   persona,
   history,
@@ -670,24 +988,41 @@ function SessionsTab({
 }) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [prompt, setPrompt] = useState("");
+  const [startingSession, setStartingSession] = useState(false);
   // Live terminal session
   const [liveSession, setLiveSession] = useState<{
     id: string;
-    prompt: string;
     userMessage: string;
   } | null>(null);
 
   const selectedSession = selectedIndex !== null ? history[selectedIndex] : null;
 
-  const handleSendPrompt = () => {
+  const handleSendPrompt = async () => {
     if (!prompt.trim()) return;
     const userMessage = prompt.trim();
     const sessionId = `agent-${persona.slug}-${Date.now()}`;
     const fullPrompt = `${persona.body}\n\n---\n\nUser request: ${userMessage}`;
 
-    setLiveSession({ id: sessionId, prompt: fullPrompt, userMessage });
-    setSelectedIndex(null);
-    setPrompt("");
+    setStartingSession(true);
+    try {
+      const res = await fetch("/api/daemon/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId,
+          agentSlug: persona.slug,
+          prompt: fullPrompt,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to start session");
+      setLiveSession({ id: sessionId, userMessage });
+      setSelectedIndex(null);
+      setPrompt("");
+    } catch {
+      // ignore for now
+    } finally {
+      setStartingSession(false);
+    }
   };
 
   const handleSessionEnd = () => {
@@ -723,7 +1058,7 @@ function SessionsTab({
         <ScrollArea className="flex-1">
           <div className="p-1.5 space-y-0.5">
             {/* Live session entry */}
-            {liveSession && (
+            {(liveSession || startingSession) && (
               <button
                 className="flex items-start gap-2 w-full px-2.5 py-2 rounded-md text-[11px] text-left bg-primary/10 border border-primary/20"
               >
@@ -732,10 +1067,10 @@ function SessionsTab({
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium text-[11px] leading-tight text-foreground">
-                    {liveSession.userMessage}
+                    {liveSession?.userMessage || prompt}
                   </p>
                   <p className="text-[10px] text-muted-foreground/60 mt-0.5">
-                    running...
+                    {startingSession ? "starting..." : "running..."}
                   </p>
                 </div>
               </button>
@@ -802,7 +1137,7 @@ function SessionsTab({
       {/* Session content panel */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {liveSession ? (
-          /* Live Claude Code terminal */
+          /* Live launcher-backed terminal */
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="px-4 py-2.5 border-b border-border flex items-center gap-2 shrink-0">
               <Loader2 className="h-3.5 w-3.5 text-primary animate-spin" />
@@ -811,7 +1146,6 @@ function SessionsTab({
             <div className="flex-1 min-h-0">
               <WebTerminal
                 sessionId={liveSession.id}
-                prompt={liveSession.prompt}
                 onClose={handleSessionEnd}
               />
             </div>
@@ -881,7 +1215,7 @@ function SessionsTab({
                 New Session
               </h3>
               <p className="text-[12px] text-muted-foreground mt-1 max-w-sm">
-                Send a prompt to {persona.name} to start a live Claude Code session.
+                Send a prompt to {persona.name} to start a live launcher-backed session.
               </p>
             </div>
             <div className="w-full max-w-lg">
@@ -903,10 +1237,10 @@ function SessionsTab({
                   size="sm"
                   className="h-9 gap-1.5"
                   onClick={handleSendPrompt}
-                  disabled={!prompt.trim()}
+                  disabled={!prompt.trim() || startingSession}
                 >
                   <Send className="h-3.5 w-3.5" />
-                  Send
+                  {startingSession ? "Starting..." : "Send"}
                 </Button>
               </div>
             </div>

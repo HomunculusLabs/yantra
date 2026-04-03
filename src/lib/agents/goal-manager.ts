@@ -1,5 +1,5 @@
 import path from "path";
-import { DATA_DIR } from "@/lib/storage/path-utils";
+import { getCabinetRoots } from "@/lib/config/cabinet-roots";
 import {
   readFileContent,
   writeFileContent,
@@ -8,7 +8,7 @@ import {
 } from "@/lib/storage/fs-operations";
 import type { GoalMetric } from "@/types/agents";
 
-const MEMORY_DIR = path.join(DATA_DIR, ".agents", ".memory");
+const MEMORY_DIR = path.join(getCabinetRoots().runtimeAgentsRoot, ".memory");
 
 // ---------------------------------------------------------------------------
 // Types

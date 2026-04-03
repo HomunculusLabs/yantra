@@ -36,14 +36,14 @@ function renderMessageContent(content: string, onOpenFile?: (path: string) => vo
             e.preventDefault();
             e.stopPropagation();
             if (onOpenFile) {
-              // Normalize path: strip leading slashes, ensure /data/ prefix
               let filePath = href;
               if (filePath.startsWith("./")) filePath = filePath.slice(2);
               if (filePath.startsWith("workspace/")) {
                 const slug = agentSlug || "unknown";
-                filePath = `/data/.agents/${slug}/${filePath}`;
+                filePath = `@runtime/.agents/${slug}/${filePath}`;
               }
-              if (!filePath.startsWith("/data/")) filePath = `/data/${filePath}`;
+              if (filePath.startsWith("/data/")) filePath = filePath.slice(6);
+              if (filePath.startsWith("data/")) filePath = filePath.slice(5);
               onOpenFile(filePath);
             }
           } : undefined}

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import fs from "fs/promises";
-import { DATA_DIR } from "@/lib/storage/path-utils";
+import { getCabinetRoots } from "@/lib/config/cabinet-roots";
 
-const LIBRARY_DIR = path.join(DATA_DIR, ".agents", ".library");
-const AGENTS_DIR = path.join(DATA_DIR, ".agents");
+const LIBRARY_DIR = path.join(getCabinetRoots().runtimeAgentsRoot, ".library");
+const AGENTS_DIR = getCabinetRoots().runtimeAgentsRoot;
 
 export async function POST(
   _req: NextRequest,

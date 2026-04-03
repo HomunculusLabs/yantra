@@ -1,9 +1,9 @@
 import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
+import { getCabinetRoots, ensureRuntimeRootExists } from "@/lib/config/cabinet-roots";
 
-const DATA_DIR = path.join(process.cwd(), "data");
-const DB_PATH = path.join(DATA_DIR, ".cabinet.db");
+const DB_PATH = getCabinetRoots().databasePath;
 const MIGRATIONS_DIR = path.join(process.cwd(), "server", "migrations");
 
 let _db: Database.Database | null = null;
@@ -15,9 +15,7 @@ let _db: Database.Database | null = null;
 export function getDb(): Database.Database {
   if (_db) return _db;
 
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
+  ensureRuntimeRootExists();
 
   _db = new Database(DB_PATH);
 

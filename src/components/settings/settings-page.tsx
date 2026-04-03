@@ -15,6 +15,7 @@ import {
   Save,
   Loader2,
   Clock,
+  FolderOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -46,6 +47,13 @@ interface IntegrationConfig {
     telegram: { enabled: boolean; bot_token: string; chat_id: string };
     slack_webhook: { enabled: boolean; url: string };
     email: { enabled: boolean; frequency: "hourly" | "daily"; to: string };
+    nextcloud_talk: {
+      enabled: boolean;
+      server_url: string;
+      username: string;
+      app_password: string;
+      default_room_token: string;
+    };
   };
   scheduling: {
     max_concurrent_agents: number;
@@ -55,7 +63,18 @@ interface IntegrationConfig {
   };
 }
 
-type Tab = "providers" | "integrations" | "notifications";
+interface RootsConfig {
+  vaultRoot: string;
+  runtimeRoot: string;
+  configPath?: string;
+  checks?: {
+    vaultExists: boolean;
+    runtimeExists: boolean;
+  };
+  restartRequired?: boolean;
+}
+
+type Tab = "providers" | "integrations" | "notifications" | "launchers" | "storage";
 
 export function SettingsPage() {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
@@ -63,7 +82,11 @@ export function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("providers");
   const [config, setConfig] = useState<IntegrationConfig | null>(null);
+  const [roots, setRoots] = useState<RootsConfig | null>(null);
   const [configLoading, setConfigLoading] = useState(false);
+  const [rootsLoading, setRootsLoading] = useState(false);
+  const [launchersJson, setLaunchersJson] = useState("");
+  const [launchersLoading, setLaunchersLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [revealedKeys, setRevealedKeys] = useState<Set<string>>(new Set());
@@ -98,15 +121,65 @@ export function SettingsPage() {
     }
   }, []);
 
+  const loadLaunchers = useCallback(async () => {
+    setLaunchersLoading(true);
+    try {
+      const res = await fetch("/api/agents/config/launchers");
+      if (res.ok) {
+        const data = await res.json();
+        setLaunchersJson(JSON.stringify(data, null, 2));
+      }
+    } catch {
+      // ignore
+    } finally {
+      setLaunchersLoading(false);
+    }
+  }, []);
+
+  const loadRoots = useCallback(async () => {
+    setRootsLoading(true);
+    try {
+      const res = await fetch("/api/agents/config/roots");
+      if (res.ok) {
+        setRoots(await res.json());
+      }
+    } catch {
+      // ignore
+    } finally {
+      setRootsLoading(false);
+    }
+  }, []);
+
   const saveConfig = async () => {
-    if (!config) return;
     setSaving(true);
     try {
-      await fetch("/api/agents/config/integrations", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(config),
-      });
+      if (tab === "storage" && roots) {
+        const res = await fetch("/api/agents/config/roots", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            vaultRoot: roots.vaultRoot,
+            runtimeRoot: roots.runtimeRoot,
+          }),
+        });
+        if (res.ok) {
+          setRoots(await res.json());
+        }
+      }
+      if ((tab === "integrations" || tab === "notifications") && config) {
+        await fetch("/api/agents/config/integrations", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(config),
+        });
+      }
+      if (tab === "launchers") {
+        await fetch("/api/agents/config/launchers", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: launchersJson,
+        });
+      }
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch {
@@ -119,7 +192,9 @@ export function SettingsPage() {
   useEffect(() => {
     refresh();
     loadConfig();
-  }, [refresh, loadConfig]);
+    loadLaunchers();
+    loadRoots();
+  }, [refresh, loadConfig, loadLaunchers, loadRoots]);
 
   const toggleReveal = (key: string) => {
     setRevealedKeys((prev) => {
@@ -177,8 +252,10 @@ export function SettingsPage() {
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: "providers", label: "Providers", icon: <Cpu className="h-3.5 w-3.5" /> },
+    { id: "storage", label: "Storage", icon: <FolderOpen className="h-3.5 w-3.5" /> },
     { id: "integrations", label: "Integrations", icon: <Plug className="h-3.5 w-3.5" /> },
     { id: "notifications", label: "Notifications", icon: <Bell className="h-3.5 w-3.5" /> },
+    { id: "launchers", label: "Launchers", icon: <Sparkles className="h-3.5 w-3.5" /> },
   ];
 
   return (
@@ -191,7 +268,7 @@ export function SettingsPage() {
           </h2>
         </div>
         <div className="flex items-center gap-1.5">
-          {(tab === "integrations" || tab === "notifications") && (
+          {(tab === "storage" || tab === "integrations" || tab === "notifications" || tab === "launchers") && (
             <Button
               variant={saved ? "default" : "outline"}
               size="sm"
@@ -213,7 +290,7 @@ export function SettingsPage() {
             variant="ghost"
             size="sm"
             className="h-7 gap-1.5 text-[12px]"
-            onClick={() => { refresh(); loadConfig(); }}
+            onClick={() => { refresh(); loadConfig(); loadLaunchers(); loadRoots(); }}
           >
             <RefreshCw className="h-3.5 w-3.5" />
             Refresh
@@ -242,6 +319,74 @@ export function SettingsPage() {
 
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-6 max-w-2xl">
+          {tab === "storage" && (
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-[14px] font-semibold mb-2">Vault and runtime roots</h3>
+                <p className="text-xs text-muted-foreground">
+                  Cabinet should read your Obsidian vault from the vault root and keep its runtime state under a separate runtime root.
+                </p>
+              </div>
+
+              {rootsLoading || !roots ? (
+                <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading storage settings...
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-3 rounded-lg border border-border bg-card p-4">
+                    <label className="space-y-1.5 block">
+                      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                        Vault root
+                      </span>
+                      <input
+                        value={roots.vaultRoot}
+                        onChange={(event) =>
+                          setRoots({ ...roots, vaultRoot: event.target.value })
+                        }
+                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
+                        spellCheck={false}
+                      />
+                      <p className="text-[11px] text-muted-foreground">
+                        Current status: {roots.checks?.vaultExists ? "found" : "missing"}
+                      </p>
+                    </label>
+
+                    <label className="space-y-1.5 block">
+                      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                        Runtime root
+                      </span>
+                      <input
+                        value={roots.runtimeRoot}
+                        onChange={(event) =>
+                          setRoots({ ...roots, runtimeRoot: event.target.value })
+                        }
+                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
+                        spellCheck={false}
+                      />
+                      <p className="text-[11px] text-muted-foreground">
+                        Current status: {roots.checks?.runtimeExists ? "found" : "will be created"}
+                      </p>
+                    </label>
+                  </div>
+
+                  <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4">
+                    <p className="text-[12px] font-medium text-foreground">Restart required after save</p>
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      The app server and daemon cache these roots at startup. Save the paths here, then restart Yantra so the Knowledge Base and launcher sessions pick up the new roots.
+                    </p>
+                    {roots.configPath ? (
+                      <p className="mt-2 text-[11px] font-mono text-muted-foreground">
+                        Config file: {roots.configPath}
+                      </p>
+                    ) : null}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           {/* Providers Tab */}
           {tab === "providers" && (
             <>
@@ -727,6 +872,87 @@ export function SettingsPage() {
                       </div>
                     )}
                   </div>
+                  {/* Nextcloud Talk */}
+                  <div className={cn(
+                    "bg-card border rounded-lg p-3 transition-colors",
+                    config.notifications.nextcloud_talk.enabled ? "border-primary/30" : "border-border"
+                  )}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-3">
+                        <span className="text-lg">☁️</span>
+                        <div>
+                          <p className="text-[13px] font-medium">Nextcloud Talk</p>
+                          <p className="text-[11px] text-muted-foreground">
+                            Send alerts and job updates into Nextcloud rooms
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => updateNotif("nextcloud_talk.enabled", !config.notifications.nextcloud_talk.enabled)}
+                        className={cn(
+                          "h-4 w-8 rounded-full relative transition-colors",
+                          config.notifications.nextcloud_talk.enabled ? "bg-emerald-500" : "bg-muted-foreground/30"
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all",
+                            config.notifications.nextcloud_talk.enabled ? "left-4" : "left-0.5"
+                          )}
+                        />
+                      </button>
+                    </div>
+
+                    {config.notifications.nextcloud_talk.enabled && (
+                      <div className="space-y-1.5 mt-2">
+                        <div>
+                          <label className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Server URL</label>
+                          <input
+                            type="text"
+                            value={config.notifications.nextcloud_talk.server_url}
+                            onChange={(e) => updateNotif("nextcloud_talk.server_url", e.target.value)}
+                            placeholder="https://nextcloud.example.com"
+                            className="w-full mt-0.5 text-[12px] bg-muted/30 border border-border/50 rounded px-2 py-1 font-mono focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/30"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Username</label>
+                          <input
+                            type="text"
+                            value={config.notifications.nextcloud_talk.username}
+                            onChange={(e) => updateNotif("nextcloud_talk.username", e.target.value)}
+                            placeholder="nextcloud username"
+                            className="w-full mt-0.5 text-[12px] bg-muted/30 border border-border/50 rounded px-2 py-1 font-mono focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/30"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">App Password</label>
+                          <div className="flex gap-1 mt-0.5">
+                            <input
+                              type={revealedKeys.has("nc.password") ? "text" : "password"}
+                              value={config.notifications.nextcloud_talk.app_password}
+                              onChange={(e) => updateNotif("nextcloud_talk.app_password", e.target.value)}
+                              placeholder="Nextcloud app password"
+                              className="flex-1 text-[12px] bg-muted/30 border border-border/50 rounded px-2 py-1 font-mono focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/30"
+                            />
+                            <button onClick={() => toggleReveal("nc.password")} className="px-1.5 text-muted-foreground/50 hover:text-foreground transition-colors">
+                              {revealedKeys.has("nc.password") ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                            </button>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Default Room Token</label>
+                          <input
+                            type="text"
+                            value={config.notifications.nextcloud_talk.default_room_token}
+                            onChange={(e) => updateNotif("nextcloud_talk.default_room_token", e.target.value)}
+                            placeholder="Talk room token"
+                            className="w-full mt-0.5 text-[12px] bg-muted/30 border border-border/50 rounded px-2 py-1 font-mono focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/30"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -771,11 +997,35 @@ export function SettingsPage() {
             </>
           )}
 
+          {tab === "launchers" && (
+            <>
+              <div>
+                <h3 className="text-[14px] font-semibold mb-1">Launcher Registry</h3>
+                <p className="text-xs text-muted-foreground mb-4">
+                  Define CLI launchers for agent execution. Built-ins include <code>claude-code</code> and <code>pi-agent-stack</code>. Agents and jobs can point at these by launcher id.
+                </p>
+                {launchersLoading ? (
+                  <p className="text-[13px] text-muted-foreground">Loading launcher config...</p>
+                ) : (
+                  <textarea
+                    value={launchersJson}
+                    onChange={(e) => setLaunchersJson(e.target.value)}
+                    className="w-full min-h-[420px] bg-card border border-border rounded-lg px-3 py-2 text-[12px] font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+                    spellCheck={false}
+                  />
+                )}
+              </div>
+            </>
+          )}
+
           {tab === "integrations" && !config && configLoading && (
             <p className="text-[13px] text-muted-foreground">Loading configuration...</p>
           )}
           {tab === "notifications" && !config && configLoading && (
             <p className="text-[13px] text-muted-foreground">Loading configuration...</p>
+          )}
+          {tab === "launchers" && launchersLoading && !launchersJson && (
+            <p className="text-[13px] text-muted-foreground">Loading launcher configuration...</p>
           )}
         </div>
       </ScrollArea>

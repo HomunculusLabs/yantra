@@ -1,3 +1,5 @@
+import type { JobExecutionConfig } from "./launchers";
+
 export interface JobPostAction {
   action: "git_commit" | "update_page" | "notify";
   message?: string;
@@ -15,6 +17,7 @@ export interface JobConfig {
   workdir?: string;
   timeout?: number;
   prompt: string;
+  execution?: JobExecutionConfig;
   on_complete?: JobPostAction[];
   on_failure?: JobPostAction[];
   createdAt: string;

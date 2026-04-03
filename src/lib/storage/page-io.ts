@@ -1,7 +1,13 @@
 import path from "path";
 import matter from "gray-matter";
 import type { PageData, FrontMatter } from "@/types";
-import { resolveContentPath } from "./path-utils";
+import {
+  fileTitleFromPath,
+  resolveContentPath,
+  sanitizeFilename,
+  stripRuntimePrefix,
+  isRuntimeVirtualPath,
+} from "./path-utils";
 import {
   readFileContent,
   writeFileContent,
@@ -15,37 +21,129 @@ function defaultFrontmatter(title: string): FrontMatter {
   return { title, created: now, modified: now, tags: [] };
 }
 
-export async function readPage(virtualPath: string): Promise<PageData> {
+function canonicalPagePath(virtualPath: string, kind: PageData["kind"]): string {
+  if (kind === "directory-index") return virtualPath;
+  if (virtualPath.endsWith(".md")) return virtualPath;
+  if (kind === "markdown") return `${virtualPath}.md`;
+  return virtualPath;
+}
+
+function pageTitleForPath(virtualPath: string): string {
+  return fileTitleFromPath(
+    isRuntimeVirtualPath(virtualPath) ? stripRuntimePrefix(virtualPath) : virtualPath
+  );
+}
+
+type ResolvedPageTarget = {
+  filePath: string;
+  kind: PageData["kind"];
+};
+
+function isTextFile(filePath: string): boolean {
+  const ext = path.extname(filePath).toLowerCase();
+  return [
+    ".json",
+    ".yaml",
+    ".yml",
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".mjs",
+    ".cjs",
+    ".sh",
+    ".bash",
+    ".zsh",
+    ".py",
+    ".txt",
+    ".mdx",
+    ".css",
+    ".scss",
+    ".html",
+    ".xml",
+    ".toml",
+    ".ini",
+    ".env",
+    ".sql",
+  ].includes(ext) || path.extname(filePath) === "";
+}
+
+async function resolvePageTarget(virtualPath: string): Promise<ResolvedPageTarget> {
   const resolved = resolveContentPath(virtualPath);
+  const exactExists = await fileExists(resolved);
 
-  // Try directory with index.md first
-  const indexPath = path.join(resolved, "index.md");
-  const mdPath = resolved.endsWith(".md") ? resolved : `${resolved}.md`;
+  if (exactExists) {
+    const stat = await (await import("fs/promises")).stat(resolved);
+    if (stat.isDirectory()) {
+      const indexPath = path.join(resolved, "index.md");
+      if (await fileExists(indexPath)) {
+        return { filePath: indexPath, kind: "directory-index" };
+      }
+      throw new Error(`Page not found: ${virtualPath}`);
+    }
 
-  let filePath: string;
-  if (await fileExists(indexPath)) {
-    filePath = indexPath;
-  } else if (await fileExists(mdPath)) {
-    filePath = mdPath;
-  } else if (await fileExists(resolved)) {
-    filePath = resolved;
-  } else {
-    throw new Error(`Page not found: ${virtualPath}`);
+    if (resolved.toLowerCase().endsWith(".md")) {
+      return { filePath: resolved, kind: "markdown" };
+    }
+    if (resolved.toLowerCase().endsWith(".pdf")) {
+      return { filePath: resolved, kind: "pdf" };
+    }
+    if (resolved.toLowerCase().endsWith(".csv")) {
+      return { filePath: resolved, kind: "csv" };
+    }
+    if (isTextFile(resolved)) {
+      return { filePath: resolved, kind: "text" };
+    }
   }
 
+  if (!path.extname(virtualPath)) {
+    const legacyMdPath = `${resolved}.md`;
+    if (await fileExists(legacyMdPath)) {
+      return { filePath: legacyMdPath, kind: "markdown" };
+    }
+  }
+
+  throw new Error(`Page not found: ${virtualPath}`);
+}
+
+export async function readPage(virtualPath: string): Promise<PageData> {
+  const target = await resolvePageTarget(virtualPath);
+  const filePath = target.filePath;
+
   const raw = await readFileContent(filePath);
-  const { data, content } = matter(raw);
+  if (target.kind === "markdown" || target.kind === "directory-index") {
+    const { data, content } = matter(raw);
+
+    return {
+      path: canonicalPagePath(virtualPath, target.kind),
+      requestedPath: virtualPath,
+      backingPath: filePath,
+      kind: target.kind,
+      editable: true,
+      content: content.trim(),
+      frontmatter: {
+        title: data.title || pageTitleForPath(virtualPath),
+        created: data.created || new Date().toISOString(),
+        modified: data.modified || new Date().toISOString(),
+        tags: data.tags || [],
+        icon: data.icon,
+        order: data.order,
+      },
+    };
+  }
 
   return {
     path: virtualPath,
-    content: content.trim(),
+    requestedPath: virtualPath,
+    backingPath: filePath,
+    kind: target.kind,
+    editable: target.kind === "text",
+    content: raw,
     frontmatter: {
-      title: data.title || path.basename(virtualPath, ".md"),
-      created: data.created || new Date().toISOString(),
-      modified: data.modified || new Date().toISOString(),
-      tags: data.tags || [],
-      icon: data.icon,
-      order: data.order,
+      title: pageTitleForPath(virtualPath),
+      created: new Date().toISOString(),
+      modified: new Date().toISOString(),
+      tags: [],
     },
   };
 }
@@ -55,21 +153,22 @@ export async function writePage(
   content: string,
   frontmatter: Partial<FrontMatter>
 ): Promise<void> {
-  const resolved = resolveContentPath(virtualPath);
-
-  const indexPath = path.join(resolved, "index.md");
-  const mdPath = resolved.endsWith(".md") ? resolved : `${resolved}.md`;
-
   let filePath: string;
-  if (await fileExists(indexPath)) {
-    filePath = indexPath;
-  } else if (await fileExists(mdPath)) {
-    filePath = mdPath;
-  } else if (await fileExists(resolved)) {
-    filePath = resolved;
-  } else {
-    // Default: if virtual path looks like a directory, use index.md
-    filePath = indexPath;
+  let kind: PageData["kind"];
+  try {
+    const target = await resolvePageTarget(virtualPath);
+    filePath = target.filePath;
+    kind = target.kind;
+  } catch {
+    const resolved = resolveContentPath(virtualPath);
+    filePath = resolved.toLowerCase().endsWith(".md") ? resolved : `${resolved}.md`;
+    kind = "markdown";
+  }
+
+  if (kind === "text") {
+    await ensureDirectory(path.dirname(filePath));
+    await writeFileContent(filePath, content);
+    return;
   }
 
   // Strip undefined values — js-yaml cannot serialize them
@@ -85,31 +184,37 @@ export async function writePage(
 export async function createPage(
   virtualPath: string,
   title: string
-): Promise<void> {
-  const resolved = resolveContentPath(virtualPath);
-  const dirPath = resolved;
-  const filePath = path.join(dirPath, "index.md");
+): Promise<string> {
+  const parentDir = resolveContentPath(virtualPath);
+  const safeName = sanitizeFilename(title) || "Untitled";
+  const filename = safeName.toLowerCase().endsWith(".md") ? safeName : `${safeName}.md`;
+  const filePath = path.join(parentDir, filename);
 
   if (await fileExists(filePath)) {
-    throw new Error(`Page already exists: ${virtualPath}`);
+    throw new Error(`Page already exists: ${virtualPath}/${filename}`);
   }
 
-  await ensureDirectory(dirPath);
+  await ensureDirectory(parentDir);
   const fm = defaultFrontmatter(title);
   const output = matter.stringify(`\n# ${title}\n`, fm);
   await writeFileContent(filePath, output);
+  return virtualPath ? `${virtualPath}/${filename}` : filename;
 }
 
 export async function deletePage(virtualPath: string): Promise<void> {
-  const resolved = resolveContentPath(virtualPath);
-  await deleteFileOrDir(resolved);
+  const target = await resolvePageTarget(virtualPath);
+  const deleteTarget =
+    target.kind === "directory-index" ? path.dirname(target.filePath) : target.filePath;
+  await deleteFileOrDir(deleteTarget);
 }
 
 export async function movePage(
   fromPath: string,
   toParentPath: string
 ): Promise<string> {
-  const fromResolved = resolveContentPath(fromPath);
+  const target = await resolvePageTarget(fromPath);
+  const fromResolved =
+    target.kind === "directory-index" ? path.dirname(target.filePath) : target.filePath;
   const name = path.basename(fromResolved);
   const toDir = toParentPath
     ? resolveContentPath(toParentPath)
@@ -132,13 +237,14 @@ export async function renamePage(
   virtualPath: string,
   newName: string
 ): Promise<string> {
-  const fromResolved = resolveContentPath(virtualPath);
+  const target = await resolvePageTarget(virtualPath);
+  const fromResolved =
+    target.kind === "directory-index" ? path.dirname(target.filePath) : target.filePath;
   const parentDir = path.dirname(fromResolved);
-  const slug = newName
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-  const toResolved = path.join(parentDir, slug);
+  const ext =
+    target.kind === "directory-index" ? "" : path.extname(fromResolved);
+  const baseName = sanitizeFilename(newName) || pageTitleForPath(virtualPath);
+  const toResolved = path.join(parentDir, ext ? `${baseName}${ext}` : baseName);
 
   if (fromResolved === toResolved) return virtualPath;
 
@@ -146,9 +252,13 @@ export async function renamePage(
   await fs.rename(fromResolved, toResolved);
 
   // Update frontmatter title
-  const indexMd = path.join(toResolved, "index.md");
-  if (await fileExists(indexMd)) {
-    const raw = await readFileContent(indexMd);
+  const markdownTarget =
+    target.kind === "directory-index" ? path.join(toResolved, "index.md") : toResolved;
+  if (
+    (target.kind === "directory-index" || target.kind === "markdown") &&
+    await fileExists(markdownTarget)
+  ) {
+    const raw = await readFileContent(markdownTarget);
     const { data, content } = matter(raw);
     data.title = newName;
     data.modified = new Date().toISOString();
@@ -156,9 +266,10 @@ export async function renamePage(
       Object.entries(data).filter(([, v]) => v !== undefined)
     );
     const output = matter.stringify(content, fm);
-    await writeFileContent(indexMd, output);
+    await writeFileContent(markdownTarget, output);
   }
 
   const parentVirtual = virtualPath.split("/").slice(0, -1).join("/");
-  return parentVirtual ? `${parentVirtual}/${slug}` : slug;
+  const newLeaf = ext ? `${baseName}${ext}` : baseName;
+  return parentVirtual ? `${parentVirtual}/${newLeaf}` : newLeaf;
 }

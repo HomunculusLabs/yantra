@@ -31,10 +31,13 @@ import {
   getTokenFromAuthorizationHeader,
   isDaemonTokenValid,
 } from "../src/lib/agents/daemon-auth";
+import { getCabinetRoots } from "../src/lib/config/cabinet-roots";
+import type { ResolvedLaunchSpec } from "../src/types/launchers";
 
 const PORT = 3001;
-const DATA_DIR = path.join(process.cwd(), "data");
-const AGENTS_DIR = path.join(DATA_DIR, ".agents");
+const ROOTS = getCabinetRoots();
+const DATA_DIR = ROOTS.vaultRoot;
+const AGENTS_DIR = ROOTS.runtimeAgentsRoot;
 const ALLOWED_BROWSER_ORIGINS = new Set(
   [
     "http://localhost:3000",
@@ -106,6 +109,9 @@ interface PtySession {
   initialPrompt?: string;
   initialPromptSent?: boolean;
   initialPromptTimer?: NodeJS.Timeout;
+  initialPromptMode?: "immediate" | "ready";
+  initialPromptReadyPattern?: RegExp;
+  initialPromptSubmit?: boolean;
 }
 
 const sessions = new Map<string, PtySession>();
@@ -171,7 +177,9 @@ function submitInitialPrompt(session: PtySession): void {
   }
 
   session.pty.write(session.initialPrompt);
-  session.pty.write("\r");
+  if (session.initialPromptSubmit !== false) {
+    session.pty.write("\r");
+  }
 }
 
 async function syncConversationChunk(sessionId: string, chunk: string): Promise<void> {
@@ -320,20 +328,33 @@ function createDetachedSession(input: {
   prompt?: string;
   args?: string[];
   cwd?: string;
+  launch?: ResolvedLaunchSpec;
   timeoutSeconds?: number;
   onData?: (chunk: string) => void;
 }): PtySession {
-  const args = input.args
-    ? input.args
-    : ["--dangerously-skip-permissions"];
+  const launch = input.launch || {
+    command: CLAUDE_PATH,
+    args: input.args ? input.args : ["--dangerously-skip-permissions"],
+    cwd: resolveSessionCwd(input.cwd),
+    env: {},
+    promptDelivery: input.args
+      ? { method: "none" as const }
+      : {
+          method: "pty_write" as const,
+          when: "ready" as const,
+          readyPattern: "(?:^|\\n)[❯>]\\s*$",
+          submit: true,
+        },
+  };
 
-  const term = pty.spawn(CLAUDE_PATH, args, {
+  const term = pty.spawn(launch.command, launch.args, {
     name: "xterm-256color",
     cols: 120,
     rows: 30,
-    cwd: resolveSessionCwd(input.cwd),
+    cwd: launch.cwd,
     env: {
       ...(process.env as Record<string, string>),
+      ...(launch.env || {}),
       PATH: enrichedPath,
       TERM: "xterm-256color",
       COLORTERM: "truecolor",
@@ -342,6 +363,7 @@ function createDetachedSession(input: {
     },
   });
 
+  const promptDelivery = launch.promptDelivery;
   const session: PtySession = {
     id: input.sessionId,
     pty: term,
@@ -350,19 +372,30 @@ function createDetachedSession(input: {
     output: [],
     exited: false,
     exitCode: null,
-    initialPrompt: input.args ? undefined : input.prompt?.trim() || undefined,
-    initialPromptSent: false,
+    initialPrompt:
+      promptDelivery.method === "pty_write" ? input.prompt?.trim() || undefined : undefined,
+    initialPromptSent: promptDelivery.method !== "pty_write",
+    initialPromptMode:
+      promptDelivery.method === "pty_write" ? promptDelivery.when : undefined,
+    initialPromptReadyPattern:
+      promptDelivery.method === "pty_write" && promptDelivery.readyPattern
+        ? new RegExp(promptDelivery.readyPattern)
+        : undefined,
+    initialPromptSubmit:
+      promptDelivery.method === "pty_write" ? promptDelivery.submit !== false : false,
   };
   sessions.set(input.sessionId, session);
 
   term.onData((data: string) => {
     session.output.push(data);
-    if (
-      session.initialPrompt &&
-      !session.initialPromptSent &&
-      claudePromptReady(session.output.join(""))
-    ) {
-      submitInitialPrompt(session);
+    if (session.initialPrompt && !session.initialPromptSent) {
+      const output = session.output.join("");
+      const ready = session.initialPromptReadyPattern
+        ? session.initialPromptReadyPattern.test(stripAnsi(output).replace(/\r/g, "\n"))
+        : claudePromptReady(output);
+      if (session.initialPromptMode === "ready" && ready) {
+        submitInitialPrompt(session);
+      }
     }
     void syncConversationChunk(input.sessionId, data).catch(() => {});
     if (session.ws && session.ws.readyState === WebSocket.OPEN) {
@@ -406,7 +439,7 @@ function createDetachedSession(input: {
   if (session.initialPrompt) {
     session.initialPromptTimer = setTimeout(() => {
       submitInitialPrompt(session);
-    }, 1500);
+    }, session.initialPromptMode === "immediate" ? 50 : 1500);
   }
 
   return session;
@@ -676,12 +709,14 @@ const server = http.createServer(async (req, res) => {
           args,
           prompt,
           cwd,
+          launch,
           timeoutSeconds,
         } = JSON.parse(body) as {
           id: string;
           args?: string[];
           prompt?: string;
           cwd?: string;
+          launch?: ResolvedLaunchSpec;
           timeoutSeconds?: number;
         };
         const sessionId = id || `session-${Date.now()}`;
@@ -698,6 +733,7 @@ const server = http.createServer(async (req, res) => {
             args,
             prompt,
             cwd,
+            launch,
             timeoutSeconds,
           });
         } catch (err: unknown) {

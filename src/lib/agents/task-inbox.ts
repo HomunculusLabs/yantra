@@ -1,9 +1,9 @@
 import path from "path";
 import fs from "fs/promises";
-import { DATA_DIR } from "@/lib/storage/path-utils";
+import { getCabinetRoots } from "@/lib/config/cabinet-roots";
 import { fileExists, ensureDirectory } from "@/lib/storage/fs-operations";
 
-const AGENTS_DIR = path.join(DATA_DIR, ".agents");
+const AGENTS_DIR = getCabinetRoots().runtimeAgentsRoot;
 
 export interface AgentTask {
   id: string;

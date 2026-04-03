@@ -1,9 +1,9 @@
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
-import { DATA_DIR } from "@/lib/storage/path-utils";
+import { ensureRuntimeRootExists, getCabinetRoots } from "@/lib/config/cabinet-roots";
 
-const DAEMON_RUNTIME_DIR = path.join(DATA_DIR, ".agents", ".runtime");
+const DAEMON_RUNTIME_DIR = getCabinetRoots().runtimeDaemonRoot;
 const DAEMON_TOKEN_PATH = path.join(DAEMON_RUNTIME_DIR, "daemon-token");
 
 let cachedToken: string | null = null;
@@ -32,6 +32,7 @@ export function getOrCreateDaemonTokenSync(): string {
     return envToken;
   }
 
+  ensureRuntimeRootExists();
   fs.mkdirSync(DAEMON_RUNTIME_DIR, { recursive: true });
 
   if (fs.existsSync(DAEMON_TOKEN_PATH)) {

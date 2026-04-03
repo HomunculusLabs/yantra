@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import fs from "fs/promises";
-import { DATA_DIR } from "@/lib/storage/path-utils";
+import { getCabinetRoots } from "@/lib/config/cabinet-roots";
 
-const CONFIG_DIR = path.join(DATA_DIR, ".agents", ".config");
+const CONFIG_DIR = getCabinetRoots().runtimeConfigRoot;
 const COMPANY_FILE = path.join(CONFIG_DIR, "company.json");
 
 export async function GET() {

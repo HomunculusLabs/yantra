@@ -227,7 +227,7 @@ export function SearchDialog() {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({
-                        prompt: `Search the knowledge base at /data for content related to: "${query}". List any relevant pages, sections, or information you find. Be concise.`,
+                        prompt: `Search the configured Obsidian vault for content related to: "${query}". List any relevant pages, sections, or information you find. Be concise.`,
                       }),
                     });
                     if (res.ok) {

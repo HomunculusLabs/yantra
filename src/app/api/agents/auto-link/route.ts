@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { spawn } from "child_process";
 import { buildTree } from "@/lib/storage/tree-builder";
 import type { TreeNode } from "@/types";
+import {
+  startConversationRun,
+  waitForConversationCompletion,
+} from "@/lib/agents/conversation-runner";
 
 function flattenPaths(nodes: TreeNode[]): string[] {
   const paths: string[] = [];
@@ -32,27 +35,25 @@ ${pageList}
 Return ONLY a JSON array of page paths that are relevant to this task. Example: ["companies/competitors", "engineering/api-docs"]
 If no pages are relevant, return []. Return ONLY the JSON array, nothing else.`;
 
-    const result = await new Promise<string>((resolve, reject) => {
-      const proc = spawn(
-        "claude",
-        ["--dangerously-skip-permissions", "-p", prompt, "--output-format", "text"],
-        { stdio: ["pipe", "pipe", "pipe"] }
-      );
-
-      let stdout = "";
-      proc.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
-      proc.on("close", (code) => {
-        if (code === 0) resolve(stdout.trim());
-        else reject(new Error(`Exit code ${code}`));
-      });
-      proc.on("error", reject);
-      setTimeout(() => { proc.kill(); reject(new Error("Timeout")); }, 30_000);
+    const conversation = await startConversationRun({
+      agentSlug: "general",
+      title: `Auto-link: ${title}`.slice(0, 80),
+      trigger: "manual",
+      prompt,
+      timeoutSeconds: 30,
     });
 
-    // Parse the JSON array from Claude's response
+    const completion = await waitForConversationCompletion(conversation.id);
+    if (completion.status !== "completed") {
+      return NextResponse.json(
+        { error: completion.output || "Auto-link failed" },
+        { status: 500 }
+      );
+    }
+
     let linkedPages: string[] = [];
     try {
-      const match = result.match(/\[[\s\S]*\]/);
+      const match = completion.output.match(/\[[\s\S]*\]/);
       if (match) {
         linkedPages = JSON.parse(match[0]);
       }
@@ -60,7 +61,7 @@ If no pages are relevant, return []. Return ONLY the JSON array, nothing else.`;
       linkedPages = [];
     }
 
-    return NextResponse.json({ linkedPages });
+    return NextResponse.json({ linkedPages, conversationId: conversation.id });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

@@ -11,7 +11,7 @@ export interface FrontMatter {
 export interface TreeNode {
   name: string;
   path: string;
-  type: "file" | "directory" | "website" | "app" | "pdf" | "csv";
+  type: "file" | "text" | "directory" | "website" | "app" | "pdf" | "csv";
   hasRepo?: boolean;
   frontmatter?: Partial<FrontMatter>;
   children?: TreeNode[];
@@ -19,6 +19,10 @@ export interface TreeNode {
 
 export interface PageData {
   path: string;
+  requestedPath?: string;
+  backingPath?: string;
+  kind?: "markdown" | "directory-index" | "text" | "pdf" | "csv";
+  editable?: boolean;
   content: string;
   frontmatter: FrontMatter;
 }

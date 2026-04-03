@@ -35,6 +35,7 @@ export async function POST(
       workdir: body.workdir,
       timeout: body.timeout || 600,
       prompt: body.prompt || "",
+      execution: body.execution,
       on_complete: body.on_complete,
       on_failure: body.on_failure,
       createdAt: now,

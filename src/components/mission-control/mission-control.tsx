@@ -59,6 +59,21 @@ export function MissionControl() {
   const selectPage = useTreeStore((s) => s.selectPage);
   const loadPage = useEditorStore((s) => s.loadPage);
 
+  const openPath = useCallback((filePath: string) => {
+    const normalized = filePath.startsWith("/data/")
+      ? filePath.slice(6)
+      : filePath.startsWith("data/")
+        ? filePath.slice(5)
+        : filePath.startsWith("/@runtime/")
+          ? filePath.slice(1)
+          : filePath;
+
+    if (!normalized) return;
+    setSection({ type: "page" });
+    selectPage(normalized);
+    loadPage(normalized);
+  }, [loadPage, selectPage, setSection]);
+
   // Load company name from config
   useEffect(() => {
     fetch("/api/agents/config")
@@ -605,7 +620,7 @@ Choose an appropriate department. Pick a descriptive emoji. Make the body a comp
                     const slug = lead?.slug || dept.agents[0]?.slug;
                     if (slug) {
                       setSection({ type: "page" });
-                      selectPage(`.agents/${slug}/workspace`);
+                      selectPage(`@runtime/.agents/${slug}/workspace`);
                     }
                   }}
                 />
@@ -687,15 +702,7 @@ Choose an appropriate department. Pick a descriptive emoji. Make the body a comp
         {/* Agent Slack */}
         <SlackPanel
           height={220}
-          onOpenFile={(filePath) => {
-            const dataIdx = filePath.indexOf("/data/");
-            if (dataIdx !== -1) {
-              const relPath = filePath.slice(dataIdx + 6);
-              setSection({ type: "page" });
-              selectPage(relPath);
-              loadPage(relPath);
-            }
-          }}
+          onOpenFile={openPath}
         />
         </>
         )}
@@ -779,7 +786,7 @@ Choose an appropriate department. Pick a descriptive emoji. Make the body a comp
               </h2>
               <p className="text-[12px] text-muted-foreground/60 mt-2 leading-relaxed">
                 This will activate <strong>{agents.filter((a) => !a.active).length} paused agents</strong> and schedule their heartbeats.
-                Agents will begin running Claude CLI on their configured intervals, which uses API credits.
+                Agents will begin running their configured CLI launchers on schedule.
               </p>
             </div>
             <div className="flex justify-end gap-2">
@@ -808,15 +815,8 @@ Choose an appropriate department. Pick a descriptive emoji. Make the body a comp
             setSection({ type: "agent", slug });
           }}
           onOpenFile={(filePath) => {
-            // Convert absolute path to relative KB path
-            const dataIdx = filePath.indexOf("/data/");
-            if (dataIdx !== -1) {
-              const relPath = filePath.slice(dataIdx + 6); // strip "/data/"
-              setDetailSlug(null);
-              setSection({ type: "page" });
-              selectPage(relPath);
-              loadPage(relPath);
-            }
+            setDetailSlug(null);
+            openPath(filePath);
           }}
         />
       )}

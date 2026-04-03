@@ -1,6 +1,5 @@
 import simpleGit, { SimpleGit } from "simple-git";
 import { DATA_DIR } from "@/lib/storage/path-utils";
-import { fileExists } from "@/lib/storage/fs-operations";
 import path from "path";
 
 let git: SimpleGit | null = null;
@@ -8,18 +7,10 @@ let git: SimpleGit | null = null;
 async function getGit(): Promise<SimpleGit | null> {
   if (git) return git;
 
-  const gitDir = path.join(DATA_DIR, ".git");
-  if (await fileExists(gitDir)) {
-    git = simpleGit(DATA_DIR);
-    return git;
-  }
-
-  // Initialize git in data dir if not exists
   try {
-    git = simpleGit(DATA_DIR);
-    await git.init();
-    await git.addConfig("user.email", "kb@cabinet.dev");
-    await git.addConfig("user.name", "Cabinet");
+    const candidate = simpleGit(DATA_DIR);
+    await candidate.revparse(["--git-dir"]);
+    git = candidate;
     return git;
   } catch {
     return null;
@@ -29,6 +20,14 @@ async function getGit(): Promise<SimpleGit | null> {
 let commitTimer: ReturnType<typeof setTimeout> | null = null;
 
 export async function autoCommit(pagePath: string, action: "Update" | "Add" | "Delete") {
+  if (
+    pagePath.startsWith("@runtime/") ||
+    pagePath.startsWith(".agents/") ||
+    pagePath.startsWith(".jobs/")
+  ) {
+    return;
+  }
+
   // Debounce commits — batch within 5 seconds
   if (commitTimer) clearTimeout(commitTimer);
   commitTimer = setTimeout(async () => {

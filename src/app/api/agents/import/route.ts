@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import fs from "fs/promises";
 import matter from "gray-matter";
-import { DATA_DIR } from "@/lib/storage/path-utils";
+import { getCabinetRoots } from "@/lib/config/cabinet-roots";
 import { writePersona } from "@/lib/agents/persona-manager";
 
 async function ensureDir(dir: string) {
@@ -17,8 +17,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid bundle format" }, { status: 400 });
     }
 
+    const roots = getCabinetRoots();
     let slug = bundle.agent.slug;
-    const agentDir = path.join(DATA_DIR, ".agents", slug);
+    const agentDir = path.join(roots.runtimeAgentsRoot, slug);
     try {
       await fs.access(path.join(agentDir, "persona.md"));
       slug = `${slug}-imported-${Date.now().toString(36).slice(-4)}`;
@@ -46,7 +47,7 @@ export async function POST(req: NextRequest) {
       body: bundle.agent.body || "",
     });
 
-    const workspaceDir = path.join(DATA_DIR, ".agents", slug, "workspace");
+    const workspaceDir = path.join(roots.runtimeAgentsRoot, slug, "workspace");
     await ensureDir(workspaceDir);
 
     if (bundle.workspaceIndex) {
@@ -56,9 +57,9 @@ export async function POST(req: NextRequest) {
       await fs.writeFile(path.join(workspaceDir, "index.md"), newWsContent, "utf-8");
     }
 
-    await ensureDir(path.join(DATA_DIR, ".agents", ".memory", slug));
-    await ensureDir(path.join(DATA_DIR, ".agents", slug, "workspace", "reports"));
-    await ensureDir(path.join(DATA_DIR, ".agents", slug, "workspace", "data"));
+    await ensureDir(path.join(roots.runtimeAgentsRoot, ".memory", slug));
+    await ensureDir(path.join(roots.runtimeAgentsRoot, slug, "workspace", "reports"));
+    await ensureDir(path.join(roots.runtimeAgentsRoot, slug, "workspace", "data"));
 
     return NextResponse.json({
       success: true,

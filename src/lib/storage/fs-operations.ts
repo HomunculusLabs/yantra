@@ -1,5 +1,5 @@
 import fs from "fs/promises";
-import { DATA_DIR } from "./path-utils";
+import { ensureVaultRootExists } from "@/lib/config/cabinet-roots";
 
 export async function readFileContent(absPath: string): Promise<string> {
   return fs.readFile(absPath, "utf-8");
@@ -19,8 +19,19 @@ export async function deleteFileOrDir(absPath: string): Promise<void> {
 export async function listDirectory(
   absPath: string
 ): Promise<{ name: string; isDirectory: boolean }[]> {
-  const entries = await fs.readdir(absPath, { withFileTypes: true });
-  return entries.map((e) => ({ name: e.name, isDirectory: e.isDirectory() }));
+  try {
+    const entries = await fs.readdir(absPath, { withFileTypes: true });
+    return entries.map((e) => ({ name: e.name, isDirectory: e.isDirectory() }));
+  } catch (error) {
+    const code =
+      typeof error === "object" && error && "code" in error
+        ? String((error as { code?: string }).code)
+        : "";
+    if (code === "EACCES" || code === "EPERM" || code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
 }
 
 export async function ensureDirectory(absPath: string): Promise<void> {
@@ -37,5 +48,5 @@ export async function fileExists(absPath: string): Promise<boolean> {
 }
 
 export async function ensureDataDir(): Promise<void> {
-  await ensureDirectory(DATA_DIR);
+  ensureVaultRootExists();
 }

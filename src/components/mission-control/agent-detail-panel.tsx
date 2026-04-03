@@ -516,7 +516,7 @@ export function AgentDetailPanel({ slug, onClose, onNavigateToAgent, onOpenFile 
                 workspace.length > 0 ? (
                   <button
                     className="text-[10px] text-primary/70 hover:text-primary transition-colors flex items-center gap-1"
-                    onClick={() => onOpenFile?.(`/data/.agents/${slug}/workspace`)}
+                    onClick={() => onOpenFile?.(`@runtime/.agents/${slug}/workspace`)}
                   >
                     Open in KB
                     <ExternalLink className="h-2.5 w-2.5" />
@@ -720,7 +720,7 @@ export function AgentDetailPanel({ slug, onClose, onNavigateToAgent, onOpenFile 
               <Section icon={Brain} title="Memory" action={
                 <button
                   className="text-[10px] text-primary/70 hover:text-primary transition-colors flex items-center gap-1"
-                  onClick={() => onOpenFile?.(`/data/.agents/${slug}/.memory`)}
+                  onClick={() => onOpenFile?.(`@runtime/.agents/.memory/${slug}`)}
                 >
                   View All
                   <ExternalLink className="h-2.5 w-2.5" />

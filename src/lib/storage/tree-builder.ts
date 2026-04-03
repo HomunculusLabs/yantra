@@ -1,8 +1,47 @@
 import path from "path";
 import matter from "gray-matter";
 import type { TreeNode } from "@/types";
-import { DATA_DIR, virtualPathFromFs, isHiddenEntry } from "./path-utils";
+import {
+  DATA_DIR,
+  virtualPathFromFs,
+  isHiddenEntry,
+  isMarkdownFile,
+} from "./path-utils";
 import { listDirectory, readFileContent, fileExists } from "./fs-operations";
+import { getCabinetRoots } from "@/lib/config/cabinet-roots";
+
+const TEXT_EXTENSIONS = new Set([
+  ".json",
+  ".yaml",
+  ".yml",
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+  ".sh",
+  ".bash",
+  ".zsh",
+  ".py",
+  ".txt",
+  ".mdx",
+  ".css",
+  ".scss",
+  ".html",
+  ".xml",
+  ".toml",
+  ".ini",
+  ".env",
+  ".sql",
+  ".csv",
+]);
+
+function isLikelyTextFile(name: string): boolean {
+  const ext = path.extname(name).toLowerCase();
+  if (TEXT_EXTENSIONS.has(ext)) return true;
+  return !ext && !name.startsWith(".");
+}
 
 async function readFrontmatter(
   filePath: string
@@ -19,12 +58,15 @@ async function readFrontmatter(
 async function buildTreeRecursive(dirPath: string): Promise<TreeNode[]> {
   const entries = await listDirectory(dirPath);
   const nodes: TreeNode[] = [];
+  const { runtimeRoot } = getCabinetRoots();
 
   for (const entry of entries) {
     if (isHiddenEntry(entry.name)) continue;
-    if (entry.name === "CLAUDE.md") continue;
 
     const fullPath = path.join(dirPath, entry.name);
+    if (runtimeRoot.startsWith(`${DATA_DIR}${path.sep}`) && fullPath === runtimeRoot) {
+      continue;
+    }
     const vPath = virtualPathFromFs(fullPath);
 
     if (entry.isDirectory) {
@@ -85,16 +127,25 @@ async function buildTreeRecursive(dirPath: string): Promise<TreeNode[]> {
           title: entry.name.replace(/\.csv$/i, ""),
         },
       });
-    } else if (entry.name.endsWith(".md") && entry.name !== "index.md") {
+    } else if (isMarkdownFile(entry.name) && entry.name !== "index.md") {
       const fm = await readFrontmatter(fullPath);
       nodes.push({
         name: entry.name,
-        path: vPath.replace(/\.md$/, ""),
+        path: vPath,
         type: "file",
         frontmatter: {
           title: (fm.title as string) || entry.name.replace(/\.md$/, ""),
           icon: fm.icon as string | undefined,
           order: fm.order as number | undefined,
+        },
+      });
+    } else if (isLikelyTextFile(entry.name)) {
+      nodes.push({
+        name: entry.name,
+        path: vPath,
+        type: "text",
+        frontmatter: {
+          title: entry.name,
         },
       });
     }

@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { buildTree } from "@/lib/storage/tree-builder";
-import { ensureDataDir } from "@/lib/storage/fs-operations";
+import { ensureVaultRootExists } from "@/lib/config/cabinet-roots";
 
 export async function GET() {
   try {
-    await ensureDataDir();
+    ensureVaultRootExists();
     const tree = await buildTree();
     return NextResponse.json(tree);
   } catch (error) {

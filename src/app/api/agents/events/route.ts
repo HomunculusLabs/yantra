@@ -6,17 +6,19 @@ import { getRespondingAgents } from "@/app/api/agents/slack/route";
 import fs from "fs/promises";
 import path from "path";
 import { DATA_DIR } from "@/lib/storage/path-utils";
+import { getCabinetRoots } from "@/lib/config/cabinet-roots";
 import { getRunningConversationCounts } from "@/lib/agents/conversation-store";
 
 async function getDataDirVersion(): Promise<string> {
   try {
     const stat = await fs.stat(DATA_DIR);
     const entries = await fs.readdir(DATA_DIR, { recursive: false });
+    const { runtimeAgentsRoot } = getCabinetRoots();
 
     // Also watch .agents dir so agent add/remove triggers a refresh
     let agentsSig = "";
     try {
-      const agentsDir = path.join(DATA_DIR, ".agents");
+      const agentsDir = runtimeAgentsRoot;
       const agentStat = await fs.stat(agentsDir);
       const agentEntries = await fs.readdir(agentsDir);
       agentsSig = `${agentStat.mtimeMs}-${agentEntries.length}`;

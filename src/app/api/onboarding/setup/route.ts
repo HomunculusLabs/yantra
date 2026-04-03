@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import fs from "fs/promises";
 import matter from "gray-matter";
-import { DATA_DIR } from "@/lib/storage/path-utils";
+import { getCabinetRoots } from "@/lib/config/cabinet-roots";
 
-const AGENTS_DIR = path.join(DATA_DIR, ".agents");
+const ROOTS = getCabinetRoots();
+const AGENTS_DIR = ROOTS.runtimeAgentsRoot;
 const LIBRARY_DIR = path.join(AGENTS_DIR, ".library");
 const CONFIG_DIR = path.join(AGENTS_DIR, ".config");
-const CHAT_DIR = path.join(DATA_DIR, ".chat");
+const CHAT_DIR = path.join(ROOTS.runtimeRoot, ".chat");
 
 interface OnboardingRequest {
   answers: {

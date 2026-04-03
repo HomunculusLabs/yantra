@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import fs from "fs/promises";
-import { DATA_DIR } from "@/lib/storage/path-utils";
+import { getCabinetRoots } from "@/lib/config/cabinet-roots";
 
-const CONFIG_DIR = path.join(DATA_DIR, ".agents", ".config");
+const CONFIG_DIR = getCabinetRoots().runtimeConfigRoot;
 const INTEGRATIONS_FILE = path.join(CONFIG_DIR, "integrations.json");
 
 export interface IntegrationConfig {
@@ -31,6 +31,13 @@ export interface IntegrationConfig {
       enabled: boolean;
       frequency: "hourly" | "daily";
       to: string;
+    };
+    nextcloud_talk: {
+      enabled: boolean;
+      server_url: string;
+      username: string;
+      app_password: string;
+      default_room_token: string;
     };
   };
   scheduling: {
@@ -91,6 +98,13 @@ const DEFAULT_CONFIG: IntegrationConfig = {
     telegram: { enabled: false, bot_token: "", chat_id: "" },
     slack_webhook: { enabled: false, url: "" },
     email: { enabled: false, frequency: "daily", to: "" },
+    nextcloud_talk: {
+      enabled: false,
+      server_url: "",
+      username: "",
+      app_password: "",
+      default_room_token: "",
+    },
   },
   scheduling: {
     max_concurrent_agents: 10,

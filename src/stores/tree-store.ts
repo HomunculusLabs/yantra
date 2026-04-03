@@ -85,17 +85,12 @@ export const useTreeStore = create<TreeState>((set, get) => ({
   },
 
   createPage: async (parentPath: string, title: string) => {
-    const slug = title
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "");
-    const fullPath = parentPath ? `${parentPath}/${slug}` : slug;
-    await createPageApi(fullPath, title);
+    const newPath = await createPageApi(parentPath, title);
     if (parentPath) {
       get().expandPath(parentPath);
     }
     await get().loadTree();
-    set({ selectedPath: fullPath });
+    set({ selectedPath: newPath });
   },
 
   deletePage: async (path: string) => {

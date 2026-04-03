@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { spawn } from "child_process";
-import path from "path";
+import {
+  startConversationRun,
+  waitForConversationCompletion,
+} from "@/lib/agents/conversation-runner";
 
-const DATA_DIR = path.join(process.cwd(), "data");
+function stripCodeFences(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("```")) return trimmed;
+  return trimmed.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "").trim();
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -15,13 +21,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const prompt = `You are an AI task reviewer for a startup knowledge base. Review this task and suggest improvements.
+    const prompt = `You are an AI task reviewer for an Obsidian-based operations workspace. Review this task and suggest improvements.
 
 TASK:
 - Title: ${title}
 - Description: ${description || "(none)"}
 - Tags: ${tags?.length ? tags.join(", ") : "(none)"}
-- Linked KB pages: ${linkedPages?.length ? linkedPages.join(", ") : "(none)"}
+- Linked pages: ${linkedPages?.length ? linkedPages.join(", ") : "(none)"}
 
 Respond with ONLY a JSON object (no markdown, no code fences, no explanation) with these fields:
 {
@@ -34,65 +40,44 @@ Respond with ONLY a JSON object (no markdown, no code fences, no explanation) wi
 }
 
 Rules:
-- Keep the original intent — don't change what the task is about
+- Keep the original intent
 - Description should be actionable and specific
-- Tags should categorize the work area (engineering, research, gtm, ops, etc.)
+- Tags should categorize the work area
 - Priority: P0 = do now, P1 = do this week, P2 = backlog
 - Acceptance criteria should be concrete and verifiable
 - Output ONLY valid JSON, nothing else`;
 
-    const result = await new Promise<string>((resolve, reject) => {
-      const proc = spawn(
-        "claude",
-        ["--dangerously-skip-permissions", "-p", prompt, "--output-format", "text"],
-        {
-          cwd: DATA_DIR,
-          env: { ...process.env },
-          stdio: ["pipe", "pipe", "pipe"],
-        }
-      );
-
-      let stdout = "";
-      let stderr = "";
-
-      proc.stdout.on("data", (data: Buffer) => {
-        stdout += data.toString();
-      });
-
-      proc.stderr.on("data", (data: Buffer) => {
-        stderr += data.toString();
-      });
-
-      proc.on("close", (code: number | null) => {
-        if (code === 0) {
-          resolve(stdout.trim());
-        } else {
-          reject(new Error(stderr || `Exited with code ${code}`));
-        }
-      });
-
-      proc.on("error", (err: Error) => {
-        reject(new Error(`Failed to spawn claude: ${err.message}`));
-      });
-
-      setTimeout(() => {
-        proc.kill();
-        reject(new Error("Timed out after 2 minutes"));
-      }, 120_000);
+    const conversation = await startConversationRun({
+      agentSlug: "general",
+      title: `Task review: ${title}`.slice(0, 80),
+      trigger: "manual",
+      prompt,
+      timeoutSeconds: 120,
     });
 
-    // Parse the JSON from Claude's response
-    // Handle cases where Claude wraps in code fences
-    let cleaned = result.trim();
-    if (cleaned.startsWith("```")) {
-      cleaned = cleaned.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
+    const completion = await waitForConversationCompletion(conversation.id);
+    if (completion.status !== "completed") {
+      return NextResponse.json(
+        { error: completion.output || "Review failed" },
+        { status: 500 }
+      );
     }
 
-    const review = JSON.parse(cleaned);
+    const cleaned = stripCodeFences(completion.output);
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      return NextResponse.json(
+        { error: "Review response did not contain JSON", output: completion.output },
+        { status: 500 }
+      );
+    }
+
+    const review = JSON.parse(jsonMatch[0]);
 
     return NextResponse.json({
       ok: true,
       taskId,
+      conversationId: conversation.id,
       review,
     });
   } catch (error) {

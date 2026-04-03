@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import fs from "fs/promises";
-import { DATA_DIR } from "@/lib/storage/path-utils";
+import { getCabinetRoots } from "@/lib/config/cabinet-roots";
 import {
   readPersona,
   writePersona,
@@ -26,7 +26,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   // Session output retrieval
   const sessionTs = searchParams.get("session");
   if (sessionTs) {
-    const sessionsDir = path.join(DATA_DIR, ".agents", slug, "sessions");
+    const sessionsDir = path.join(getCabinetRoots().runtimeAgentsRoot, slug, "sessions");
     const sessionFile = path.join(sessionsDir, `${sessionTs.replace(/[:.]/g, "-")}.txt`);
     // Validate path stays within sessions dir
     if (!sessionFile.startsWith(sessionsDir)) {

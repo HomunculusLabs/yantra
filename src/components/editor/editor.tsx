@@ -28,7 +28,7 @@ async function uploadFile(pagePath: string, file: File): Promise<string | null> 
 }
 
 export function KBEditor() {
-  const { currentPath, content, saveStatus, frontmatter } = useEditorStore();
+  const { currentPath, content, saveStatus, frontmatter, pageKind } = useEditorStore();
   const isRtl = frontmatter?.dir === "rtl";
   const { open: openAI, clearMessages } = useAIPanelStore();
   const isLoadingRef = useRef(false);
@@ -145,6 +145,29 @@ export function KBEditor() {
           <p className="text-sm text-muted-foreground/70">
             Select a page from the sidebar or create a new one
           </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (pageKind === "text") {
+    return (
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="px-4 py-2 border-b border-border text-[11px] text-muted-foreground">
+          Raw text editor
+        </div>
+        <div className="flex-1 overflow-y-auto p-4" dir={isRtl ? "rtl" : undefined}>
+          <textarea
+            value={content}
+            onChange={(e) => useEditorStore.getState().updateContent(e.target.value)}
+            className="w-full h-full min-h-[calc(100vh-12rem)] bg-transparent font-mono text-[13px] leading-relaxed resize-none focus:outline-none"
+            spellCheck={false}
+          />
+        </div>
+        <div className="flex items-center justify-end px-4 py-1 border-t border-border text-xs text-muted-foreground/60">
+          {saveStatus === "saving" && "Saving..."}
+          {saveStatus === "saved" && "Saved"}
+          {saveStatus === "error" && "Error saving"}
         </div>
       </div>
     );

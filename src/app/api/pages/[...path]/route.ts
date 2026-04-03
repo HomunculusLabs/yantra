@@ -23,7 +23,8 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
     const virtualPath = segments.join("/");
     const body = await req.json();
     await writePage(virtualPath, body.content, body.frontmatter);
-    autoCommit(virtualPath, "Update");
+    const page = await readPage(virtualPath);
+    autoCommit(page.path, "Update");
     return NextResponse.json({ ok: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -36,9 +37,9 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     const { path: segments } = await params;
     const virtualPath = segments.join("/");
     const body = await req.json();
-    await createPage(virtualPath, body.title);
-    autoCommit(virtualPath, "Add");
-    return NextResponse.json({ ok: true }, { status: 201 });
+    const newPath = await createPage(virtualPath, body.title);
+    autoCommit(newPath, "Add");
+    return NextResponse.json({ ok: true, newPath }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     const status = message.includes("already exists") ? 409 : 500;

@@ -1,7 +1,7 @@
 import path from "path";
 import yaml from "js-yaml";
 import type { JobConfig, JobRun } from "@/types/jobs";
-import { DATA_DIR } from "@/lib/storage/path-utils";
+import { getCabinetRoots } from "@/lib/config/cabinet-roots";
 import {
   readFileContent,
   writeFileContent,
@@ -12,8 +12,9 @@ import {
 import { startJobConversation } from "@/lib/agents/conversation-runner";
 import { reloadDaemonSchedules } from "@/lib/agents/daemon-client";
 
-const JOBS_DIR = path.join(DATA_DIR, ".jobs");
-const AGENTS_DIR = path.join(DATA_DIR, ".agents");
+const { runtimeJobsRoot, runtimeAgentsRoot } = getCabinetRoots();
+const JOBS_DIR = runtimeJobsRoot;
+const AGENTS_DIR = runtimeAgentsRoot;
 const HISTORY_DIR = path.join(JOBS_DIR, ".history");
 
 const runHistory = new Map<string, JobRun>();
