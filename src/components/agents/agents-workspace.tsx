@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Bot,
   CheckCircle2,
@@ -61,6 +61,32 @@ interface NewAgentDraft {
   workspace: string;
   body: string;
   active: boolean;
+}
+
+interface StackCatalogEntry {
+  label: string;
+  path: string;
+  source: string;
+}
+
+interface AgentStackPayload {
+  stackPath: string | null;
+  stack: {
+    paths?: {
+      primary?: string;
+      secondary?: string;
+      tertiary?: string;
+    };
+    contextFiles?: string[];
+    skills?: string[];
+    skillsets?: string[];
+    extraExtensions?: string[];
+  } | null;
+  catalog: {
+    extensions: StackCatalogEntry[];
+    skills: StackCatalogEntry[];
+    skillsets: StackCatalogEntry[];
+  };
 }
 
 const GENERAL_AGENT: AgentSummary = {
@@ -148,6 +174,27 @@ function flattenTree(nodes: TreeNode[]): { path: string; title: string }[] {
   return pages;
 }
 
+function collectContextOptions(nodes: TreeNode[]): { path: string; title: string }[] {
+  const pages: { path: string; title: string }[] = [];
+
+  function walk(list: TreeNode[]) {
+    for (const node of list) {
+      if ((node.type === "file" || node.type === "text") && !node.path.startsWith("@runtime")) {
+        pages.push({
+          path: node.path,
+          title: node.frontmatter?.title || node.name,
+        });
+      }
+      if (node.children) {
+        walk(node.children);
+      }
+    }
+  }
+
+  walk(nodes);
+  return pages;
+}
+
 function formatRelative(iso: string): string {
   const delta = Date.now() - new Date(iso).getTime();
   const minutes = Math.floor(delta / 60000);
@@ -193,6 +240,323 @@ function TriggerChip({
     >
       {children}
     </button>
+  );
+}
+
+function togglePath(paths: string[], path: string): string[] {
+  return paths.includes(path)
+    ? paths.filter((entry) => entry !== path)
+    : [...paths, path];
+}
+
+function StackOptionChecklist({
+  label,
+  options,
+  selected,
+  onToggle,
+}: {
+  label: string;
+  options: StackCatalogEntry[];
+  selected: string[];
+  onToggle: (path: string) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+        {label}
+      </p>
+      <div className="max-h-48 space-y-1 overflow-auto rounded-lg border border-border bg-background/60 p-2">
+        {options.length === 0 ? (
+          <p className="text-[11px] text-muted-foreground">No options found.</p>
+        ) : (
+          options.map((option) => (
+            <label
+              key={option.path}
+              className="flex items-start gap-2 rounded-md px-2 py-1.5 hover:bg-muted/40"
+            >
+              <input
+                type="checkbox"
+                checked={selected.includes(option.path)}
+                onChange={() => onToggle(option.path)}
+                className="mt-0.5"
+              />
+              <span className="min-w-0">
+                <span className="block text-[12px] text-foreground">
+                  {option.label}
+                </span>
+                <span className="block truncate font-mono text-[10px] text-muted-foreground">
+                  {option.path}
+                </span>
+                <span className="block text-[10px] text-muted-foreground/80">
+                  {option.source}
+                </span>
+              </span>
+            </label>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AgentStackSettingsCard({
+  slug,
+}: {
+  slug: string;
+}) {
+  const nodes = useTreeStore((s) => s.nodes);
+  const [payload, setPayload] = useState<AgentStackPayload | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [contextCandidate, setContextCandidate] = useState("");
+  const contextOptions = useMemo(() => collectContextOptions(nodes), [nodes]);
+  const datalistId = `stack-context-options-${slug}`;
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/agents/personas/${slug}/stack`);
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to load stack");
+      }
+      setPayload(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load stack");
+      setPayload(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [slug]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const updatePaths = (
+    key: "primary" | "secondary" | "tertiary",
+    value: string
+  ) => {
+    setPayload((current) =>
+      current
+        ? {
+            ...current,
+            stack: {
+              ...(current.stack || {}),
+              paths: {
+                ...(current.stack?.paths || {}),
+                [key]: value,
+              },
+            },
+          }
+        : current
+    );
+  };
+
+  const updateList = (
+    key: "contextFiles" | "skills" | "skillsets" | "extraExtensions",
+    value: string[]
+  ) => {
+    setPayload((current) =>
+      current
+        ? {
+            ...current,
+            stack: {
+              ...(current.stack || {}),
+              [key]: value,
+            },
+          }
+        : current
+    );
+  };
+
+  const save = async () => {
+    if (!payload?.stack) return;
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/agents/personas/${slug}/stack`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stack: payload.stack }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to save stack");
+      }
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save stack");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-border p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <h4 className="text-[13px] font-semibold">Stack configuration</h4>
+          <p className="text-[11px] text-muted-foreground">
+            Extensions, skill stacks, and injected context for the actual pi stack file
+          </p>
+          {payload?.stackPath ? (
+            <p className="mt-1 font-mono text-[10px] text-muted-foreground">
+              {payload.stackPath}
+            </p>
+          ) : null}
+        </div>
+        <Button size="sm" className="h-8 text-xs" onClick={save} disabled={saving || !payload?.stack}>
+          {saving ? "Saving..." : "Save stack"}
+        </Button>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading stack...
+        </div>
+      ) : !payload?.stack ? (
+        <div className="text-[12px] text-muted-foreground">
+          No stack file is currently wired for this agent.
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+            <label className="space-y-1 text-[11px] text-muted-foreground">
+              <span>Primary context</span>
+              <input
+                list={datalistId}
+                value={payload.stack.paths?.primary || ""}
+                onChange={(event) => updatePaths("primary", event.target.value)}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[12px] text-foreground"
+                spellCheck={false}
+              />
+            </label>
+            <label className="space-y-1 text-[11px] text-muted-foreground">
+              <span>Secondary context</span>
+              <input
+                list={datalistId}
+                value={payload.stack.paths?.secondary || ""}
+                onChange={(event) => updatePaths("secondary", event.target.value)}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[12px] text-foreground"
+                spellCheck={false}
+              />
+            </label>
+            <label className="space-y-1 text-[11px] text-muted-foreground">
+              <span>Tertiary context</span>
+              <input
+                list={datalistId}
+                value={payload.stack.paths?.tertiary || ""}
+                onChange={(event) => updatePaths("tertiary", event.target.value)}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[12px] text-foreground"
+                spellCheck={false}
+              />
+            </label>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[11px] text-muted-foreground">Extra context files</span>
+              <div className="flex items-center gap-2">
+                <input
+                  list={datalistId}
+                  value={contextCandidate}
+                  onChange={(event) => setContextCandidate(event.target.value)}
+                  className="w-[420px] rounded-lg border border-border bg-background px-3 py-2 font-mono text-[12px] text-foreground"
+                  placeholder="Pick or paste a vault-relative path"
+                  spellCheck={false}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => {
+                    const candidate = contextCandidate.trim();
+                    if (!candidate) return;
+                    updateList(
+                      "contextFiles",
+                      payload.stack?.contextFiles?.includes(candidate)
+                        ? payload.stack.contextFiles || []
+                        : [...(payload.stack?.contextFiles || []), candidate]
+                    );
+                    setContextCandidate("");
+                  }}
+                >
+                  Add
+                </Button>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2 rounded-lg border border-border bg-background/60 p-3">
+              {(payload.stack.contextFiles || []).length === 0 ? (
+                <p className="text-[11px] text-muted-foreground">No extra context files selected.</p>
+              ) : (
+                (payload.stack.contextFiles || []).map((path) => (
+                  <button
+                    key={path}
+                    onClick={() =>
+                      updateList(
+                        "contextFiles",
+                        (payload.stack?.contextFiles || []).filter((entry) => entry !== path)
+                      )
+                    }
+                    className="rounded-full bg-muted px-2.5 py-1 text-[11px] text-muted-foreground hover:text-foreground"
+                    title="Remove"
+                  >
+                    {path}
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+            <StackOptionChecklist
+              label="Extensions"
+              options={payload.catalog.extensions}
+              selected={payload.stack.extraExtensions || []}
+              onToggle={(path) =>
+                updateList(
+                  "extraExtensions",
+                  togglePath(payload.stack?.extraExtensions || [], path)
+                )
+              }
+            />
+            <StackOptionChecklist
+              label="Skills"
+              options={payload.catalog.skills}
+              selected={payload.stack.skills || []}
+              onToggle={(path) =>
+                updateList("skills", togglePath(payload.stack?.skills || [], path))
+              }
+            />
+            <StackOptionChecklist
+              label="Skillsets"
+              options={payload.catalog.skillsets}
+              selected={payload.stack.skillsets || []}
+              onToggle={(path) =>
+                updateList(
+                  "skillsets",
+                  togglePath(payload.stack?.skillsets || [], path)
+                )
+              }
+            />
+          </div>
+
+          <datalist id={datalistId}>
+            {contextOptions.map((option) => (
+              <option key={option.path} value={option.path}>
+                {option.title}
+              </option>
+            ))}
+          </datalist>
+
+          {error ? <p className="text-[11px] text-red-400">{error}</p> : null}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1262,6 +1626,8 @@ export function AgentsWorkspace({
                         </label>
                       </div>
                     </div>
+
+                    <AgentStackSettingsCard slug={settingsPersona.slug} />
 
                     <div className="grid grid-cols-[280px_minmax(0,1fr)] gap-4">
                       <div className="rounded-xl border border-border">

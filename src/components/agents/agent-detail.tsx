@@ -70,6 +70,32 @@ interface AgentRelatedFile {
   creatable?: boolean;
 }
 
+interface StackCatalogEntry {
+  label: string;
+  path: string;
+  source: string;
+}
+
+interface AgentStackPayload {
+  stackPath: string | null;
+  stack: {
+    paths?: {
+      primary?: string;
+      secondary?: string;
+      tertiary?: string;
+    };
+    contextFiles?: string[];
+    skills?: string[];
+    skillsets?: string[];
+    extraExtensions?: string[];
+  } | null;
+  catalog: {
+    extensions: StackCatalogEntry[];
+    skills: StackCatalogEntry[];
+    skillsets: StackCatalogEntry[];
+  };
+}
+
 interface HeartbeatRecord {
   agentSlug: string;
   timestamp: string;
@@ -375,6 +401,294 @@ function LauncherConfigCard({
   );
 }
 
+function OptionChecklist({
+  label,
+  options,
+  selected,
+  onToggle,
+}: {
+  label: string;
+  options: StackCatalogEntry[];
+  selected: string[];
+  onToggle: (path: string) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
+        {label}
+      </p>
+      <div className="max-h-48 space-y-1 overflow-auto rounded-lg border border-border bg-background/60 p-2">
+        {options.length === 0 ? (
+          <p className="text-[11px] text-muted-foreground">No options found.</p>
+        ) : (
+          options.map((option) => (
+            <label
+              key={option.path}
+              className="flex items-start gap-2 rounded-md px-2 py-1.5 hover:bg-muted/40"
+            >
+              <input
+                type="checkbox"
+                checked={selected.includes(option.path)}
+                onChange={() => onToggle(option.path)}
+                className="mt-0.5"
+              />
+              <span className="min-w-0">
+                <span className="block text-[12px] text-foreground">
+                  {option.label}
+                </span>
+                <span className="block truncate text-[10px] font-mono text-muted-foreground">
+                  {option.path}
+                </span>
+                <span className="block text-[10px] text-muted-foreground/80">
+                  {option.source}
+                </span>
+              </span>
+            </label>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function togglePath(paths: string[], path: string): string[] {
+  return paths.includes(path)
+    ? paths.filter((entry) => entry !== path)
+    : [...paths, path];
+}
+
+function StackConfigCard({
+  slug,
+  onSaved,
+}: {
+  slug: string;
+  onSaved: () => void | Promise<void>;
+}) {
+  const [payload, setPayload] = useState<AgentStackPayload | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/agents/personas/${slug}/stack`);
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to load stack");
+      }
+      setPayload(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load stack");
+      setPayload(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [slug]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const updatePaths = (
+    key: "primary" | "secondary" | "tertiary",
+    value: string
+  ) => {
+    setPayload((current) =>
+      current
+        ? {
+            ...current,
+            stack: {
+              ...(current.stack || {}),
+              paths: {
+                ...(current.stack?.paths || {}),
+                [key]: value,
+              },
+            },
+          }
+        : current
+    );
+  };
+
+  const updateList = (
+    key: "contextFiles" | "skills" | "skillsets" | "extraExtensions",
+    value: string[]
+  ) => {
+    setPayload((current) =>
+      current
+        ? {
+            ...current,
+            stack: {
+              ...(current.stack || {}),
+              [key]: value,
+            },
+          }
+        : current
+    );
+  };
+
+  const save = async () => {
+    if (!payload?.stack) return;
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/agents/personas/${slug}/stack`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stack: payload.stack }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to save stack");
+      }
+      setPayload((current) =>
+        current
+          ? {
+              ...current,
+              stackPath: data.stackPath || current.stackPath,
+              stack: data.stack || current.stack,
+            }
+          : current
+      );
+      await onSaved();
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save stack");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="bg-muted/20 border border-border rounded-lg p-4 space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
+            Stack Configuration
+          </p>
+          <p className="text-[11px] text-muted-foreground/70 mt-1">
+            Edit the actual pi stack file used at launch.
+          </p>
+          {payload?.stackPath ? (
+            <p className="mt-1 text-[10px] font-mono text-muted-foreground">
+              {payload.stackPath}
+            </p>
+          ) : null}
+        </div>
+        <Button
+          size="sm"
+          className="h-7 gap-1 text-[10px]"
+          onClick={() => void save()}
+          disabled={saving || !payload?.stack}
+        >
+          <Save className="h-3 w-3" />
+          {saving ? "Saving..." : "Save stack"}
+        </Button>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading stack...
+        </div>
+      ) : !payload?.stack ? (
+        <p className="text-[12px] text-muted-foreground">
+          No stack file is wired for this agent yet.
+        </p>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div>
+              <p className="mb-1.5 text-[10px] text-muted-foreground">Primary context</p>
+              <input
+                value={payload.stack.paths?.primary || ""}
+                onChange={(e) => updatePaths("primary", e.target.value)}
+                className="w-full bg-background border border-border rounded px-2 py-1.5 text-[12px] font-mono focus:outline-none focus:ring-1 focus:ring-primary/50"
+                spellCheck={false}
+              />
+            </div>
+            <div>
+              <p className="mb-1.5 text-[10px] text-muted-foreground">Secondary context</p>
+              <input
+                value={payload.stack.paths?.secondary || ""}
+                onChange={(e) => updatePaths("secondary", e.target.value)}
+                className="w-full bg-background border border-border rounded px-2 py-1.5 text-[12px] font-mono focus:outline-none focus:ring-1 focus:ring-primary/50"
+                spellCheck={false}
+              />
+            </div>
+            <div>
+              <p className="mb-1.5 text-[10px] text-muted-foreground">Tertiary context</p>
+              <input
+                value={payload.stack.paths?.tertiary || ""}
+                onChange={(e) => updatePaths("tertiary", e.target.value)}
+                className="w-full bg-background border border-border rounded px-2 py-1.5 text-[12px] font-mono focus:outline-none focus:ring-1 focus:ring-primary/50"
+                spellCheck={false}
+              />
+            </div>
+          </div>
+
+          <div>
+            <p className="mb-1.5 text-[10px] text-muted-foreground uppercase tracking-wider">
+              Extra context files
+            </p>
+            <textarea
+              value={(payload.stack.contextFiles || []).join("\n")}
+              onChange={(e) =>
+                updateList(
+                  "contextFiles",
+                  e.target.value
+                    .split("\n")
+                    .map((entry) => entry.trim())
+                    .filter(Boolean)
+                )
+              }
+              className="min-h-[96px] w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-[12px] font-mono text-foreground"
+              spellCheck={false}
+              placeholder="One vault-relative path per line"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+            <OptionChecklist
+              label="Extensions"
+              options={payload.catalog.extensions}
+              selected={payload.stack.extraExtensions || []}
+              onToggle={(path) =>
+                updateList(
+                  "extraExtensions",
+                  togglePath(payload.stack?.extraExtensions || [], path)
+                )
+              }
+            />
+            <OptionChecklist
+              label="Skills"
+              options={payload.catalog.skills}
+              selected={payload.stack.skills || []}
+              onToggle={(path) =>
+                updateList("skills", togglePath(payload.stack?.skills || [], path))
+              }
+            />
+            <OptionChecklist
+              label="Skillsets"
+              options={payload.catalog.skillsets}
+              selected={payload.stack.skillsets || []}
+              onToggle={(path) =>
+                updateList(
+                  "skillsets",
+                  togglePath(payload.stack?.skillsets || [], path)
+                )
+              }
+            />
+          </div>
+        </>
+      )}
+
+      {error ? <p className="text-[11px] text-red-400">{error}</p> : null}
+    </div>
+  );
+}
+
 /* ─── Definition Tab ─── */
 function DefinitionTab({
   persona,
@@ -407,27 +721,30 @@ function DefinitionTab({
       .catch(() => {});
   }, [persona.body]);
 
+  const loadRelatedFiles = useCallback(async () => {
+    setFilesLoading(true);
+    try {
+      const r = await fetch(`/api/agents/personas/${slug}/files`);
+      const data = r.ok ? await r.json() : { files: [] };
+      setRelatedFiles(Array.isArray(data.files) ? data.files : []);
+    } catch {
+      setRelatedFiles([]);
+    } finally {
+      setFilesLoading(false);
+    }
+  }, [slug]);
+
   useEffect(() => {
     let cancelled = false;
-    setFilesLoading(true);
-    fetch(`/api/agents/personas/${slug}/files`)
-      .then((r) => (r.ok ? r.json() : { files: [] }))
-      .then((data) => {
-        if (!cancelled) {
-          setRelatedFiles(Array.isArray(data.files) ? data.files : []);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setRelatedFiles([]);
-      })
-      .finally(() => {
-        if (!cancelled) setFilesLoading(false);
-      });
+    void (async () => {
+      await loadRelatedFiles();
+      if (cancelled) return;
+    })();
 
     return () => {
       cancelled = true;
     };
-  }, [slug, persona.launcher]);
+  }, [loadRelatedFiles, persona.launcher]);
 
   const encodePagePath = (virtualPath: string) =>
     virtualPath
@@ -513,6 +830,14 @@ function DefinitionTab({
       </div>
 
       <LauncherConfigCard value={persona.launcher} onSave={saveLauncher} />
+
+      <StackConfigCard
+        slug={slug}
+        onSaved={async () => {
+          await loadRelatedFiles();
+          onRefresh();
+        }}
+      />
 
       <div className="bg-muted/20 border border-border rounded-lg p-4 space-y-3">
         <div>
