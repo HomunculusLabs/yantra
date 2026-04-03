@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import { Sparkles, Code2 } from "lucide-react";
 import { editorExtensions } from "./extensions";
 import { EditorToolbar } from "./editor-toolbar";
 import { SlashCommands } from "./slash-commands";
+import { TextCodeEditor, getTextEditorLanguage } from "./text-code-editor";
 import { useEditorStore } from "@/stores/editor-store";
 import { useAIPanelStore } from "@/stores/ai-panel-store";
 import { markdownToHtml } from "@/lib/markdown/to-html";
 import { htmlToMarkdown } from "@/lib/markdown/to-markdown";
+import type { SaveStatus } from "@/types";
 
 async function uploadFile(pagePath: string, file: File): Promise<string | null> {
   const formData = new FormData();
@@ -27,9 +29,77 @@ async function uploadFile(pagePath: string, file: File): Promise<string | null> 
   }
 }
 
-export function KBEditor() {
-  const { currentPath, content, saveStatus, frontmatter, pageKind } = useEditorStore();
-  const isRtl = frontmatter?.dir === "rtl";
+function SaveIndicator({ saveStatus, errorLabel = "Save failed" }: { saveStatus: SaveStatus; errorLabel?: string }) {
+  return (
+    <div className="flex items-center justify-end px-4 py-1 border-t border-border text-xs text-muted-foreground/60">
+      {saveStatus === "saving" && "Saving..."}
+      {saveStatus === "saved" && "Saved"}
+      {saveStatus === "error" && errorLabel}
+    </div>
+  );
+}
+
+function EmptyEditorState() {
+  return (
+    <div className="flex-1 flex items-center justify-center text-muted-foreground">
+      <div className="text-center space-y-3">
+        <p className="text-lg font-medium tracking-[-0.02em]">No page selected</p>
+        <p className="text-sm text-muted-foreground/70">
+          Select a page from the sidebar or create a new one
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function TextPageEditor({
+  currentPath,
+  content,
+  saveStatus,
+  isRtl,
+}: {
+  currentPath: string;
+  content: string;
+  saveStatus: SaveStatus;
+  isRtl?: boolean;
+}) {
+  const language = useMemo(
+    () => getTextEditorLanguage(currentPath, content),
+    [currentPath, content]
+  );
+
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-border text-[11px] text-muted-foreground">
+        <span>Syntax-aware text editor</span>
+        <span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground/70">
+          {language.label}
+        </span>
+      </div>
+      <div className="flex-1 overflow-hidden" dir={isRtl ? "rtl" : undefined}>
+        <TextCodeEditor
+          path={currentPath}
+          value={content}
+          language={language}
+          onChange={(value) => useEditorStore.getState().updateContent(value)}
+        />
+      </div>
+      <SaveIndicator saveStatus={saveStatus} errorLabel="Error saving" />
+    </div>
+  );
+}
+
+function RichPageEditor({
+  currentPath,
+  content,
+  saveStatus,
+  isRtl,
+}: {
+  currentPath: string;
+  content: string;
+  saveStatus: SaveStatus;
+  isRtl?: boolean;
+}) {
   const { open: openAI, clearMessages } = useAIPanelStore();
   const isLoadingRef = useRef(false);
   const [sourceMode, setSourceMode] = useState(false);
@@ -41,21 +111,6 @@ export function KBEditor() {
       const html = editor.getHTML();
       const md = htmlToMarkdown(html);
       useEditorStore.getState().updateContent(md);
-    },
-    []
-  );
-
-  const handlePasteOrDrop = useCallback(
-    async (files: FileList) => {
-      const pagePath = useEditorStore.getState().currentPath;
-      if (!pagePath) return;
-
-      for (const file of Array.from(files)) {
-        const url = await uploadFile(pagePath, file);
-        if (!url) continue;
-        // For now insert via the editor reference stored separately
-        // This is handled by the editorProps below
-      }
     },
     []
   );
@@ -76,7 +131,6 @@ export function KBEditor() {
         const pagePath = useEditorStore.getState().currentPath;
         if (!pagePath) return false;
 
-        // Handle file paste
         for (const file of Array.from(files)) {
           uploadFile(pagePath, file).then((url) => {
             if (!url || !editor) return;
@@ -109,11 +163,9 @@ export function KBEditor() {
     immediatelyRender: false,
   });
 
-  // When content updates from store (after loadPage), set it in editor
   const prevPathRef = useRef<string | null>(null);
   useEffect(() => {
     if (!editor || !currentPath) return;
-    // Skip if content hasn't actually changed (same path, dirty edit)
     if (useEditorStore.getState().isDirty && currentPath === prevPathRef.current) return;
     prevPathRef.current = currentPath;
 
@@ -126,7 +178,7 @@ export function KBEditor() {
       }, 50);
     };
 
-    setContent();
+    void setContent();
   }, [editor, content, currentPath]);
 
   const handleOpenAI = () => {
@@ -134,71 +186,33 @@ export function KBEditor() {
     openAI();
   };
 
-
-  if (!currentPath) {
-    return (
-      <div className="flex-1 flex items-center justify-center text-muted-foreground">
-        <div className="text-center space-y-3">
-          <p className="text-lg font-medium tracking-[-0.02em]">
-            No page selected
-          </p>
-          <p className="text-sm text-muted-foreground/70">
-            Select a page from the sidebar or create a new one
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (pageKind === "text") {
-    return (
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="px-4 py-2 border-b border-border text-[11px] text-muted-foreground">
-          Raw text editor
-        </div>
-        <div className="flex-1 overflow-y-auto p-4" dir={isRtl ? "rtl" : undefined}>
-          <textarea
-            value={content}
-            onChange={(e) => useEditorStore.getState().updateContent(e.target.value)}
-            className="w-full h-full min-h-[calc(100vh-12rem)] bg-transparent font-mono text-[13px] leading-relaxed resize-none focus:outline-none"
-            spellCheck={false}
-          />
-        </div>
-        <div className="flex items-center justify-end px-4 py-1 border-t border-border text-xs text-muted-foreground/60">
-          {saveStatus === "saving" && "Saving..."}
-          {saveStatus === "saved" && "Saved"}
-          {saveStatus === "error" && "Error saving"}
-        </div>
-      </div>
-    );
-  }
-
   const toggleSourceMode = async () => {
     if (!sourceMode) {
-      // Switching TO source mode — grab current markdown
       setSourceText(useEditorStore.getState().content);
       setSourceMode(true);
-    } else {
-      // Switching FROM source mode — apply changes
-      useEditorStore.getState().updateContent(sourceText);
-      if (editor) {
-        isLoadingRef.current = true;
-        const html = await markdownToHtml(sourceText, currentPath ?? undefined);
-        editor.commands.setContent(html);
-        setTimeout(() => { isLoadingRef.current = false; }, 50);
-      }
-      setSourceMode(false);
+      return;
     }
+
+    useEditorStore.getState().updateContent(sourceText);
+    if (editor) {
+      isLoadingRef.current = true;
+      const html = await markdownToHtml(sourceText, currentPath);
+      editor.commands.setContent(html);
+      setTimeout(() => {
+        isLoadingRef.current = false;
+      }, 50);
+    }
+    setSourceMode(false);
   };
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <div className="flex items-center">
-        <div className="flex-1">
-          {!sourceMode && <EditorToolbar editor={editor} />}
-        </div>
+        <div className="flex-1">{!sourceMode && <EditorToolbar editor={editor} />}</div>
         <button
-          onClick={toggleSourceMode}
+          onClick={() => {
+            void toggleSourceMode();
+          }}
           className={`flex items-center gap-1.5 px-3 py-1 mr-2 text-[11px] rounded-md transition-colors border border-border ${
             sourceMode
               ? "bg-primary text-primary-foreground"
@@ -224,7 +238,6 @@ export function KBEditor() {
           <EditorContent editor={editor} />
           <SlashCommands editor={editor} />
 
-          {/* AI Edit Prompt */}
           <div className="max-w-3xl mx-auto px-8 pb-8">
             <button
               onClick={handleOpenAI}
@@ -237,13 +250,36 @@ export function KBEditor() {
         </div>
       )}
 
-      {/* Status bar */}
-      <div className="flex items-center justify-end px-4 py-1 border-t border-border text-xs text-muted-foreground/60">
-        {saveStatus === "saving" && "Saving..."}
-        {saveStatus === "saved" && "Saved"}
-        {saveStatus === "error" && "Save failed"}
-      </div>
-
+      <SaveIndicator saveStatus={saveStatus} />
     </div>
+  );
+}
+
+export function KBEditor() {
+  const { currentPath, content, saveStatus, frontmatter, pageKind } = useEditorStore();
+  const isRtl = frontmatter?.dir === "rtl";
+
+  if (!currentPath) {
+    return <EmptyEditorState />;
+  }
+
+  if (pageKind === "text") {
+    return (
+      <TextPageEditor
+        currentPath={currentPath}
+        content={content}
+        saveStatus={saveStatus}
+        isRtl={isRtl}
+      />
+    );
+  }
+
+  return (
+    <RichPageEditor
+      currentPath={currentPath}
+      content={content}
+      saveStatus={saveStatus}
+      isRtl={isRtl}
+    />
   );
 }

@@ -71,7 +71,7 @@ export function TreeNode({ node, depth }: TreeNodeProps) {
       toggleExpand(node.path);
     }
     selectPage(node.path);
-    if (node.type === "file" || node.type === "directory") {
+    if (["file", "directory", "text"].includes(node.type)) {
       loadPage(node.path);
     }
   };
