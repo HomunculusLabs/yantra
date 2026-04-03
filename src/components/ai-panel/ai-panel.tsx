@@ -479,7 +479,7 @@ export function AIPanel() {
                     useAppStore.getState().setSection({ type: "page" });
                     loadPage(session.pagePath);
                   }}
-                  className="w-full flex items-center gap-2 px-3 py-2 border border-[#ffffff08] rounded-lg text-[12px] hover:bg-accent/30 transition-colors cursor-pointer text-left"
+                  className="w-full flex items-center gap-2 px-3 py-2 border border-border/50 bg-card/40 rounded-lg text-[12px] hover:bg-accent/30 transition-colors cursor-pointer text-left"
                 >
                   <Loader2 className="h-3 w-3 text-primary animate-spin shrink-0" />
                   <span className="truncate flex-1 text-muted-foreground">
@@ -512,7 +512,7 @@ export function AIPanel() {
               {pastSessions.map((session) => (
                 <div
                   key={session.id}
-                  className="border border-[#ffffff08] rounded-lg overflow-hidden"
+                  className="border border-border/50 rounded-lg overflow-hidden bg-card/40"
                 >
                   <button
                     onClick={() => togglePastExpanded(session.id)}
@@ -533,11 +533,11 @@ export function AIPanel() {
                     </span>
                   </button>
                   {expandedPast.has(session.id) && (
-                    <div className="border-t border-[#ffffff08] bg-[#0a0a0a]">
+                    <div className="border-t border-border/50 bg-muted/35">
                       <pre className="text-[11px] text-muted-foreground p-3 whitespace-pre-wrap break-words max-h-[300px] overflow-y-auto font-mono leading-relaxed">
                         {session.summary || "(No output captured)"}
                       </pre>
-                      <div className="px-3 py-1.5 border-t border-[#ffffff08] flex items-center gap-3 text-[10px] text-muted-foreground/50">
+                      <div className="px-3 py-1.5 border-t border-border/50 flex items-center gap-3 text-[10px] text-muted-foreground/50">
                         <span>
                           <Clock className="h-2.5 w-2.5 inline mr-1" />
                           {session.duration}s
@@ -577,7 +577,7 @@ export function AIPanel() {
               </div>
 
               <div
-                className="rounded-lg overflow-hidden border border-[#ffffff10] flex-1 min-h-[200px]"
+                className="rounded-lg overflow-hidden border border-border/60 bg-card/50 flex-1 min-h-[200px]"
               >
                 <WebTerminal
                   sessionId={session.sessionId}

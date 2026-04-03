@@ -7,8 +7,10 @@ import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
+  DEFAULT_CUSTOM_THEME_NAME,
   THEMES,
   applyTheme,
+  getThemeByName,
   getStoredThemeName,
   storeThemeName,
   type ThemeDefinition,
@@ -17,15 +19,15 @@ import {
 export function ThemePicker() {
   const { theme, setTheme } = useTheme();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [activeCustomTheme, setActiveCustomTheme] = useState<string | null>(null);
+  const [activeCustomTheme, setActiveCustomTheme] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return getThemeByName(getStoredThemeName())?.name ?? DEFAULT_CUSTOM_THEME_NAME;
+  });
   const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
-
     // Load Google Fonts for all themes via <link> injected into <head>
     if (!document.getElementById("theme-fonts-link")) {
       const link = document.createElement("link");
@@ -38,14 +40,15 @@ export function ThemePicker() {
 
     // Restore custom theme
     const stored = getStoredThemeName();
-    if (stored) {
-      const themeDef = THEMES.find((t) => t.name === stored);
-      if (themeDef) {
-        applyTheme(themeDef);
-        setActiveCustomTheme(stored);
+    const themeDef = getThemeByName(stored) ?? getThemeByName(DEFAULT_CUSTOM_THEME_NAME);
+    if (themeDef) {
+      applyTheme(themeDef);
+      setTheme(themeDef.type);
+      if (!stored) {
+        storeThemeName(themeDef.name);
       }
     }
-  }, []);
+  }, [setTheme]);
 
   // Close menu on click outside
   useEffect(() => {
@@ -104,7 +107,7 @@ export function ThemePicker() {
   const darkThemes = THEMES.filter((t) => t.type === "dark");
   const lightThemes = THEMES.filter((t) => t.type === "light");
 
-  const menu = menuOpen && mounted
+  const menu = menuOpen && typeof document !== "undefined"
     ? createPortal(
         <div
           ref={menuRef}

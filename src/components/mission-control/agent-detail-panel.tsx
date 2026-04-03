@@ -6,7 +6,6 @@ import {
   Pause,
   Play,
   Target,
-  Zap,
   FolderOpen,
   Brain,
   Clock,
@@ -668,12 +667,12 @@ export function AgentDetailPanel({ slug, onClose, onNavigateToAgent, onOpenFile 
                 </div>
               }>
                 {runningHeartbeat ? (
-                  <div className="rounded-lg bg-[#0a0a0a] border border-emerald-500/20 p-3 font-mono text-[11px] leading-relaxed">
+                  <div className="rounded-lg bg-card/70 border border-emerald-500/20 p-3 font-mono text-[11px] leading-relaxed">
                     <div className="flex items-center gap-2 text-emerald-400 mb-2">
                       <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
                       <span className="font-medium">Running heartbeat...</span>
                     </div>
-                    <div className="text-[#e5e5e5]/50 space-y-1">
+                    <div className="text-foreground/55 space-y-1">
                       <p>$ Loading persona &amp; memory...</p>
                       <p>$ Checking goals &amp; inbox...</p>
                       <p>$ Running agent jobs &amp; heartbeat...</p>
@@ -681,7 +680,7 @@ export function AgentDetailPanel({ slug, onClose, onNavigateToAgent, onOpenFile 
                     </div>
                   </div>
                 ) : history.length > 0 ? (
-                  <div className="rounded-lg bg-[#0a0a0a] border border-border/30 p-3 font-mono text-[11px] leading-relaxed text-[#e5e5e5] max-h-[200px] overflow-y-auto">
+                  <div className="rounded-lg bg-card/70 border border-border/40 p-3 font-mono text-[11px] leading-relaxed text-foreground max-h-[200px] overflow-y-auto">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2 text-[10px] text-muted-foreground/40">
                         <span className={cn(
@@ -693,12 +692,12 @@ export function AgentDetailPanel({ slug, onClose, onNavigateToAgent, onOpenFile 
                         <span>{timeAgo(history[0].timestamp)}</span>
                       </div>
                     </div>
-                    <pre className="whitespace-pre-wrap text-[#e5e5e5]/80 break-words">
+                    <pre className="whitespace-pre-wrap text-foreground/80 break-words">
                       {sessionOutputs[`hb-${history[0].timestamp}`] || history[0].summary || "No output captured."}
                     </pre>
                   </div>
                 ) : (
-                  <div className="rounded-lg bg-[#0a0a0a] border border-border/30 p-4 text-center">
+                  <div className="rounded-lg bg-card/70 border border-border/40 p-4 text-center">
                     <Terminal className="h-5 w-5 mx-auto text-muted-foreground/20 mb-2" />
                     <p className="text-[12px] text-muted-foreground/40 mb-3">
                       No output yet. Run a heartbeat to see agent activity.

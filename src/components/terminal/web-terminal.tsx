@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { cn } from "@/lib/utils";
 
 interface WebTerminalProps {
   sessionId?: string;
@@ -20,6 +19,58 @@ function replacePastedTextNotice(output: string, displayPrompt?: string): string
   return output.replace(/\[Pasted text #\d+(?: \+\d+ lines)?\]/g, displayPrompt);
 }
 
+function getTerminalTheme(isDark: boolean) {
+  return isDark
+    ? {
+        background: "#231c16",
+        foreground: "#f1e7d7",
+        cursor: "#e0c28f",
+        cursorAccent: "#231c16",
+        selectionBackground: "#c8a97744",
+        selectionForeground: "#fff7eb",
+        black: "#3a3026",
+        red: "#f28b82",
+        green: "#a7d28d",
+        yellow: "#e8c07d",
+        blue: "#98b8e8",
+        magenta: "#c7a4dd",
+        cyan: "#8fc5c0",
+        white: "#f1e7d7",
+        brightBlack: "#8b7660",
+        brightRed: "#ffb4ab",
+        brightGreen: "#c6e6b5",
+        brightYellow: "#f3d7a5",
+        brightBlue: "#c1d7f5",
+        brightMagenta: "#dec4ef",
+        brightCyan: "#b7e1dc",
+        brightWhite: "#fffaf3",
+      }
+    : {
+        background: "#f6efe2",
+        foreground: "#4f3d2b",
+        cursor: "#8a623d",
+        cursorAccent: "#f6efe2",
+        selectionBackground: "#d8c4a180",
+        selectionForeground: "#3f3021",
+        black: "#5d4b38",
+        red: "#b85c4c",
+        green: "#5e7f4f",
+        yellow: "#9a6e2c",
+        blue: "#5a79a5",
+        magenta: "#8260a6",
+        cyan: "#4f7f7a",
+        white: "#f6efe2",
+        brightBlack: "#8d7a66",
+        brightRed: "#cf7a69",
+        brightGreen: "#7e9f69",
+        brightYellow: "#bb8d46",
+        brightBlue: "#7a98c3",
+        brightMagenta: "#9f7fbe",
+        brightCyan: "#6e9e99",
+        brightWhite: "#fffaf2",
+      };
+}
+
 export function WebTerminal({
   sessionId,
   prompt,
@@ -31,13 +82,13 @@ export function WebTerminal({
   const wsRef = useRef<WebSocket | null>(null);
   const xtermRef = useRef<import("@xterm/xterm").Terminal | null>(null);
   const fitAddonRef = useRef<import("@xterm/addon-fit").FitAddon | null>(null);
-  const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let terminal: import("@xterm/xterm").Terminal | null = null;
     let ws: WebSocket | null = null;
     let resizeObserver: ResizeObserver | null = null;
+    let themeObserver: MutationObserver | null = null;
     let disposed = false;
 
     const init = async () => {
@@ -51,6 +102,13 @@ export function WebTerminal({
 
       if (disposed) return;
 
+      const applyTerminalTheme = () => {
+        if (!terminal) return;
+        terminal.options.theme = getTerminalTheme(
+          document.documentElement.classList.contains("dark")
+        );
+      };
+
       terminal = new Terminal({
         cursorBlink: true,
         cursorStyle: "bar",
@@ -59,31 +117,7 @@ export function WebTerminal({
           "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, Monaco, 'Courier New', monospace",
         lineHeight: 1.2,
         letterSpacing: 0,
-        theme: {
-          background: "#0a0a0a",
-          foreground: "#e5e5e5",
-          cursor: "#e5e5e5",
-          cursorAccent: "#0a0a0a",
-          selectionBackground: "#ffffff30",
-          selectionForeground: "#ffffff",
-          // ANSI colors - rich palette for Claude Code output
-          black: "#1a1a2e",
-          red: "#ff6b6b",
-          green: "#51cf66",
-          yellow: "#ffd43b",
-          blue: "#74c0fc",
-          magenta: "#cc5de8",
-          cyan: "#66d9e8",
-          white: "#e5e5e5",
-          brightBlack: "#555570",
-          brightRed: "#ff8787",
-          brightGreen: "#69db7c",
-          brightYellow: "#ffe066",
-          brightBlue: "#91d5ff",
-          brightMagenta: "#da77f2",
-          brightCyan: "#99e9f2",
-          brightWhite: "#ffffff",
-        },
+        theme: getTerminalTheme(document.documentElement.classList.contains("dark")),
         scrollback: 10000,
         allowProposedApi: true,
         convertEol: false,
@@ -139,6 +173,16 @@ export function WebTerminal({
         resizeObserver.observe(termRef.current);
       }
 
+      themeObserver = new MutationObserver(() => {
+        if (!disposed) {
+          applyTerminalTheme();
+        }
+      });
+      themeObserver.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ["class", "data-custom-theme"],
+      });
+
       function connectWebSocket() {
         if (disposed || !terminal) return;
 
@@ -173,7 +217,6 @@ export function WebTerminal({
 
             ws.onopen = () => {
               if (disposed) return;
-              setConnected(true);
               setError(null);
               if (terminal) {
                 ws?.send(
@@ -205,7 +248,6 @@ export function WebTerminal({
 
             ws.onclose = () => {
               if (disposed) return;
-              setConnected(false);
               terminal?.write("\r\n\x1b[90m[Session ended]\x1b[0m\r\n");
               onClose?.();
             };
@@ -230,16 +272,17 @@ export function WebTerminal({
     return () => {
       disposed = true;
       resizeObserver?.disconnect();
+      themeObserver?.disconnect();
       ws?.close();
       terminal?.dispose();
       wsRef.current = null;
       xtermRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [sessionId, prompt, displayPrompt, reconnect]);
+  }, [sessionId, prompt, displayPrompt, reconnect, onClose]);
 
   return (
-    <div className="h-full w-full relative overflow-hidden bg-[#0a0a0a]">
+    <div className="h-full w-full relative overflow-hidden bg-card/80">
       {error && (
         <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 px-3 py-1 bg-destructive/90 text-destructive-foreground text-xs rounded-md">
           {error}

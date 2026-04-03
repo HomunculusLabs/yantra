@@ -11,6 +11,8 @@ export interface ThemeDefinition {
   vars: Record<string, string>;
 }
 
+export const DEFAULT_CUSTOM_THEME_NAME = "paper";
+
 export const THEMES: ThemeDefinition[] = [
   // ─── CLAUDE THEME (signature) ───
   {
@@ -235,7 +237,7 @@ export const THEMES: ThemeDefinition[] = [
   // ─── LIGHT THEMES ───
   {
     name: "paper",
-    label: "Paper",
+    label: "Sepia",
     type: "light",
     font: "'Merriweather Sans', var(--font-sans)",
     headingFont: "'Libre Baskerville', Georgia, serif",
@@ -424,9 +426,12 @@ export function applyTheme(theme: ThemeDefinition | null) {
     root.removeAttribute("data-custom-theme");
     root.style.removeProperty("--font-theme");
     root.style.removeProperty("--font-heading-theme");
-    THEMES[0] && Object.keys(THEMES[0].vars).forEach((key) => {
-      root.style.removeProperty(key);
-    });
+    const defaultTheme = THEMES[0];
+    if (defaultTheme) {
+      Object.keys(defaultTheme.vars).forEach((key) => {
+        root.style.removeProperty(key);
+      });
+    }
     return;
   }
 
@@ -452,6 +457,11 @@ export function applyTheme(theme: ThemeDefinition | null) {
   }
 
   root.setAttribute("data-custom-theme", theme.name);
+}
+
+export function getThemeByName(name: string | null) {
+  if (!name) return null;
+  return THEMES.find((theme) => theme.name === name) ?? null;
 }
 
 // Get the stored theme name from localStorage
