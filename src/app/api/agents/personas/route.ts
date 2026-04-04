@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import path from "path";
-import { getCabinetRoots } from "@/lib/config/cabinet-roots";
+import { getYantraRoots } from "@/lib/config/yantra-roots";
 import { ensureDirectory } from "@/lib/storage/fs-operations";
 import {
   listPersonas,
@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
   await writePersona(slug, personaData);
 
   // Create workspace directory for the agent
-  const wsDir = path.join(getCabinetRoots().runtimeAgentsRoot, slug, "workspace");
+  const wsDir = path.join(getYantraRoots().runtimeAgentsRoot, slug, "workspace");
   await ensureDirectory(wsDir);
 
   await reloadDaemonSchedules().catch(() => {});

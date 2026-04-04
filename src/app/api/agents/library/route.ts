@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import path from "path";
 import fs from "fs/promises";
 import matter from "gray-matter";
-import { getCabinetRoots } from "@/lib/config/cabinet-roots";
+import { getYantraRoots } from "@/lib/config/yantra-roots";
 
-const LIBRARY_DIR = path.join(getCabinetRoots().runtimeAgentsRoot, ".library");
+const LIBRARY_DIR = path.join(getYantraRoots().runtimeAgentsRoot, ".library");
 
 export async function GET() {
   try {

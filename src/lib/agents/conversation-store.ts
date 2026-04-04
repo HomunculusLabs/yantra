@@ -7,7 +7,7 @@ import type {
   ConversationStatus,
   ConversationTrigger,
 } from "../../types/conversations";
-import { getCabinetRoots } from "@/lib/config/cabinet-roots";
+import { getYantraRoots } from "@/lib/config/yantra-roots";
 import { DATA_DIR, RUNTIME_DIR, sanitizeFilename, virtualPathFromFs } from "../storage/path-utils";
 import {
   ensureDirectory,
@@ -18,7 +18,7 @@ import {
 } from "../storage/fs-operations";
 
 export const CONVERSATIONS_DIR = path.join(
-  getCabinetRoots().runtimeAgentsRoot,
+  getYantraRoots().runtimeAgentsRoot,
   ".conversations"
 );
 
@@ -40,7 +40,7 @@ interface ListConversationFilters {
   limit?: number;
 }
 
-interface ParsedCabinetBlock {
+interface ParsedYantraBlock {
   summary?: string;
   contextSummary?: string;
   artifactPaths: string[];
@@ -108,8 +108,8 @@ function normalizeArtifactPath(rawPath: string): string | null {
   return normalized;
 }
 
-export function parseCabinetBlock(output: string): ParsedCabinetBlock {
-  const match = output.match(/```cabinet\s*([\s\S]*?)```/i);
+export function parseYantraBlock(output: string): ParsedYantraBlock {
+  const match = output.match(/```(?:yantra|cabinet)\s*([\s\S]*?)```/i);
   if (!match) {
     return { artifactPaths: [] };
   }
@@ -261,7 +261,7 @@ export async function finalizeConversation(
   if (!meta) return null;
 
   const output = input.output ?? (await readConversationTranscript(id));
-  const parsed = parseCabinetBlock(output);
+  const parsed = parseYantraBlock(output);
   const artifacts = parsed.artifactPaths.map((artifactPath) => ({
     path: artifactPath,
   }));

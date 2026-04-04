@@ -1,21 +1,21 @@
 {
-  "name": "create-cabinet",
+  "name": "create-yantra",
   "version": "0.1.5",
-  "description": "Create a new Cabinet project — AI-first knowledge base and startup OS",
+  "description": "Create a new Yantra project — AI-first knowledge base and startup OS",
   "bin": {
-    "create-cabinet": "./index.js"
+    "create-yantra": "./index.js"
   },
   "keywords": [
     "ai",
     "agents",
     "knowledge-base",
     "startup",
-    "cabinet",
+    "yantra",
     "claude"
   ],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/hilash/cabinet.git"
+    "url": "https://github.com/HomunculusLabs/yantra.git"
   }
 }

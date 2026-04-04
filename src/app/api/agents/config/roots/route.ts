@@ -1,15 +1,15 @@
 import fs from "fs";
 import { NextRequest, NextResponse } from "next/server";
 import {
-  getCabinetRoots,
-  getCabinetRootsConfigPath,
-  readCabinetRootsConfig,
-  saveCabinetRootsConfig,
-} from "@/lib/config/cabinet-roots";
+  getYantraRoots,
+  getYantraRootsConfigPath,
+  readYantraRootsConfig,
+  saveYantraRootsConfig,
+} from "@/lib/config/yantra-roots";
 
 function buildPayload() {
-  const config = readCabinetRootsConfig();
-  const effective = getCabinetRoots();
+  const config = readYantraRootsConfig();
+  const effective = getYantraRoots();
   const configuredVaultRoot = config.vaultRoot || effective.vaultRoot;
   const configuredRuntimeRoot = config.runtimeRoot || effective.runtimeRoot;
 
@@ -20,7 +20,7 @@ function buildPayload() {
       vaultRoot: effective.vaultRoot,
       runtimeRoot: effective.runtimeRoot,
     },
-    configPath: getCabinetRootsConfigPath(),
+    configPath: getYantraRootsConfigPath(),
     checks: {
       vaultExists: fs.existsSync(configuredVaultRoot),
       runtimeExists: fs.existsSync(configuredRuntimeRoot),
@@ -46,7 +46,7 @@ export async function PUT(req: NextRequest) {
       runtimeRoot?: string;
     };
 
-    await saveCabinetRootsConfig({
+    await saveYantraRootsConfig({
       vaultRoot: body.vaultRoot,
       runtimeRoot: body.runtimeRoot,
     });

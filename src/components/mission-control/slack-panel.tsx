@@ -162,8 +162,8 @@ export function SlackPanel({ height: initialHeight = 200, onOpenFile }: SlackPan
         setCollapsed(false); // Expand if collapsed
       }
     };
-    window.addEventListener("cabinet:switch-slack-channel", handler);
-    return () => window.removeEventListener("cabinet:switch-slack-channel", handler);
+    window.addEventListener("yantra:switch-slack-channel", handler);
+    return () => window.removeEventListener("yantra:switch-slack-channel", handler);
   }, []);
 
   // Listen for agent responding events (typing indicators)
@@ -172,8 +172,8 @@ export function SlackPanel({ height: initialHeight = 200, onOpenFile }: SlackPan
       const agents = (e as CustomEvent).detail as RespondingAgent[];
       setRespondingAgents(agents || []);
     };
-    window.addEventListener("cabinet:agent-responding", handler);
-    return () => window.removeEventListener("cabinet:agent-responding", handler);
+    window.addEventListener("yantra:agent-responding", handler);
+    return () => window.removeEventListener("yantra:agent-responding", handler);
   }, []);
 
   const loadMessages = useCallback(async () => {
@@ -248,12 +248,12 @@ export function SlackPanel({ height: initialHeight = 200, onOpenFile }: SlackPan
     loadMessages();
     // Listen for SSE slack refresh events
     const handleRefresh = () => loadMessages();
-    window.addEventListener("cabinet:slack-refresh", handleRefresh);
+    window.addEventListener("yantra:slack-refresh", handleRefresh);
     // Fallback poll every 10s (was 5s, now SSE handles real-time)
     const interval = setInterval(loadMessages, 10000);
     return () => {
       clearInterval(interval);
-      window.removeEventListener("cabinet:slack-refresh", handleRefresh);
+      window.removeEventListener("yantra:slack-refresh", handleRefresh);
     };
   }, [loadMessages]);
 

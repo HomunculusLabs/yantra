@@ -1,15 +1,15 @@
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
-import { ensureRuntimeRootExists, getCabinetRoots } from "@/lib/config/cabinet-roots";
+import { ensureRuntimeRootExists, getYantraRoots } from "@/lib/config/yantra-roots";
 
-const DAEMON_RUNTIME_DIR = getCabinetRoots().runtimeDaemonRoot;
+const DAEMON_RUNTIME_DIR = getYantraRoots().runtimeDaemonRoot;
 const DAEMON_TOKEN_PATH = path.join(DAEMON_RUNTIME_DIR, "daemon-token");
 
 let cachedToken: string | null = null;
 
 export function getDaemonUrl(): string {
-  return process.env.CABINET_DAEMON_URL || "http://127.0.0.1:3001";
+  return process.env.YANTRA_DAEMON_URL || "http://127.0.0.1:3001";
 }
 
 function safeEqual(left: string, right: string): boolean {
@@ -26,7 +26,7 @@ export function getOrCreateDaemonTokenSync(): string {
     return cachedToken;
   }
 
-  const envToken = process.env.CABINET_DAEMON_TOKEN?.trim();
+  const envToken = process.env.YANTRA_DAEMON_TOKEN?.trim();
   if (envToken) {
     cachedToken = envToken;
     return envToken;

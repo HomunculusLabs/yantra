@@ -1,5 +1,5 @@
 import path from "path";
-import { getCabinetRoots } from "@/lib/config/cabinet-roots";
+import { getYantraRoots } from "@/lib/config/yantra-roots";
 import {
   readFileContent,
   writeFileContent,
@@ -8,7 +8,7 @@ import {
 } from "@/lib/storage/fs-operations";
 import type { GoalMetric } from "@/types/agents";
 
-const MEMORY_DIR = path.join(getCabinetRoots().runtimeAgentsRoot, ".memory");
+const MEMORY_DIR = path.join(getYantraRoots().runtimeAgentsRoot, ".memory");
 
 // ---------------------------------------------------------------------------
 // Types

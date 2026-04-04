@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import fs from "fs/promises";
-import { getCabinetRoots } from "@/lib/config/cabinet-roots";
+import { getYantraRoots } from "@/lib/config/yantra-roots";
 import {
   readPersona,
   writePersona,
@@ -26,7 +26,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   // Session output retrieval
   const sessionTs = searchParams.get("session");
   if (sessionTs) {
-    const sessionsDir = path.join(getCabinetRoots().runtimeAgentsRoot, slug, "sessions");
+    const sessionsDir = path.join(getYantraRoots().runtimeAgentsRoot, slug, "sessions");
     const sessionFile = path.join(sessionsDir, `${sessionTs.replace(/[:.]/g, "-")}.txt`);
     // Validate path stays within sessions dir
     if (!sessionFile.startsWith(sessionsDir)) {

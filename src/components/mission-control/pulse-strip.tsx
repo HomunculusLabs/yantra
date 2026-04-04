@@ -191,11 +191,11 @@ export function PulseStrip({ metrics, onAlertClick, onGoalClick, onPlaybookClick
   useEffect(() => {
     loadTicker();
     const handleRefresh = () => loadTicker();
-    window.addEventListener("cabinet:slack-refresh", handleRefresh);
+    window.addEventListener("yantra:slack-refresh", handleRefresh);
     const interval = setInterval(loadTicker, 15000);
     return () => {
       clearInterval(interval);
-      window.removeEventListener("cabinet:slack-refresh", handleRefresh);
+      window.removeEventListener("yantra:slack-refresh", handleRefresh);
     };
   }, [loadTicker]);
 

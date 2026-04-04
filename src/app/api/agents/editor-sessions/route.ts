@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import path from "path";
-import { getCabinetRoots } from "@/lib/config/cabinet-roots";
+import { getYantraRoots } from "@/lib/config/yantra-roots";
 import {
   ensureDirectory,
   fileExists,
@@ -9,7 +9,7 @@ import {
 } from "@/lib/storage/fs-operations";
 import fs from "fs/promises";
 
-const HISTORY_DIR = path.join(getCabinetRoots().runtimeAgentsRoot, ".history");
+const HISTORY_DIR = path.join(getYantraRoots().runtimeAgentsRoot, ".history");
 
 export interface EditorSession {
   id: string;

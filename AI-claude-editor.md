@@ -38,7 +38,7 @@ A session is created in `ai-panel-store` with `status: "running"`, then a `<WebT
 
 ### 3. Daemon Spawns Claude CLI
 
-**`server/cabinet-daemon.ts`** (unified daemon on port 3001)
+**`server/yantra-daemon.ts`** (unified daemon on port 3001)
 
 WebSocket query params: `id={sessionId}&prompt={encoded}`
 
@@ -110,7 +110,7 @@ If the user refreshes the browser:
 | `src/stores/editor-store.ts` | Page content, triggers reload after AI edit |
 | `src/components/layout/app-shell.tsx` | Layout: renders AIPanel as right sidebar |
 | `src/components/editor/editor.tsx` | Editor "AI" button → opens panel |
-| `server/cabinet-daemon.ts` | PTY manager, WebSocket server, job scheduler |
+| `server/yantra-daemon.ts` | PTY manager, WebSocket server, job scheduler |
 | `src/app/api/agents/editor-sessions/route.ts` | Session history CRUD (JSONL) |
 | `src/app/api/ai/edit/route.ts` | Legacy sync endpoint — **not used by the panel** |
 
@@ -302,7 +302,7 @@ The daemon also broadcasts WebSocket events over `/events` so the frontend can r
 | `src/lib/agents/play-manager.ts` | Play loading + `executePlay()` |
 | `src/lib/agents/goal-manager.ts` | Goal metric read/write |
 | `src/lib/agents/trigger-engine.ts` | Downstream trigger evaluation |
-| `server/cabinet-daemon.ts` | WebSocket event bus for real-time UI updates |
+| `server/yantra-daemon.ts` | WebSocket event bus for real-time UI updates |
 
 ---
 

@@ -324,7 +324,7 @@ export function SettingsPage() {
               <div>
                 <h3 className="text-[14px] font-semibold mb-2">Vault and runtime roots</h3>
                 <p className="text-xs text-muted-foreground">
-                  Cabinet should read your Obsidian vault from the vault root and keep its runtime state under a separate runtime root.
+                  Yantra should read your Obsidian vault from the vault root and keep its runtime state under a separate runtime root.
                 </p>
               </div>
 
@@ -486,7 +486,7 @@ export function SettingsPage() {
                 <h3 className="text-[14px] font-semibold mb-3">About</h3>
                 <div className="space-y-2 text-[13px] text-muted-foreground">
                   <p>
-                    <span className="font-medium text-foreground">Cabinet</span>{" "}
+                    <span className="font-medium text-foreground">Yantra</span>{" "}
                     — AI-first Company OS
                   </p>
                   <p>Version 0.1.0</p>
@@ -674,7 +674,7 @@ export function SettingsPage() {
                         <div>
                           <p className="text-[13px] font-medium">Browser Push</p>
                           <p className="text-[11px] text-muted-foreground">
-                            Instant alerts when Cabinet tab is open or PWA installed
+                            Instant alerts when Yantra tab is open or PWA installed
                           </p>
                         </div>
                       </div>

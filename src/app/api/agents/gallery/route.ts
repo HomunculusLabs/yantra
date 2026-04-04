@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import path from "path";
 import fs from "fs/promises";
 import matter from "gray-matter";
-import { getCabinetRoots } from "@/lib/config/cabinet-roots";
+import { getYantraRoots } from "@/lib/config/yantra-roots";
 import { toRuntimeVirtualPath } from "@/lib/storage/path-utils";
 import { listPersonas } from "@/lib/agents/persona-manager";
 
@@ -152,7 +152,7 @@ export async function GET() {
   try {
     const personas = await listPersonas();
     const allItems: GalleryItem[] = [];
-    const { runtimeAgentsRoot } = getCabinetRoots();
+    const { runtimeAgentsRoot } = getYantraRoots();
 
     for (const persona of personas) {
       if (persona.slug === "editor") continue;

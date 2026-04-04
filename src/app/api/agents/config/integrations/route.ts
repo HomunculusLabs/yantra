@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import fs from "fs/promises";
-import { getCabinetRoots } from "@/lib/config/cabinet-roots";
+import { getYantraRoots } from "@/lib/config/yantra-roots";
 
-const CONFIG_DIR = getCabinetRoots().runtimeConfigRoot;
+const CONFIG_DIR = getYantraRoots().runtimeConfigRoot;
 const INTEGRATIONS_FILE = path.join(CONFIG_DIR, "integrations.json");
 
 export interface IntegrationConfig {

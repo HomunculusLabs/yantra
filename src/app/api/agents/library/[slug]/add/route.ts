@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import fs from "fs/promises";
-import { getCabinetRoots } from "@/lib/config/cabinet-roots";
+import { getYantraRoots } from "@/lib/config/yantra-roots";
 
-const LIBRARY_DIR = path.join(getCabinetRoots().runtimeAgentsRoot, ".library");
-const AGENTS_DIR = getCabinetRoots().runtimeAgentsRoot;
+const LIBRARY_DIR = path.join(getYantraRoots().runtimeAgentsRoot, ".library");
+const AGENTS_DIR = getYantraRoots().runtimeAgentsRoot;
 
 export async function POST(
   _req: NextRequest,

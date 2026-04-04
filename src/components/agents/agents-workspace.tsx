@@ -31,6 +31,8 @@ type StatusFilter = "all" | "running" | "failed";
 type MainPanelMode = "composer" | "conversation" | "settings";
 type NonSettingsMode = Exclude<MainPanelMode, "settings">;
 type SettingsTarget = "directory" | "__new__" | string | null;
+type AgentSettingsTab = "definition" | "stack" | "jobs";
+type StackEditorTab = "context" | "extensions" | "skills";
 
 interface AgentSummary {
   name: string;
@@ -93,7 +95,7 @@ const GENERAL_AGENT: AgentSummary = {
   name: "General",
   slug: "general",
   emoji: "🤖",
-  role: "Manual Cabinet assistant",
+  role: "Manual Yantra assistant",
   active: true,
   runningCount: 0,
   department: "general",
@@ -243,6 +245,94 @@ function TriggerChip({
   );
 }
 
+function AgentSettingsTabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors",
+        active
+          ? "bg-primary text-primary-foreground"
+          : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function PathAutosuggestInput({
+  value,
+  onChange,
+  options,
+  placeholder,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: { path: string; title: string }[];
+  placeholder?: string;
+}) {
+  const [focused, setFocused] = useState(false);
+  const normalizedQuery = value.trim().toLowerCase();
+  const suggestions =
+    !normalizedQuery
+      ? []
+      : options
+          .filter(
+            (option) =>
+              option.path.toLowerCase().includes(normalizedQuery) ||
+              option.title.toLowerCase().includes(normalizedQuery)
+          )
+          .slice(0, 8);
+
+  return (
+    <div className="relative">
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setTimeout(() => setFocused(false), 120)}
+        className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[12px] text-foreground"
+        spellCheck={false}
+        placeholder={placeholder}
+      />
+      {focused && suggestions.length > 0 ? (
+        <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-20 overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
+          {suggestions.map((option) => (
+            <button
+              key={option.path}
+              type="button"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                onChange(option.path);
+                setFocused(false);
+              }}
+              className="flex w-full items-start gap-3 px-3 py-2 text-left hover:bg-accent/50"
+            >
+              <span className="min-w-0">
+                <span className="block truncate text-[12px] text-foreground">
+                  {option.title}
+                </span>
+                <span className="block truncate font-mono text-[10px] text-muted-foreground">
+                  {option.path}
+                </span>
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function togglePath(paths: string[], path: string): string[] {
   return paths.includes(path)
     ? paths.filter((entry) => entry !== path)
@@ -254,25 +344,53 @@ function StackOptionChecklist({
   options,
   selected,
   onToggle,
+  filterText = "",
+  emptyText = "No options found.",
 }: {
   label: string;
   options: StackCatalogEntry[];
   selected: string[];
   onToggle: (path: string) => void;
+  filterText?: string;
+  emptyText?: string;
 }) {
+  const normalizedFilter = filterText.trim().toLowerCase();
+  const filteredOptions = options
+    .filter((option) => {
+      if (!normalizedFilter) return true;
+      return (
+        option.label.toLowerCase().includes(normalizedFilter) ||
+        option.path.toLowerCase().includes(normalizedFilter) ||
+        option.source.toLowerCase().includes(normalizedFilter)
+      );
+    })
+    .sort((left, right) => {
+      const leftSelected = selected.includes(left.path) ? 1 : 0;
+      const rightSelected = selected.includes(right.path) ? 1 : 0;
+      if (leftSelected !== rightSelected) return rightSelected - leftSelected;
+      return left.label.localeCompare(right.label);
+    });
+
   return (
     <div className="space-y-2">
-      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
-        {label}
-      </p>
-      <div className="max-h-48 space-y-1 overflow-auto rounded-lg border border-border bg-background/60 p-2">
-        {options.length === 0 ? (
-          <p className="text-[11px] text-muted-foreground">No options found.</p>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+          {label}
+        </p>
+        <p className="text-[10px] text-muted-foreground">
+          {selected.length} selected
+        </p>
+      </div>
+      <div className="max-h-[440px] space-y-1 overflow-auto rounded-xl border border-border bg-background/60 p-2">
+        {filteredOptions.length === 0 ? (
+          <p className="text-[11px] text-muted-foreground">
+            {normalizedFilter ? `No matches for “${filterText}”.` : emptyText}
+          </p>
         ) : (
-          options.map((option) => (
+          filteredOptions.map((option) => (
             <label
               key={option.path}
-              className="flex items-start gap-2 rounded-md px-2 py-1.5 hover:bg-muted/40"
+              className="flex items-start gap-2 rounded-lg px-2 py-2 hover:bg-muted/40"
             >
               <input
                 type="checkbox"
@@ -309,9 +427,12 @@ function AgentStackSettingsCard({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [activeTab, setActiveTab] = useState<StackEditorTab>("context");
   const [contextCandidate, setContextCandidate] = useState("");
+  const [extensionFilter, setExtensionFilter] = useState("");
+  const [skillFilter, setSkillFilter] = useState("");
+  const [skillsetFilter, setSkillsetFilter] = useState("");
   const contextOptions = useMemo(() => collectContextOptions(nodes), [nodes]);
-  const datalistId = `stack-context-options-${slug}`;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -334,6 +455,14 @@ function AgentStackSettingsCard({
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    setActiveTab("context");
+    setContextCandidate("");
+    setExtensionFilter("");
+    setSkillFilter("");
+    setSkillsetFilter("");
+  }, [slug]);
 
   const updatePaths = (
     key: "primary" | "secondary" | "tertiary",
@@ -395,7 +524,7 @@ function AgentStackSettingsCard({
   };
 
   return (
-    <div className="rounded-xl border border-border p-4">
+    <div className="rounded-xl border border-border p-5">
       <div className="mb-3 flex items-center justify-between">
         <div>
           <h4 className="text-[13px] font-semibold">Stack configuration</h4>
@@ -424,134 +553,219 @@ function AgentStackSettingsCard({
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
-            <label className="space-y-1 text-[11px] text-muted-foreground">
-              <span>Primary context</span>
-              <input
-                list={datalistId}
-                value={payload.stack.paths?.primary || ""}
-                onChange={(event) => updatePaths("primary", event.target.value)}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[12px] text-foreground"
-                spellCheck={false}
-              />
-            </label>
-            <label className="space-y-1 text-[11px] text-muted-foreground">
-              <span>Secondary context</span>
-              <input
-                list={datalistId}
-                value={payload.stack.paths?.secondary || ""}
-                onChange={(event) => updatePaths("secondary", event.target.value)}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[12px] text-foreground"
-                spellCheck={false}
-              />
-            </label>
-            <label className="space-y-1 text-[11px] text-muted-foreground">
-              <span>Tertiary context</span>
-              <input
-                list={datalistId}
-                value={payload.stack.paths?.tertiary || ""}
-                onChange={(event) => updatePaths("tertiary", event.target.value)}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[12px] text-foreground"
-                spellCheck={false}
-              />
-            </label>
+          <div className="flex flex-wrap gap-2">
+            <AgentSettingsTabButton
+              active={activeTab === "context"}
+              onClick={() => setActiveTab("context")}
+            >
+              Context
+            </AgentSettingsTabButton>
+            <AgentSettingsTabButton
+              active={activeTab === "extensions"}
+              onClick={() => setActiveTab("extensions")}
+            >
+              Extensions
+            </AgentSettingsTabButton>
+            <AgentSettingsTabButton
+              active={activeTab === "skills"}
+              onClick={() => setActiveTab("skills")}
+            >
+              Skills
+            </AgentSettingsTabButton>
           </div>
 
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-[11px] text-muted-foreground">Extra context files</span>
-              <div className="flex items-center gap-2">
-                <input
-                  list={datalistId}
-                  value={contextCandidate}
-                  onChange={(event) => setContextCandidate(event.target.value)}
-                  className="w-[420px] rounded-lg border border-border bg-background px-3 py-2 font-mono text-[12px] text-foreground"
-                  placeholder="Pick or paste a vault-relative path"
-                  spellCheck={false}
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 text-xs"
-                  onClick={() => {
-                    const candidate = contextCandidate.trim();
-                    if (!candidate) return;
-                    updateList(
-                      "contextFiles",
-                      payload.stack?.contextFiles?.includes(candidate)
-                        ? payload.stack.contextFiles || []
-                        : [...(payload.stack?.contextFiles || []), candidate]
-                    );
-                    setContextCandidate("");
-                  }}
-                >
-                  Add
-                </Button>
+          {activeTab === "context" ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+                <label className="space-y-1.5 text-[11px] text-muted-foreground">
+                  <span>Primary context</span>
+                  <PathAutosuggestInput
+                    value={payload.stack.paths?.primary || ""}
+                    onChange={(value) => updatePaths("primary", value)}
+                    options={contextOptions}
+                    placeholder="Start typing a note title or vault path"
+                  />
+                </label>
+                <label className="space-y-1.5 text-[11px] text-muted-foreground">
+                  <span>Secondary context</span>
+                  <PathAutosuggestInput
+                    value={payload.stack.paths?.secondary || ""}
+                    onChange={(value) => updatePaths("secondary", value)}
+                    options={contextOptions}
+                    placeholder="Start typing a note title or vault path"
+                  />
+                </label>
+                <label className="space-y-1.5 text-[11px] text-muted-foreground">
+                  <span>Tertiary context</span>
+                  <PathAutosuggestInput
+                    value={payload.stack.paths?.tertiary || ""}
+                    onChange={(value) => updatePaths("tertiary", value)}
+                    options={contextOptions}
+                    placeholder="Start typing a note title or vault path"
+                  />
+                </label>
+              </div>
+
+              <div className="rounded-xl border border-border bg-background/40 p-4">
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+                  <div>
+                    <p className="text-[12px] font-medium text-foreground">Extra context files</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Add supporting notes that should always be injected with the stack.
+                    </p>
+                  </div>
+                  <div className="flex w-full flex-col gap-2 xl:w-[560px] xl:flex-row">
+                    <div className="flex-1">
+                      <PathAutosuggestInput
+                        value={contextCandidate}
+                        onChange={setContextCandidate}
+                        options={contextOptions}
+                        placeholder="Start typing a note title or vault path"
+                      />
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-9 text-xs"
+                      onClick={() => {
+                        const candidate = contextCandidate.trim();
+                        if (!candidate) return;
+                        updateList(
+                          "contextFiles",
+                          payload.stack?.contextFiles?.includes(candidate)
+                            ? payload.stack.contextFiles || []
+                            : [...(payload.stack?.contextFiles || []), candidate]
+                        );
+                        setContextCandidate("");
+                      }}
+                    >
+                      Add file
+                    </Button>
+                  </div>
+                </div>
+                <div className="mt-3 flex min-h-[56px] flex-wrap gap-2 rounded-lg border border-border bg-background/60 p-3">
+                  {(payload.stack.contextFiles || []).length === 0 ? (
+                    <p className="text-[11px] text-muted-foreground">No extra context files selected.</p>
+                  ) : (
+                    (payload.stack.contextFiles || []).map((path) => (
+                      <button
+                        key={path}
+                        onClick={() =>
+                          updateList(
+                            "contextFiles",
+                            (payload.stack?.contextFiles || []).filter((entry) => entry !== path)
+                          )
+                        }
+                        className="rounded-full bg-muted px-2.5 py-1 text-[11px] text-muted-foreground hover:text-foreground"
+                        title="Remove"
+                      >
+                        {path}
+                      </button>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2 rounded-lg border border-border bg-background/60 p-3">
-              {(payload.stack.contextFiles || []).length === 0 ? (
-                <p className="text-[11px] text-muted-foreground">No extra context files selected.</p>
-              ) : (
-                (payload.stack.contextFiles || []).map((path) => (
-                  <button
-                    key={path}
-                    onClick={() =>
-                      updateList(
-                        "contextFiles",
-                        (payload.stack?.contextFiles || []).filter((entry) => entry !== path)
-                      )
-                    }
-                    className="rounded-full bg-muted px-2.5 py-1 text-[11px] text-muted-foreground hover:text-foreground"
-                    title="Remove"
-                  >
-                    {path}
-                  </button>
-                ))
-              )}
+          ) : null}
+
+          {activeTab === "extensions" ? (
+            <div className="space-y-4 rounded-xl border border-border bg-background/40 p-4">
+              <div className="flex flex-col gap-2 xl:flex-row xl:items-end xl:justify-between">
+                <div>
+                  <p className="text-[12px] font-medium text-foreground">Extension stack</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Choose runtime extensions to load on top of the shared agent shell.
+                  </p>
+                </div>
+                <label className="space-y-1 text-[11px] text-muted-foreground xl:w-[420px]">
+                  <span>Filter extensions</span>
+                  <input
+                    value={extensionFilter}
+                    onChange={(event) => setExtensionFilter(event.target.value)}
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[12px] text-foreground"
+                    placeholder="Filter by extension name or path"
+                  />
+                </label>
+              </div>
+              <StackOptionChecklist
+                label="Extensions"
+                options={payload.catalog.extensions}
+                selected={payload.stack.extraExtensions || []}
+                filterText={extensionFilter}
+                onToggle={(path) =>
+                  updateList(
+                    "extraExtensions",
+                    togglePath(payload.stack?.extraExtensions || [], path)
+                  )
+                }
+              />
             </div>
-          </div>
+          ) : null}
 
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-            <StackOptionChecklist
-              label="Extensions"
-              options={payload.catalog.extensions}
-              selected={payload.stack.extraExtensions || []}
-              onToggle={(path) =>
-                updateList(
-                  "extraExtensions",
-                  togglePath(payload.stack?.extraExtensions || [], path)
-                )
-              }
-            />
-            <StackOptionChecklist
-              label="Skills"
-              options={payload.catalog.skills}
-              selected={payload.stack.skills || []}
-              onToggle={(path) =>
-                updateList("skills", togglePath(payload.stack?.skills || [], path))
-              }
-            />
-            <StackOptionChecklist
-              label="Skillsets"
-              options={payload.catalog.skillsets}
-              selected={payload.stack.skillsets || []}
-              onToggle={(path) =>
-                updateList(
-                  "skillsets",
-                  togglePath(payload.stack?.skillsets || [], path)
-                )
-              }
-            />
-          </div>
+          {activeTab === "skills" ? (
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <div className="space-y-4 rounded-xl border border-border bg-background/40 p-4">
+                <div className="space-y-2">
+                  <div>
+                    <p className="text-[12px] font-medium text-foreground">Skills</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Add direct skill notes that should be available to the agent.
+                    </p>
+                  </div>
+                  <label className="space-y-1 text-[11px] text-muted-foreground">
+                    <span>Filter skills</span>
+                    <input
+                      value={skillFilter}
+                      onChange={(event) => setSkillFilter(event.target.value)}
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[12px] text-foreground"
+                      placeholder="Filter by skill name or path"
+                    />
+                  </label>
+                </div>
+                <StackOptionChecklist
+                  label="Skills"
+                  options={payload.catalog.skills}
+                  selected={payload.stack.skills || []}
+                  filterText={skillFilter}
+                  onToggle={(path) =>
+                    updateList("skills", togglePath(payload.stack?.skills || [], path))
+                  }
+                />
+              </div>
 
-          <datalist id={datalistId}>
-            {contextOptions.map((option) => (
-              <option key={option.path} value={option.path}>
-                {option.title}
-              </option>
-            ))}
-          </datalist>
+              <div className="space-y-4 rounded-xl border border-border bg-background/40 p-4">
+                <div className="space-y-2">
+                  <div>
+                    <p className="text-[12px] font-medium text-foreground">Skillsets</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Add grouped skill bundles that should load with this stack.
+                    </p>
+                  </div>
+                  <label className="space-y-1 text-[11px] text-muted-foreground">
+                    <span>Filter skillsets</span>
+                    <input
+                      value={skillsetFilter}
+                      onChange={(event) => setSkillsetFilter(event.target.value)}
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[12px] text-foreground"
+                      placeholder="Filter by skillset name or path"
+                    />
+                  </label>
+                </div>
+                <StackOptionChecklist
+                  label="Skillsets"
+                  options={payload.catalog.skillsets}
+                  selected={payload.stack.skillsets || []}
+                  filterText={skillsetFilter}
+                  onToggle={(path) =>
+                    updateList(
+                      "skillsets",
+                      togglePath(payload.stack?.skillsets || [], path)
+                    )
+                  }
+                />
+              </div>
+            </div>
+          ) : null}
 
           {error ? <p className="text-[11px] text-red-400">{error}</p> : null}
         </div>
@@ -582,6 +796,7 @@ export function AgentsWorkspace({
   const [settingsPersona, setSettingsPersona] = useState<AgentSummary | null>(null);
   const [settingsBody, setSettingsBody] = useState("");
   const [settingsJobs, setSettingsJobs] = useState<JobConfig[]>([]);
+  const [activeSettingsTab, setActiveSettingsTab] = useState<AgentSettingsTab>("definition");
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [jobDraft, setJobDraft] = useState<JobConfig | null>(null);
   const [triggerFilter, setTriggerFilter] = useState<TriggerFilter>("all");
@@ -755,6 +970,7 @@ export function AgentsWorkspace({
     }
     setMode("settings");
     setSettingsTarget("directory");
+    setActiveSettingsTab("definition");
     setSelectedJobId(null);
     setJobDraft(null);
   }
@@ -765,6 +981,7 @@ export function AgentsWorkspace({
     }
     setMode("settings");
     setSettingsTarget(agentSlug);
+    setActiveSettingsTab("definition");
     setSelectedJobId(null);
     setJobDraft(null);
   }
@@ -775,6 +992,7 @@ export function AgentsWorkspace({
     }
     setMode("settings");
     setSettingsTarget("__new__");
+    setActiveSettingsTab("definition");
     setSelectedJobId(null);
     setJobDraft(null);
     setNewAgentDraft(DEFAULT_NEW_AGENT);
@@ -907,6 +1125,7 @@ export function AgentsWorkspace({
   }
 
   function startNewJobDraft() {
+    setActiveSettingsTab("jobs");
     setSelectedJobId("__new__");
     setJobDraft({
       id: "",
@@ -925,6 +1144,7 @@ export function AgentsWorkspace({
   function openJob(jobId: string) {
     const job = settingsJobs.find((entry) => entry.id === jobId);
     if (!job) return;
+    setActiveSettingsTab("jobs");
     setSelectedJobId(jobId);
     setJobDraft({ ...job });
   }
@@ -1237,8 +1457,8 @@ export function AgentsWorkspace({
                   }}
                 />
               ) : selectedConversation ? (
-                <ScrollArea className="h-full bg-[#0a0a0a]">
-                  <pre className="min-h-full whitespace-pre-wrap p-5 font-mono text-[12px] leading-relaxed text-neutral-200">
+                <ScrollArea className="h-full bg-card/70">
+                  <pre className="min-h-full whitespace-pre-wrap p-5 font-mono text-[12px] leading-relaxed text-foreground/85">
                     {replacePastedTextNotice(
                       selectedConversation.transcript || "No transcript captured.",
                       selectedConversationMeta.title
@@ -1490,7 +1710,7 @@ export function AgentsWorkspace({
                               setNewAgentDraft({ ...newAgentDraft, body: event.target.value })
                             }
                             className="min-h-[220px] w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
-                            placeholder="Define how this agent should work inside Cabinet and the KB."
+                            placeholder="Define how this agent should work inside Yantra and the KB."
                           />
                         </label>
                       </div>
@@ -1565,204 +1785,239 @@ export function AgentsWorkspace({
                           </Button>
                         </div>
                       </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <label className="space-y-1 text-[11px] text-muted-foreground">
-                          <span>Role</span>
-                          <input
-                            value={settingsPersona.role || ""}
-                            onChange={(event) =>
-                              setSettingsPersona({ ...settingsPersona, role: event.target.value })
-                            }
-                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
-                          />
-                        </label>
-                        <label className="space-y-1 text-[11px] text-muted-foreground">
-                          <span>Heartbeat</span>
-                          <input
-                            value={settingsPersona.heartbeat || ""}
-                            onChange={(event) =>
-                              setSettingsPersona({ ...settingsPersona, heartbeat: event.target.value })
-                            }
-                            className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground"
-                          />
-                        </label>
-                        <label className="space-y-1 text-[11px] text-muted-foreground">
-                          <span>Department</span>
-                          <input
-                            value={settingsPersona.department || ""}
-                            onChange={(event) =>
-                              setSettingsPersona({ ...settingsPersona, department: event.target.value })
-                            }
-                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
-                          />
-                        </label>
-                        <label className="space-y-1 text-[11px] text-muted-foreground">
-                          <span>Type</span>
-                          <input
-                            value={settingsPersona.type || ""}
-                            onChange={(event) =>
-                              setSettingsPersona({ ...settingsPersona, type: event.target.value })
-                            }
-                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
-                          />
-                        </label>
-                        <label className="col-span-2 space-y-1 text-[11px] text-muted-foreground">
-                          <span>Workspace</span>
-                          <input
-                            value={settingsPersona.workspace || ""}
-                            onChange={(event) =>
-                              setSettingsPersona({ ...settingsPersona, workspace: event.target.value })
-                            }
-                            className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground"
-                          />
-                        </label>
-                        <label className="col-span-2 space-y-1 text-[11px] text-muted-foreground">
-                          <span>Instructions</span>
-                          <textarea
-                            value={settingsBody}
-                            onChange={(event) => setSettingsBody(event.target.value)}
-                            className="min-h-[220px] w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
-                          />
-                        </label>
+                      <div className="flex items-center gap-2 border-t border-border pt-3">
+                        <AgentSettingsTabButton
+                          active={activeSettingsTab === "definition"}
+                          onClick={() => setActiveSettingsTab("definition")}
+                        >
+                          Definition
+                        </AgentSettingsTabButton>
+                        <AgentSettingsTabButton
+                          active={activeSettingsTab === "stack"}
+                          onClick={() => setActiveSettingsTab("stack")}
+                        >
+                          Stack
+                        </AgentSettingsTabButton>
+                        <AgentSettingsTabButton
+                          active={activeSettingsTab === "jobs"}
+                          onClick={() => setActiveSettingsTab("jobs")}
+                        >
+                          Jobs
+                        </AgentSettingsTabButton>
                       </div>
                     </div>
 
-                    <AgentStackSettingsCard slug={settingsPersona.slug} />
-
-                    <div className="grid grid-cols-[280px_minmax(0,1fr)] gap-4">
-                      <div className="rounded-xl border border-border">
-                        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-                          <div>
-                            <h4 className="text-[13px] font-semibold">Jobs</h4>
-                            <p className="text-[11px] text-muted-foreground">Heartbeat stays above, recurring jobs live here</p>
-                          </div>
-                          <Button size="sm" className="h-8 gap-1 text-xs" onClick={startNewJobDraft}>
-                            <Plus className="h-3.5 w-3.5" />
-                            Add job
-                          </Button>
+                    {activeSettingsTab === "definition" ? (
+                      <div className="rounded-xl border border-border p-5">
+                        <div className="mb-4">
+                          <h4 className="text-[13px] font-semibold">Definition</h4>
+                          <p className="text-[11px] text-muted-foreground">
+                            Identity, cadence, and base instructions for this agent.
+                          </p>
                         </div>
-                        <div className="space-y-1 p-2">
-                          {settingsJobs.length === 0 ? (
-                            <div className="px-2 py-6 text-[12px] text-muted-foreground">No jobs yet.</div>
-                          ) : (
-                            settingsJobs.map((job) => (
-                              <button
-                                key={job.id}
-                                onClick={() => openJob(job.id)}
-                                className={cn(
-                                  "w-full rounded-lg border px-3 py-3 text-left transition-colors",
-                                  selectedJobId === job.id
-                                    ? "border-primary/30 bg-primary/5"
-                                    : "border-border hover:bg-accent/40"
-                                )}
-                              >
-                                <div className="flex items-center gap-2">
-                                  <FileText className="h-4 w-4 text-muted-foreground" />
-                                  <span className="truncate text-[12px] font-medium">{job.name}</span>
-                                  <span
-                                    className={cn(
-                                      "ml-auto rounded-full px-1.5 py-0.5 text-[10px]",
-                                      job.enabled
-                                        ? "bg-emerald-500/10 text-emerald-500"
-                                        : "bg-muted text-muted-foreground"
-                                    )}
-                                  >
-                                    {job.enabled ? "On" : "Off"}
-                                  </span>
+                        <div className="grid grid-cols-2 gap-4">
+                          <label className="space-y-1.5 text-[11px] text-muted-foreground">
+                            <span>Role</span>
+                            <input
+                              value={settingsPersona.role || ""}
+                              onChange={(event) =>
+                                setSettingsPersona({ ...settingsPersona, role: event.target.value })
+                              }
+                              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
+                            />
+                          </label>
+                          <label className="space-y-1.5 text-[11px] text-muted-foreground">
+                            <span>Heartbeat</span>
+                            <input
+                              value={settingsPersona.heartbeat || ""}
+                              onChange={(event) =>
+                                setSettingsPersona({ ...settingsPersona, heartbeat: event.target.value })
+                              }
+                              className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground"
+                            />
+                          </label>
+                          <label className="space-y-1.5 text-[11px] text-muted-foreground">
+                            <span>Department</span>
+                            <input
+                              value={settingsPersona.department || ""}
+                              onChange={(event) =>
+                                setSettingsPersona({ ...settingsPersona, department: event.target.value })
+                              }
+                              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
+                            />
+                          </label>
+                          <label className="space-y-1.5 text-[11px] text-muted-foreground">
+                            <span>Type</span>
+                            <input
+                              value={settingsPersona.type || ""}
+                              onChange={(event) =>
+                                setSettingsPersona({ ...settingsPersona, type: event.target.value })
+                              }
+                              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
+                            />
+                          </label>
+                          <label className="col-span-2 space-y-1.5 text-[11px] text-muted-foreground">
+                            <span>Workspace</span>
+                            <input
+                              value={settingsPersona.workspace || ""}
+                              onChange={(event) =>
+                                setSettingsPersona({ ...settingsPersona, workspace: event.target.value })
+                              }
+                              className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground"
+                            />
+                          </label>
+                          <label className="col-span-2 space-y-1.5 text-[11px] text-muted-foreground">
+                            <span>Instructions</span>
+                            <textarea
+                              value={settingsBody}
+                              onChange={(event) => setSettingsBody(event.target.value)}
+                              className="min-h-[320px] w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {activeSettingsTab === "stack" ? (
+                      <AgentStackSettingsCard slug={settingsPersona.slug} />
+                    ) : null}
+
+                    {activeSettingsTab === "jobs" ? (
+                      <div className="grid grid-cols-[320px_minmax(0,1fr)] gap-4">
+                        <div className="rounded-xl border border-border">
+                          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+                            <div>
+                              <h4 className="text-[13px] font-semibold">Jobs</h4>
+                              <p className="text-[11px] text-muted-foreground">Recurring jobs and scheduled prompts for this agent</p>
+                            </div>
+                            <Button size="sm" className="h-8 gap-1 text-xs" onClick={startNewJobDraft}>
+                              <Plus className="h-3.5 w-3.5" />
+                              Add job
+                            </Button>
+                          </div>
+                          <div className="space-y-1 p-2">
+                            {settingsJobs.length === 0 ? (
+                              <div className="px-2 py-6 text-[12px] text-muted-foreground">No jobs yet.</div>
+                            ) : (
+                              settingsJobs.map((job) => (
+                                <button
+                                  key={job.id}
+                                  onClick={() => openJob(job.id)}
+                                  className={cn(
+                                    "w-full rounded-lg border px-3 py-3 text-left transition-colors",
+                                    selectedJobId === job.id
+                                      ? "border-primary/30 bg-primary/5"
+                                      : "border-border hover:bg-accent/40"
+                                  )}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <FileText className="h-4 w-4 text-muted-foreground" />
+                                    <span className="truncate text-[12px] font-medium">{job.name}</span>
+                                    <span
+                                      className={cn(
+                                        "ml-auto rounded-full px-1.5 py-0.5 text-[10px]",
+                                        job.enabled
+                                          ? "bg-emerald-500/10 text-emerald-500"
+                                          : "bg-muted text-muted-foreground"
+                                      )}
+                                    >
+                                      {job.enabled ? "On" : "Off"}
+                                    </span>
+                                  </div>
+                                  <p className="mt-1 truncate text-[11px] text-muted-foreground">{job.schedule}</p>
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-border p-4">
+                          {jobDraft ? (
+                            <div className="space-y-3">
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <h4 className="text-[13px] font-semibold">
+                                    {selectedJobId === "__new__" ? "New job" : "Job settings"}
+                                  </h4>
+                                  <p className="text-[11px] text-muted-foreground">
+                                    Prompts relevant to the agent that run on a schedule
+                                  </p>
                                 </div>
-                                <p className="mt-1 truncate text-[11px] text-muted-foreground">{job.schedule}</p>
-                              </button>
-                            ))
+                                <div className="flex gap-2">
+                                  {selectedJobId && selectedJobId !== "__new__" ? (
+                                    <>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-8 gap-1 text-xs"
+                                        onClick={() => runJob(selectedJobId)}
+                                      >
+                                        <Play className="h-3.5 w-3.5" />
+                                        Run
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 gap-1 text-xs text-destructive"
+                                        onClick={() => deleteJob(selectedJobId)}
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                        Delete
+                                      </Button>
+                                    </>
+                                  ) : null}
+                                  <Button size="sm" className="h-8 text-xs" onClick={saveJob}>
+                                    Save job
+                                  </Button>
+                                </div>
+                              </div>
+                              <label className="space-y-1 text-[11px] text-muted-foreground">
+                                <span>Name</span>
+                                <input
+                                  value={jobDraft.name}
+                                  onChange={(event) => setJobDraft({ ...jobDraft, name: event.target.value })}
+                                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
+                                />
+                              </label>
+                              <label className="space-y-1 text-[11px] text-muted-foreground">
+                                <span>Schedule</span>
+                                <input
+                                  value={jobDraft.schedule}
+                                  onChange={(event) => setJobDraft({ ...jobDraft, schedule: event.target.value })}
+                                  className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground"
+                                />
+                              </label>
+                              <label className="space-y-1 text-[11px] text-muted-foreground">
+                                <span>Timeout (seconds)</span>
+                                <input
+                                  type="number"
+                                  value={jobDraft.timeout || 600}
+                                  onChange={(event) =>
+                                    setJobDraft({
+                                      ...jobDraft,
+                                      timeout: parseInt(event.target.value || "600", 10),
+                                    })
+                                  }
+                                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
+                                />
+                              </label>
+                              <label className="space-y-1 text-[11px] text-muted-foreground">
+                                <span>Prompt</span>
+                                <textarea
+                                  value={jobDraft.prompt}
+                                  onChange={(event) => setJobDraft({ ...jobDraft, prompt: event.target.value })}
+                                  className="min-h-[220px] w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
+                                />
+                              </label>
+                            </div>
+                          ) : (
+                            <div className="flex h-full min-h-[280px] items-center justify-center text-[12px] text-muted-foreground">
+                              Select a job to edit its settings, or create a new one.
+                            </div>
                           )}
                         </div>
                       </div>
-
-                      <div className="rounded-xl border border-border p-4">
-                        {jobDraft ? (
-                          <div className="space-y-3">
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <h4 className="text-[13px] font-semibold">
-                                  {selectedJobId === "__new__" ? "New job" : "Job settings"}
-                                </h4>
-                                <p className="text-[11px] text-muted-foreground">
-                                  Prompts relevant to the agent that run on a schedule
-                                </p>
-                              </div>
-                              <div className="flex gap-2">
-                                {selectedJobId && selectedJobId !== "__new__" ? (
-                                  <>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      className="h-8 gap-1 text-xs"
-                                      onClick={() => runJob(selectedJobId)}
-                                    >
-                                      <Play className="h-3.5 w-3.5" />
-                                      Run
-                                    </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-8 gap-1 text-xs text-destructive"
-                                      onClick={() => deleteJob(selectedJobId)}
-                                    >
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                      Delete
-                                    </Button>
-                                  </>
-                                ) : null}
-                                <Button size="sm" className="h-8 text-xs" onClick={saveJob}>
-                                  Save job
-                                </Button>
-                              </div>
-                            </div>
-                            <label className="space-y-1 text-[11px] text-muted-foreground">
-                              <span>Name</span>
-                              <input
-                                value={jobDraft.name}
-                                onChange={(event) => setJobDraft({ ...jobDraft, name: event.target.value })}
-                                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
-                              />
-                            </label>
-                            <label className="space-y-1 text-[11px] text-muted-foreground">
-                              <span>Schedule</span>
-                              <input
-                                value={jobDraft.schedule}
-                                onChange={(event) => setJobDraft({ ...jobDraft, schedule: event.target.value })}
-                                className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground"
-                              />
-                            </label>
-                            <label className="space-y-1 text-[11px] text-muted-foreground">
-                              <span>Timeout (seconds)</span>
-                              <input
-                                type="number"
-                                value={jobDraft.timeout || 600}
-                                onChange={(event) =>
-                                  setJobDraft({
-                                    ...jobDraft,
-                                    timeout: parseInt(event.target.value || "600", 10),
-                                  })
-                                }
-                                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
-                              />
-                            </label>
-                            <label className="space-y-1 text-[11px] text-muted-foreground">
-                              <span>Prompt</span>
-                              <textarea
-                                value={jobDraft.prompt}
-                                onChange={(event) => setJobDraft({ ...jobDraft, prompt: event.target.value })}
-                                className="min-h-[220px] w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
-                              />
-                            </label>
-                          </div>
-                        ) : (
-                          <div className="flex h-full min-h-[280px] items-center justify-center text-[12px] text-muted-foreground">
-                            Select a job to edit its settings, or create a new one.
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                    ) : null}
                   </>
                 ) : (
                   <div className="flex items-center gap-2 text-[12px] text-muted-foreground">

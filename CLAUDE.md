@@ -1,8 +1,8 @@
-# CLAUDE.md — Cabinet
+# CLAUDE.md — Yantra
 
 ## What is this project?
 
-Cabinet is an AI-first self-hosted knowledge base and startup OS. All content lives as markdown files on disk. The web UI provides WYSIWYG editing, a collapsible tree sidebar, drag-and-drop page organization, and an AI panel that can edit pages via Claude CLI.
+Yantra is an AI-first self-hosted knowledge base and startup OS. All content lives as markdown files on disk. The web UI provides WYSIWYG editing, a collapsible tree sidebar, drag-and-drop page organization, and an AI panel that can edit pages via Claude CLI.
 
 **Core philosophy:** Humans define intent. Agents do the work. The knowledge base is the shared memory between both.
 
@@ -91,7 +91,7 @@ npm run lint         # ESLint
 
 ## Frontend Debugging
 
-Use `npm run debug:chrome` when you need a debuggable browser session. It launches Chrome or Chromium with `--remote-debugging-port=9222`, opens Cabinet at `http://localhost:3000` by default, and prints the DevTools endpoints:
+Use `npm run debug:chrome` when you need a debuggable browser session. It launches Chrome or Chromium with `--remote-debugging-port=9222`, opens Yantra at `http://localhost:3000` by default, and prints the DevTools endpoints:
 
 - `http://127.0.0.1:9222/json/version`
 - `http://127.0.0.1:9222/json/list`

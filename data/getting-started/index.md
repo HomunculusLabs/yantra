@@ -7,7 +7,7 @@ tags:
   - onboarding
 order: 1
 ---
-# Welcome to Cabinet
+# Welcome to Yantra
 
 The AI-first knowledge base and startup OS — shared memory between humans and AI agents.
 

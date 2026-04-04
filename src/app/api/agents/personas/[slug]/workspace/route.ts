@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import fs from "fs/promises";
-import { getCabinetRoots } from "@/lib/config/cabinet-roots";
+import { getYantraRoots } from "@/lib/config/yantra-roots";
 import { readPersona } from "@/lib/agents/persona-manager";
 
 type RouteParams = { params: Promise<{ slug: string }> };
@@ -13,7 +13,7 @@ async function scanDir(dir: string, basePath: string): Promise<Array<{ path: str
     for (const entry of entries) {
       if (entry.name.startsWith(".")) continue;
       const fullPath = path.join(dir, entry.name);
-      const relPath = path.relative(getCabinetRoots().runtimeRoot, fullPath);
+      const relPath = path.relative(getYantraRoots().runtimeRoot, fullPath);
       if (entry.isDirectory()) {
         const sub = await scanDir(fullPath, basePath);
         results.push(...sub);
@@ -40,7 +40,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
   const allFiles: Array<{ path: string; name: string; modified: string }> = [];
 
   // 1. Scan agent's private workspace
-  const roots = getCabinetRoots();
+  const roots = getYantraRoots();
   const workspaceDir = path.join(roots.runtimeAgentsRoot, slug, "workspace");
   const workspaceFiles = await scanDir(workspaceDir, workspaceDir);
   allFiles.push(...workspaceFiles);

@@ -127,7 +127,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
           <div className="space-y-8 animate-in fade-in duration-300">
             <div className="text-center space-y-3">
               <h1 className="text-3xl font-bold tracking-tight">
-                Welcome to Cabinet
+                Welcome to Yantra
               </h1>
               <p className="text-muted-foreground text-lg leading-relaxed">
                 Let&apos;s set up your AI team. I&apos;ll ask a few questions

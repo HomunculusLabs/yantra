@@ -1,5 +1,5 @@
 #!/bin/bash
-# Cabinet Agent Loop — Uses ralph-loop stop hook to iterate through PRD phases
+# Yantra Agent Loop — Uses ralph-loop stop hook to iterate through PRD phases
 # Usage: ./run-agent.sh [max-iterations]
 #
 # This script:
@@ -37,7 +37,7 @@ fi
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  Cabinet Agent Loop"
+echo "  Yantra Agent Loop"
 echo "  Prompt: $PROMPT_FILE"
 echo "  Max iterations: $MAX_ITERATIONS"
 echo "  Completion: $COMPLETION_PROMISE"
@@ -66,7 +66,7 @@ cat "$PROMPT_FILE" | claude --dangerously-skip-permissions
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  Cabinet Agent Loop — Finished"
+echo "  Yantra Agent Loop — Finished"
 echo "  $(date '+%Y-%m-%d %H:%M:%S')"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 

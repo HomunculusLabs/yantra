@@ -1,10 +1,10 @@
 import type { JobConfig, JobRun, JobPostAction } from "@/types/jobs";
 import type { ConversationMeta } from "@/types/conversations";
 import path from "path";
-import { resolveVaultPath } from "@/lib/config/cabinet-roots";
+import { resolveVaultPath } from "@/lib/config/yantra-roots";
 import { readPage } from "../storage/page-io";
 import { DATA_DIR } from "../storage/path-utils";
-import { getCabinetRoots } from "@/lib/config/cabinet-roots";
+import { getYantraRoots } from "@/lib/config/yantra-roots";
 import {
   appendConversationTranscript,
   createConversation,
@@ -37,9 +37,9 @@ interface StartConversationInput {
   onComplete?: (completion: ConversationCompletion) => Promise<void> | void;
 }
 
-function buildCabinetEpilogueInstructions(): string {
+function buildYantraEpilogueInstructions(): string {
   return [
-    "At the end of your response, include a ```cabinet block with these fields:",
+    "At the end of your response, include a ```yantra block with these fields:",
     "SUMMARY: one short summary line",
     "CONTEXT: optional lightweight memory/context summary",
     "ARTIFACT: relative/path/to/file for every KB file you created or updated",
@@ -49,7 +49,7 @@ function buildCabinetEpilogueInstructions(): string {
 function buildAgentContextHeader(persona: AgentPersona | null, agentSlug: string): string {
   if (!persona) {
     return [
-      "You are Cabinet's General agent.",
+      "You are Yantra's General agent.",
       "Handle the request directly and use the configured vault as your working area.",
     ].join("\n");
   }
@@ -120,7 +120,7 @@ export async function buildManualConversationPrompt(input: {
     "",
     "Work in the configured Obsidian vault.",
     "Reflect useful outputs in vault files, not only in terminal text.",
-    buildCabinetEpilogueInstructions(),
+    buildYantraEpilogueInstructions(),
     "",
     `User request:\n${input.userMessage}${mentionContext}`,
   ].join("\n");
@@ -156,7 +156,7 @@ export async function buildEditorConversationPrompt(input: {
     `Prefer making the requested changes directly in ${input.pagePath} unless the task clearly belongs in another vault file.`,
     "Work in the configured Obsidian vault.",
     "Edit vault files directly and reflect useful outputs in the vault, not only in terminal text.",
-    buildCabinetEpilogueInstructions(),
+    buildYantraEpilogueInstructions(),
     "",
     `User request:\n${input.userMessage}${mentionContext}`,
   ].join("\n");
@@ -305,7 +305,7 @@ async function processPostActions(
     try {
       if (action.action === "git_commit") {
         const simpleGit = (await import("simple-git")).default;
-        const git = simpleGit(getCabinetRoots().vaultRoot);
+        const git = simpleGit(getYantraRoots().vaultRoot);
         await git.add(".");
         await git.commit(
           substituteTemplateVars(
@@ -339,9 +339,9 @@ export async function startJobConversation(job: JobConfig): Promise<JobRun> {
   const prompt = [
     buildAgentContextHeader(persona, job.agentSlug || "agent"),
     "",
-    "This is a scheduled or manual Cabinet job.",
+    "This is a scheduled or manual Yantra job.",
     "Reflect the results in KB files whenever useful.",
-    buildCabinetEpilogueInstructions(),
+    buildYantraEpilogueInstructions(),
     "",
     `Job instructions:\n${jobPrompt}`,
   ].join("\n");

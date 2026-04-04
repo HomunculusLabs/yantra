@@ -1,11 +1,11 @@
 import fs from "fs/promises";
 import path from "path";
 import {
-  getCabinetRoots,
+  getYantraRoots,
   ensureRuntimeRootExists,
   resolveRuntimePath,
   resolveVaultPath,
-} from "@/lib/config/cabinet-roots";
+} from "@/lib/config/yantra-roots";
 import type { AgentPersona } from "./persona-manager";
 import type { JobConfig } from "@/types/jobs";
 import type {
@@ -23,12 +23,12 @@ function defaultLauncherRegistry(): LauncherRegistryConfig {
   return {
     version: 1,
     defaultLauncherId:
-      process.env.CABINET_DEFAULT_LAUNCHER_ID?.trim() || DEFAULT_LAUNCHER_ID,
+      process.env.YANTRA_DEFAULT_LAUNCHER_ID?.trim() || DEFAULT_LAUNCHER_ID,
     launchers: {
       [DEFAULT_LAUNCHER_ID]: {
         id: DEFAULT_LAUNCHER_ID,
         label: "Claude Code",
-        command: process.env.CABINET_DEFAULT_CLI_COMMAND?.trim() || "claude",
+        command: process.env.YANTRA_DEFAULT_CLI_COMMAND?.trim() || "claude",
         args: ["--dangerously-skip-permissions"],
         cwdBase: "vault",
         promptDelivery: {
@@ -38,7 +38,7 @@ function defaultLauncherRegistry(): LauncherRegistryConfig {
           submit: true,
         },
         healthcheck: {
-          command: process.env.CABINET_DEFAULT_CLI_COMMAND?.trim() || "claude",
+          command: process.env.YANTRA_DEFAULT_CLI_COMMAND?.trim() || "claude",
           args: ["--version"],
         },
       },
@@ -46,7 +46,7 @@ function defaultLauncherRegistry(): LauncherRegistryConfig {
         id: PI_AGENT_STACK_LAUNCHER_ID,
         label: "pi-agent-stack",
         command:
-          process.env.CABINET_PI_AGENT_STACK_COMMAND?.trim() ||
+          process.env.YANTRA_PI_AGENT_STACK_COMMAND?.trim() ||
           "{{vaultRoot}}/00-09 System/05 - Tooling/Tools/pi-agent-stack.sh",
         args: ["{{vars.stackFile}}"],
         cwdBase: "vault",
@@ -64,7 +64,7 @@ function defaultLauncherRegistry(): LauncherRegistryConfig {
 
 export function getLaunchersConfigPath(): string {
   ensureRuntimeRootExists();
-  const { runtimeConfigRoot } = getCabinetRoots();
+  const { runtimeConfigRoot } = getYantraRoots();
   return path.join(runtimeConfigRoot, "launchers.json");
 }
 
@@ -154,13 +154,13 @@ function mergeEnv(
   execution: JobExecutionConfig | undefined,
   resolvedCwd: string
 ): Record<string, string> {
-  const { vaultRoot, runtimeRoot } = getCabinetRoots();
+  const { vaultRoot, runtimeRoot } = getYantraRoots();
   const vars = mergeVars(agentLaunch, execution);
   const baseEnv: Record<string, string> = {
     ...(process.env as Record<string, string>),
-    CABINET_VAULT_ROOT: vaultRoot,
-    CABINET_RUNTIME_ROOT: runtimeRoot,
-    CABINET_WORKDIR: resolvedCwd,
+    YANTRA_VAULT_ROOT: vaultRoot,
+    YANTRA_RUNTIME_ROOT: runtimeRoot,
+    YANTRA_WORKDIR: resolvedCwd,
   };
 
   const applyMap = (input?: Record<string, string>) => {
@@ -218,7 +218,7 @@ export async function resolveLaunchSpec(input: {
     input.persona?.workdir;
 
   const resolvedCwd = resolveBaseCwd(launcher, cwdOverride);
-  const { vaultRoot, runtimeRoot } = getCabinetRoots();
+  const { vaultRoot, runtimeRoot } = getYantraRoots();
   const templateContext = {
     vaultRoot,
     runtimeRoot,

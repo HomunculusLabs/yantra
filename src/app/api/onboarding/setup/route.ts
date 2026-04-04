@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import fs from "fs/promises";
 import matter from "gray-matter";
-import { getCabinetRoots } from "@/lib/config/cabinet-roots";
+import { getYantraRoots } from "@/lib/config/yantra-roots";
 
-const ROOTS = getCabinetRoots();
+const ROOTS = getYantraRoots();
 const AGENTS_DIR = ROOTS.runtimeAgentsRoot;
 const LIBRARY_DIR = path.join(AGENTS_DIR, ".library");
 const CONFIG_DIR = path.join(AGENTS_DIR, ".config");

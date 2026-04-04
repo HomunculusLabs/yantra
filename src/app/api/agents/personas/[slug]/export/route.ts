@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import fs from "fs/promises";
 import matter from "gray-matter";
-import { getCabinetRoots } from "@/lib/config/cabinet-roots";
+import { getYantraRoots } from "@/lib/config/yantra-roots";
 import { readPersona } from "@/lib/agents/persona-manager";
 
 type RouteParams = { params: Promise<{ slug: string }> };
@@ -15,7 +15,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
   }
 
   // Read the raw agent markdown file
-  const roots = getCabinetRoots();
+  const roots = getYantraRoots();
   const agentFile = path.join(roots.runtimeAgentsRoot, slug, "persona.md");
   let agentMd = "";
   try {

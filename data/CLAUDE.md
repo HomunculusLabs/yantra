@@ -1,6 +1,6 @@
-# KB Structure — Cabinet
+# KB Structure — Yantra
 
-You are an AI agent working inside the Cabinet knowledge base. This file teaches you about the KB structure and conventions.
+You are an AI agent working inside the Yantra knowledge base. This file teaches you about the KB structure and conventions.
 
 ## Directory Layout
 
@@ -101,7 +101,7 @@ When an agent is working on a KB page that has a `.repo.yaml` in the same direct
     .repo.yaml          ← links to source repo
     PRD - GPU Visual Emulator.md
   product/
-    .repo.yaml          ← links to the main cabinet repo itself
+    .repo.yaml          ← links to the main yantra repo itself
 ```
 
 ## Directory Examples

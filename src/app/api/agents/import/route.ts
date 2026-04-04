@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import fs from "fs/promises";
 import matter from "gray-matter";
-import { getCabinetRoots } from "@/lib/config/cabinet-roots";
+import { getYantraRoots } from "@/lib/config/yantra-roots";
 import { writePersona } from "@/lib/agents/persona-manager";
 
 async function ensureDir(dir: string) {
@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid bundle format" }, { status: 400 });
     }
 
-    const roots = getCabinetRoots();
+    const roots = getYantraRoots();
     let slug = bundle.agent.slug;
     const agentDir = path.join(roots.runtimeAgentsRoot, slug);
     try {

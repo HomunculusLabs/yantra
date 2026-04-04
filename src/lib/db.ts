@@ -1,9 +1,9 @@
 import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
-import { getCabinetRoots, ensureRuntimeRootExists } from "@/lib/config/cabinet-roots";
+import { getYantraRoots, ensureRuntimeRootExists } from "@/lib/config/yantra-roots";
 
-const DB_PATH = getCabinetRoots().databasePath;
+const DB_PATH = getYantraRoots().databasePath;
 const MIGRATIONS_DIR = path.join(process.cwd(), "server", "migrations");
 
 let _db: Database.Database | null = null;

@@ -1,9 +1,9 @@
 import path from "path";
 import fs from "fs/promises";
-import { getCabinetRoots } from "@/lib/config/cabinet-roots";
+import { getYantraRoots } from "@/lib/config/yantra-roots";
 import { fileExists, ensureDirectory } from "@/lib/storage/fs-operations";
 
-const AGENTS_DIR = getCabinetRoots().runtimeAgentsRoot;
+const AGENTS_DIR = getYantraRoots().runtimeAgentsRoot;
 
 export interface AgentTask {
   id: string;

@@ -1,8 +1,8 @@
-# Cabinet Agent System — MVP Design
+# Yantra Agent System — MVP Design
 
 ## Vision
 
-Cabinet is a Startup OS where you onboard an AI team that works for you. You answer 5 questions, a CEO agent appears, and it suggests teammates. Each agent has skills, recurring jobs, and a place in the knowledge base where their work shows up. You watch them work like watching a real team — through sessions and the KB itself.
+Yantra is a Startup OS where you onboard an AI team that works for you. You answer 5 questions, a CEO agent appears, and it suggests teammates. Each agent has skills, recurring jobs, and a place in the knowledge base where their work shows up. You watch them work like watching a real team — through sessions and the KB itself.
 
 **Design principle:** If it feels like enterprise workflow software, it's wrong. If it feels like watching a team work, it's right.
 
@@ -14,7 +14,7 @@ Cabinet is a Startup OS where you onboard an AI team that works for you. You ans
 
 ```
 ┌─────────────────────────┐
-│ Cabinet                 │
+│ Yantra                 │
 │                         │
 │ ── Team ──              │
 │ ▾ Agents                │  ← collapsible
@@ -175,7 +175,7 @@ Clicking [+ Add] copies the template to `/data/.agents/{slug}/` and opens the ag
 ### Step 1: Welcome
 ```
 ┌─────────────────────────────────────────────────────┐
-│           Welcome to Cabinet                         │
+│           Welcome to Yantra                         │
 │                                                      │
 │   Let's set up your AI team. I'll ask a few          │
 │   questions to get the right agents working           │
@@ -311,18 +311,18 @@ This skill allows the agent to search the web using the built-in search capabili
 
 ### Overview
 
-Cabinet runs as **two processes** started with a single command:
+Yantra runs as **two processes** started with a single command:
 
 ```
 npm run start
   ├── Next.js (port 3000) — UI + API routes
-  └── Cabinet Daemon (port 3001) — WebSocket + scheduler + agent execution
+  └── Yantra Daemon (port 3001) — WebSocket + scheduler + agent execution
 ```
 
-### Cabinet Daemon (`server/cabinet-daemon.ts`)
+### Yantra Daemon (`server/yantra-daemon.ts`)
 
 ```
-Cabinet Daemon
+Yantra Daemon
 ├── Terminal Server      ← existing PTY/WebSocket
 ├── Job Scheduler        ← node-cron, fires agent jobs on schedule
 ├── Agent Executor       ← spawns Claude Code CLI processes for agents
@@ -336,7 +336,7 @@ Cabinet Daemon
 4. Output is captured, logged to SQLite, broadcast via WebSocket
 5. Post-actions fire (git commit, etc.)
 
-### SQLite Database (`/data/.cabinet.db`)
+### SQLite Database (`/data/.yantra.db`)
 
 Used for **structured, high-volume, queryable data**. Content stays as markdown files.
 
@@ -444,4 +444,4 @@ src/components/
 | **Skill** | A reusable capability available to an agent. Stored in agent's `skills/` dir. |
 | **Session** | A single Claude Code execution (one run of an agent). Browsable like ChatGPT history. |
 | **Workspace** | The KB directory where an agent's output lives. |
-| **Library** | Pre-built agent templates shipped with Cabinet. |
+| **Library** | Pre-built agent templates shipped with Yantra. |

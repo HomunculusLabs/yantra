@@ -1,5 +1,5 @@
 import path from "path";
-import { getCabinetRoots, resolveVaultPath } from "@/lib/config/cabinet-roots";
+import { getYantraRoots, resolveVaultPath } from "@/lib/config/yantra-roots";
 import { DATA_DIR } from "@/lib/storage/path-utils";
 import {
   readPersona,
@@ -45,7 +45,7 @@ function resolveHeartbeatWorkdir(workdir: string): string {
 
 async function buildHeartbeatContext(slug: string): Promise<HeartbeatContext | null> {
   const startTime = Date.now();
-  const roots = getCabinetRoots();
+  const roots = getYantraRoots();
   const persona = await readPersona(slug);
   if (!persona || !persona.active) return null;
 
@@ -148,7 +148,7 @@ TASK_COMPLETE [task-id]: result summary (mark a pending task as completed)
 
 Also include a second block at the very end:
 
-\`\`\`cabinet
+\`\`\`yantra
 SUMMARY: One short summary line of what happened.
 CONTEXT: Optional lightweight context summary to remember later.
 ARTIFACT: relative/path/to/created-or-updated-kb-file
@@ -168,7 +168,7 @@ async function processHeartbeatOutput(
   inbox: Array<{ from: string; timestamp: string; message: string }>,
   startTime: number,
 ): Promise<void> {
-  const roots = getCabinetRoots();
+  const roots = getYantraRoots();
   // Parse memory block from output
   const memoryMatch = output.match(/```memory\n([\s\S]*?)```/);
   if (memoryMatch) {

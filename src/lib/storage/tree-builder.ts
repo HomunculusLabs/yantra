@@ -8,7 +8,7 @@ import {
   isMarkdownFile,
 } from "./path-utils";
 import { listDirectory, readFileContent, fileExists } from "./fs-operations";
-import { getCabinetRoots } from "@/lib/config/cabinet-roots";
+import { getYantraRoots } from "@/lib/config/yantra-roots";
 
 const TEXT_EXTENSIONS = new Set([
   ".json",
@@ -58,7 +58,7 @@ async function readFrontmatter(
 async function buildTreeRecursive(dirPath: string): Promise<TreeNode[]> {
   const entries = await listDirectory(dirPath);
   const nodes: TreeNode[] = [];
-  const { runtimeRoot } = getCabinetRoots();
+  const { runtimeRoot } = getYantraRoots();
 
   for (const entry of entries) {
     if (isHiddenEntry(entry.name)) continue;

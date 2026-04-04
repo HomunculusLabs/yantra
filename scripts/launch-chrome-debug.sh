@@ -5,7 +5,7 @@ APP_URL="${1:-http://localhost:3000}"
 DEBUG_PORT="${DEBUG_PORT:-9222}"
 VERSION_ENDPOINT="http://127.0.0.1:${DEBUG_PORT}/json/version"
 LIST_ENDPOINT="http://127.0.0.1:${DEBUG_PORT}/json/list"
-PROFILE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/cabinet-chrome-debug.XXXXXX")"
+PROFILE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/yantra-chrome-debug.XXXXXX")"
 
 find_browser() {
   local candidates=(

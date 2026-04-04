@@ -185,9 +185,9 @@ export function Sidebar() {
         <div className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo-light.png" alt="Cabinet" className="h-6 w-6 rounded" />
+            <img src="/logo-light.png" alt="Yantra" className="h-6 w-6 rounded" />
             <span className="text-[13px] font-semibold tracking-[-0.02em]">
-              Cabinet
+              Yantra
             </span>
           </div>
           <Button

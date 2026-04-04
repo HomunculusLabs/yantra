@@ -200,28 +200,28 @@ export function MissionControl() {
       es.addEventListener("agent_responding", (e) => {
         try {
           const agents = JSON.parse(e.data);
-          window.dispatchEvent(new CustomEvent("cabinet:agent-responding", { detail: agents }));
+          window.dispatchEvent(new CustomEvent("yantra:agent-responding", { detail: agents }));
         } catch { /* ignore */ }
       });
       es.addEventListener("slack_activity", (e) => {
         // Trigger a lightweight refresh of Slack panel
-        window.dispatchEvent(new CustomEvent("cabinet:slack-refresh"));
+        window.dispatchEvent(new CustomEvent("yantra:slack-refresh"));
 
         // Browser notifications for #alerts and @human mentions
         try {
           const data = JSON.parse(e.data);
           if ("Notification" in window && Notification.permission === "granted") {
             if (data.channel === "alerts" && data.preview) {
-              new Notification("Cabinet Alert", {
+              new Notification("Yantra Alert", {
                 body: `${data.agentEmoji || "⚠️"} ${data.agentName || "Agent"}: ${data.preview}`,
                 icon: "/favicon.ico",
-                tag: `cabinet-alert-${Date.now()}`,
+                tag: `yantra-alert-${Date.now()}`,
               });
             } else if (data.hasHumanMention && data.preview) {
               new Notification("Agent needs your attention", {
                 body: `${data.agentEmoji || "🤖"} ${data.agentName || "Agent"} in #${data.channel}: ${data.preview}`,
                 icon: "/favicon.ico",
-                tag: `cabinet-mention-${Date.now()}`,
+                tag: `yantra-mention-${Date.now()}`,
               });
             }
           }
@@ -245,8 +245,8 @@ export function MissionControl() {
   // Listen for Cmd+N create agent shortcut
   useEffect(() => {
     const handler = () => setCreateOpen(true);
-    window.addEventListener("cabinet:create-agent", handler);
-    return () => window.removeEventListener("cabinet:create-agent", handler);
+    window.addEventListener("yantra:create-agent", handler);
+    return () => window.removeEventListener("yantra:create-agent", handler);
   }, []);
 
   // Escape key closes confirmation dialog
@@ -360,7 +360,7 @@ export function MissionControl() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          instruction: `You are a Cabinet Agent creator. Based on the following description, generate a JSON object for creating a new agent. Return ONLY valid JSON, no other text.
+          instruction: `You are a Yantra Agent creator. Based on the following description, generate a JSON object for creating a new agent. Return ONLY valid JSON, no other text.
 
 Description: "${nlInput.trim()}"
 
@@ -443,7 +443,7 @@ Choose an appropriate department. Pick a descriptive emoji. Make the body a comp
           <Gauge className="h-5 w-5 text-primary shrink-0 hidden sm:block" />
           <div className="min-w-0">
             <h1 className="text-[14px] sm:text-[15px] font-semibold tracking-[-0.02em] truncate">
-              {companyName ? `${companyName}` : "Cabinet"}
+              {companyName ? `${companyName}` : "Yantra"}
             </h1>
             <p className="text-[10px] sm:text-[11px] text-muted-foreground/60 hidden sm:block">
               {companyName ? "Company OS" : "Your Company OS"}
@@ -520,7 +520,7 @@ Choose an appropriate department. Pick a descriptive emoji. Make the body a comp
         metrics={pulseMetrics}
         onAlertClick={() => {
           // Scroll to slack panel and switch to alerts channel
-          window.dispatchEvent(new CustomEvent("cabinet:switch-slack-channel", { detail: "alerts" }));
+          window.dispatchEvent(new CustomEvent("yantra:switch-slack-channel", { detail: "alerts" }));
         }}
         onGoalClick={() => setShowGoalSummary(!showGoalSummary)}
         onPlaybookClick={() => setSection({ type: "jobs" })}
@@ -582,7 +582,7 @@ Choose an appropriate department. Pick a descriptive emoji. Make the body a comp
                   No agents configured
                 </p>
                 <p className="text-[12px] text-muted-foreground/60">
-                  Create your first agent to get started with Cabinet Agents.
+                  Create your first agent to get started with Yantra Agents.
                 </p>
               </div>
               <Button variant="default" size="sm" className="text-[12px] gap-1.5" onClick={() => setCreateOpen(true)}>

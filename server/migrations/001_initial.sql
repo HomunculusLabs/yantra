@@ -1,4 +1,4 @@
--- Initial schema for Cabinet SQLite database
+-- Initial schema for Yantra SQLite database
 -- Stores structured, high-volume, queryable data alongside file-based content
 
 -- Agent session metadata

@@ -24,8 +24,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm install -g @anthropic-ai/claude-code || true
 
 # Create non-root user
-RUN addgroup --system --gid 1001 cabinet
-RUN adduser --system --uid 1001 cabinet
+RUN addgroup --system --gid 1001 yantra
+RUN adduser --system --uid 1001 yantra
 
 # Copy built application
 COPY --from=builder /app/public ./public
@@ -36,14 +36,14 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
 
 # Data directory (mount as volume)
-RUN mkdir -p /app/data && chown cabinet:cabinet /app/data
+RUN mkdir -p /app/data && chown yantra:yantra /app/data
 
-USER cabinet
+USER yantra
 
 EXPOSE 3000 3001
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
 
-# Start both Next.js and the unified Cabinet daemon
-CMD ["sh", "-c", "node server.js & npx tsx server/cabinet-daemon.ts & wait"]
+# Start both Next.js and the unified Yantra daemon
+CMD ["sh", "-c", "node server.js & npx tsx server/yantra-daemon.ts & wait"]

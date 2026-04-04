@@ -1,5 +1,5 @@
 import fs from "fs/promises";
-import { ensureVaultRootExists } from "@/lib/config/cabinet-roots";
+import { ensureVaultRootExists } from "@/lib/config/yantra-roots";
 
 export async function readFileContent(absPath: string): Promise<string> {
   return fs.readFile(absPath, "utf-8");

@@ -1,6 +1,6 @@
 import path from "path";
 import fs from "fs/promises";
-import { getCabinetRoots } from "@/lib/config/cabinet-roots";
+import { getYantraRoots } from "@/lib/config/yantra-roots";
 import {
   readFileContent,
   fileExists,
@@ -9,7 +9,7 @@ import {
 } from "@/lib/storage/fs-operations";
 import type { SlackMessage } from "@/types/agents";
 
-const AGENTS_DIR = getCabinetRoots().runtimeAgentsRoot;
+const AGENTS_DIR = getYantraRoots().runtimeAgentsRoot;
 const SLACK_DIR = path.join(AGENTS_DIR, ".slack");
 
 // ---------------------------------------------------------------------------

@@ -1,9 +1,9 @@
 import path from "path";
 import fs from "fs/promises";
-import { getCabinetRoots } from "@/lib/config/cabinet-roots";
+import { getYantraRoots } from "@/lib/config/yantra-roots";
 
 const CONFIG_FILE = path.join(
-  getCabinetRoots().runtimeConfigRoot,
+  getYantraRoots().runtimeConfigRoot,
   "integrations.json"
 );
 

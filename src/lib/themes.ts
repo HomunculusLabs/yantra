@@ -467,15 +467,15 @@ export function getThemeByName(name: string | null) {
 // Get the stored theme name from localStorage
 export function getStoredThemeName(): string | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem("cabinet-theme");
+  return localStorage.getItem("yantra-theme");
 }
 
 // Store theme name to localStorage
 export function storeThemeName(name: string | null) {
   if (typeof window === "undefined") return;
   if (name) {
-    localStorage.setItem("cabinet-theme", name);
+    localStorage.setItem("yantra-theme", name);
   } else {
-    localStorage.removeItem("cabinet-theme");
+    localStorage.removeItem("yantra-theme");
   }
 }

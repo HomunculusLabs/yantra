@@ -1,15 +1,15 @@
 import path from "path";
 import {
-  getCabinetRoots,
+  getYantraRoots,
   isWithinRuntimeRoot,
   resolveVaultPath,
   resolveRuntimePath,
   toVaultRelative,
   toRuntimeRelative,
-} from "@/lib/config/cabinet-roots";
+} from "@/lib/config/yantra-roots";
 
-export const DATA_DIR = getCabinetRoots().vaultRoot;
-export const RUNTIME_DIR = getCabinetRoots().runtimeRoot;
+export const DATA_DIR = getYantraRoots().vaultRoot;
+export const RUNTIME_DIR = getYantraRoots().runtimeRoot;
 export const RUNTIME_VIRTUAL_PREFIX = "@runtime";
 
 const EXCLUDED_ENTRIES = new Set([
@@ -32,7 +32,7 @@ export function resolveContentPath(virtualPath: string): string {
 }
 
 export function virtualPathFromFs(fsPath: string): string {
-  const { runtimeRoot, vaultRoot } = getCabinetRoots();
+  const { runtimeRoot, vaultRoot } = getYantraRoots();
   if (runtimeRoot !== vaultRoot && isWithinRuntimeRoot(fsPath)) {
     return toRuntimeVirtualPath(toRuntimeRelative(fsPath));
   }

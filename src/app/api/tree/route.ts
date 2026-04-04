@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { buildTree } from "@/lib/storage/tree-builder";
-import { ensureVaultRootExists } from "@/lib/config/cabinet-roots";
+import { ensureVaultRootExists } from "@/lib/config/yantra-roots";
 
 export async function GET() {
   try {

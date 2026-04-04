@@ -4,8 +4,8 @@ const { spawnSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 
-const REPO = "https://github.com/hilash/cabinet.git"; // UPDATE THIS
-const DIR = "cabinet";
+const REPO = "https://github.com/HomunculusLabs/yantra.git";
+const DIR = "yantra";
 
 const args = process.argv.slice(2);
 const COMMANDS = ["init", "help", "--help"];
@@ -49,7 +49,7 @@ if (command === "init") {
   console.log(`
   ┌─────────────────────────────┐
   │                             │
-  │   📦  Cabinet               │
+  │   📦  Yantra               │
   │   AI-first startup OS       │
   │                             │
   └─────────────────────────────┘
@@ -59,7 +59,7 @@ if (command === "init") {
     error(`Directory "${targetDir}" already exists.`);
   }
 
-  log(`Cloning Cabinet into ./${targetDir}...`);
+  log(`Cloning Yantra into ./${targetDir}...`);
   run("git", ["clone", "--depth", "1", REPO, targetDir]);
 
   log("Installing dependencies...");
@@ -77,7 +77,7 @@ if (command === "init") {
   run("git", ["init"], { cwd: targetDir });
 
   console.log("");
-  success("Cabinet is ready!");
+  success("Yantra is ready!");
   console.log(`
   Next steps:
 
@@ -92,17 +92,17 @@ if (command === "init") {
 
 } else if (command === "help" || command === "--help") {
   console.log(`
-  create-cabinet - Create a new Cabinet project
+  create-yantra - Create a new Yantra project
 
   Usage:
-    npx create-cabinet [directory]          Create a new project
-    npx create-cabinet --yes               Skip prompts
-    npx create-cabinet help                Show this help
+    npx create-yantra [directory]          Create a new project
+    npx create-yantra --yes               Skip prompts
+    npx create-yantra help                Show this help
 
   Options:
     --yes, -y    Accept all defaults
   `);
 
 } else {
-  error(`Unknown command: ${command}. Run "create-cabinet help" for usage.`);
+  error(`Unknown command: ${command}. Run "create-yantra help" for usage.`);
 }

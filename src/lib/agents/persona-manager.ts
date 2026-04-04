@@ -1,7 +1,7 @@
 import path from "path";
 import matter from "gray-matter";
 import cron from "node-cron";
-import { getCabinetRoots } from "@/lib/config/cabinet-roots";
+import { getYantraRoots } from "@/lib/config/yantra-roots";
 import {
   readFileContent,
   writeFileContent,
@@ -14,7 +14,7 @@ import { getGoalState } from "./goal-manager";
 import type { GoalMetric, AgentType } from "@/types/agents";
 import type { AgentLaunchConfig } from "@/types/launchers";
 
-const { runtimeAgentsRoot } = getCabinetRoots();
+const { runtimeAgentsRoot } = getYantraRoots();
 const AGENTS_DIR = runtimeAgentsRoot;
 const MEMORY_DIR = path.join(AGENTS_DIR, ".memory");
 const MESSAGES_DIR = path.join(AGENTS_DIR, ".messages");

@@ -2,7 +2,7 @@ import fs from "fs";
 import fsp from "fs/promises";
 import path from "path";
 
-export interface CabinetRoots {
+export interface YantraRoots {
   vaultRoot: string;
   runtimeRoot: string;
   runtimeAgentsRoot: string;
@@ -12,12 +12,12 @@ export interface CabinetRoots {
   databasePath: string;
 }
 
-export interface CabinetRootsConfigFile {
+export interface YantraRootsConfigFile {
   vaultRoot?: string;
   runtimeRoot?: string;
 }
 
-let cachedRoots: CabinetRoots | null = null;
+let cachedRoots: YantraRoots | null = null;
 
 function normalizeRoot(input: string): string {
   return path.resolve(input);
@@ -31,18 +31,18 @@ function defaultRuntimeRoot(): string {
   return path.join(process.cwd(), "data");
 }
 
-export function getCabinetRootsConfigPath(): string {
-  return path.join(process.cwd(), "cabinet-roots.json");
+export function getYantraRootsConfigPath(): string {
+  return path.join(process.cwd(), "yantra-roots.json");
 }
 
-export function clearCabinetRootsCache(): void {
+export function clearYantraRootsCache(): void {
   cachedRoots = null;
 }
 
-export function readCabinetRootsConfig(): CabinetRootsConfigFile {
+export function readYantraRootsConfig(): YantraRootsConfigFile {
   try {
-    const raw = fs.readFileSync(getCabinetRootsConfigPath(), "utf-8");
-    const parsed = JSON.parse(raw) as CabinetRootsConfigFile;
+    const raw = fs.readFileSync(getYantraRootsConfigPath(), "utf-8");
+    const parsed = JSON.parse(raw) as YantraRootsConfigFile;
     return {
       ...(parsed.vaultRoot?.trim() ? { vaultRoot: parsed.vaultRoot.trim() } : {}),
       ...(parsed.runtimeRoot?.trim() ? { runtimeRoot: parsed.runtimeRoot.trim() } : {}),
@@ -52,33 +52,33 @@ export function readCabinetRootsConfig(): CabinetRootsConfigFile {
   }
 }
 
-export async function saveCabinetRootsConfig(
-  config: CabinetRootsConfigFile
-): Promise<CabinetRootsConfigFile> {
-  const next: CabinetRootsConfigFile = {
+export async function saveYantraRootsConfig(
+  config: YantraRootsConfigFile
+): Promise<YantraRootsConfigFile> {
+  const next: YantraRootsConfigFile = {
     vaultRoot: normalizeRoot(config.vaultRoot?.trim() || defaultVaultRoot()),
     runtimeRoot: normalizeRoot(config.runtimeRoot?.trim() || defaultRuntimeRoot()),
   };
 
   await fsp.writeFile(
-    getCabinetRootsConfigPath(),
+    getYantraRootsConfigPath(),
     `${JSON.stringify(next, null, 2)}\n`,
     "utf-8"
   );
   return next;
 }
 
-export function getCabinetRoots(): CabinetRoots {
+export function getYantraRoots(): YantraRoots {
   if (cachedRoots) return cachedRoots;
 
-  const config = readCabinetRootsConfig();
+  const config = readYantraRootsConfig();
   const vaultRoot = normalizeRoot(
-    process.env.CABINET_VAULT_ROOT?.trim() ||
+    process.env.YANTRA_VAULT_ROOT?.trim() ||
       config.vaultRoot?.trim() ||
       defaultVaultRoot()
   );
   const runtimeRoot = normalizeRoot(
-    process.env.CABINET_RUNTIME_ROOT?.trim() ||
+    process.env.YANTRA_RUNTIME_ROOT?.trim() ||
       config.runtimeRoot?.trim() ||
       defaultRuntimeRoot()
   );
@@ -90,7 +90,7 @@ export function getCabinetRoots(): CabinetRoots {
     runtimeJobsRoot: path.join(runtimeRoot, ".jobs"),
     runtimeConfigRoot: path.join(runtimeRoot, ".agents", ".config"),
     runtimeDaemonRoot: path.join(runtimeRoot, ".agents", ".runtime"),
-    databasePath: path.join(runtimeRoot, ".cabinet.db"),
+    databasePath: path.join(runtimeRoot, ".yantra.db"),
   };
 
   return cachedRoots;
@@ -111,7 +111,7 @@ function assertInsideRoot(absPath: string, root: string, label: string): string 
 }
 
 export function ensureVaultRootExists(): string {
-  const { vaultRoot } = getCabinetRoots();
+  const { vaultRoot } = getYantraRoots();
   if (!fs.existsSync(vaultRoot)) {
     throw new Error(`Configured vault root does not exist: ${vaultRoot}`);
   }
@@ -119,13 +119,13 @@ export function ensureVaultRootExists(): string {
 }
 
 export function ensureRuntimeRootExists(): string {
-  const { runtimeRoot } = getCabinetRoots();
+  const { runtimeRoot } = getYantraRoots();
   fs.mkdirSync(runtimeRoot, { recursive: true });
   return runtimeRoot;
 }
 
 export function resolveVaultPath(relativeOrAbsolute = ""): string {
-  const { vaultRoot } = getCabinetRoots();
+  const { vaultRoot } = getYantraRoots();
   const candidate = path.isAbsolute(relativeOrAbsolute)
     ? relativeOrAbsolute
     : path.join(vaultRoot, relativeOrAbsolute);
@@ -133,7 +133,7 @@ export function resolveVaultPath(relativeOrAbsolute = ""): string {
 }
 
 export function resolveRuntimePath(relativeOrAbsolute = ""): string {
-  const { runtimeRoot } = getCabinetRoots();
+  const { runtimeRoot } = getYantraRoots();
   const candidate = path.isAbsolute(relativeOrAbsolute)
     ? relativeOrAbsolute
     : path.join(runtimeRoot, relativeOrAbsolute);
@@ -141,19 +141,19 @@ export function resolveRuntimePath(relativeOrAbsolute = ""): string {
 }
 
 export function toVaultRelative(absPath: string): string {
-  const { vaultRoot } = getCabinetRoots();
+  const { vaultRoot } = getYantraRoots();
   const normalized = assertInsideRoot(absPath, vaultRoot, "vault");
   return path.relative(vaultRoot, normalized).split(path.sep).join("/");
 }
 
 export function toRuntimeRelative(absPath: string): string {
-  const { runtimeRoot } = getCabinetRoots();
+  const { runtimeRoot } = getYantraRoots();
   const normalized = assertInsideRoot(absPath, runtimeRoot, "runtime");
   return path.relative(runtimeRoot, normalized).split(path.sep).join("/");
 }
 
 export function isWithinRuntimeRoot(absPath: string): boolean {
-  const { runtimeRoot } = getCabinetRoots();
+  const { runtimeRoot } = getYantraRoots();
   const normalizedRoot = path.resolve(runtimeRoot);
   const normalizedPath = path.resolve(absPath);
   return (

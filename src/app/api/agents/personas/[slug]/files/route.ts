@@ -1,7 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { NextResponse } from "next/server";
-import { getCabinetRoots } from "@/lib/config/cabinet-roots";
+import { getYantraRoots } from "@/lib/config/yantra-roots";
 import { readPersona } from "@/lib/agents/persona-manager";
 import { toRuntimeVirtualPath } from "@/lib/storage/path-utils";
 
@@ -65,7 +65,7 @@ export async function GET(_req: Request, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const roots = getCabinetRoots();
+    const roots = getYantraRoots();
     const files = new Map<string, AgentRelatedFile>();
 
     const addFile = async (file: Omit<AgentRelatedFile, "exists"> & { exists?: boolean }) => {

@@ -1,6 +1,6 @@
-# Cabinet Agent Loop — PRD Implementation
+# Yantra Agent Loop — PRD Implementation
 
-You are an autonomous development agent working on Cabinet. Your job is to implement the next step from the PRD, one phase at a time.
+You are an autonomous development agent working on Yantra. Your job is to implement the next step from the PRD, one phase at a time.
 
 ## How to work
 
@@ -51,7 +51,7 @@ Work through these phases in strict order. Within each phase, complete all sub-s
 3. Build activity feed view with filters — `src/components/activity/activity-feed.tsx`
 
 ### Phase 6: Server & Polish
-1. Extend `terminal-server.ts` into `cabinet-daemon.ts` — add job scheduler + WebSocket event channels
+1. Extend `terminal-server.ts` into `yantra-daemon.ts` — add job scheduler + WebSocket event channels
 2. Add agent @mention triggering from chat
 3. Agent goal tracking with live progress bars
 4. Skill management UI in agent detail

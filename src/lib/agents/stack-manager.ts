@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import { getCabinetRoots } from "@/lib/config/cabinet-roots";
+import { getYantraRoots } from "@/lib/config/yantra-roots";
 import { readPersona } from "@/lib/agents/persona-manager";
 
 export type AgentStackConfig = {
@@ -46,7 +46,7 @@ function toPosix(relativePath: string): string {
 
 export function normalizeVaultRelativePath(
   input: unknown,
-  vaultRoot = getCabinetRoots().vaultRoot
+  vaultRoot = getYantraRoots().vaultRoot
 ): string | null {
   if (typeof input !== "string") return null;
   const trimmed = input.trim();
@@ -93,7 +93,7 @@ async function walkFiles(
   matcher: (name: string) => boolean,
   formatter?: (relativeFromRoot: string, absolutePath: string) => StackCatalogEntry
 ): Promise<StackCatalogEntry[]> {
-  const { vaultRoot } = getCabinetRoots();
+  const { vaultRoot } = getYantraRoots();
   const rootAbsolute = path.join(vaultRoot, rootRelative);
   if (!(await exists(rootAbsolute))) return [];
 
@@ -133,7 +133,7 @@ async function walkFiles(
 }
 
 export async function listAgentStackCatalog(): Promise<StackCatalog> {
-  const { vaultRoot } = getCabinetRoots();
+  const { vaultRoot } = getYantraRoots();
 
   const extensions = [
     ...(await walkFiles(
@@ -218,7 +218,7 @@ export async function readAgentStack(slug: string): Promise<{
     return { stackPath: null, stack: null };
   }
 
-  const { vaultRoot } = getCabinetRoots();
+  const { vaultRoot } = getYantraRoots();
   const absolutePath = path.join(vaultRoot, stackPath);
   if (!(await exists(absolutePath))) {
     return { stackPath, stack: null };
@@ -243,7 +243,7 @@ export async function writeAgentStack(
   const next: AgentStackConfig = {
     ...current.stack,
     ...updates,
-    vaultRoot: getCabinetRoots().vaultRoot,
+    vaultRoot: getYantraRoots().vaultRoot,
     paths: {
       ...(current.stack.paths || {}),
       ...(updates.paths || {}),
@@ -272,7 +272,7 @@ export async function writeAgentStack(
     tertiary: normalizeVaultRelativePath(next.paths?.tertiary) || "",
   };
 
-  const { vaultRoot } = getCabinetRoots();
+  const { vaultRoot } = getYantraRoots();
   const absolutePath = path.join(vaultRoot, current.stackPath);
   await fs.writeFile(absolutePath, `${JSON.stringify(next, null, 2)}\n`, "utf-8");
 
