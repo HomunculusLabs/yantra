@@ -37,7 +37,7 @@ export async function getDaemonSessionOutput(id: string): Promise<{
   status: string;
   output: string;
 }> {
-  const response = await daemonFetch(`/session/${id}/output`);
+  const response = await daemonFetch(`/session/${encodeURIComponent(id)}/output`);
   if (!response.ok) {
     throw new Error(`Failed to load daemon session output (${response.status})`);
   }

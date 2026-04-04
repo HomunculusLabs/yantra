@@ -725,7 +725,7 @@ const server = http.createServer(async (req, res) => {
   // GET /session/:id/output — retrieve captured output for a completed session
   const outputMatch = url.pathname.match(/^\/session\/([^/]+)\/output$/);
   if (outputMatch && req.method === "GET") {
-    const sessionId = outputMatch[1];
+    const sessionId = decodeURIComponent(outputMatch[1]);
 
     const active = sessions.get(sessionId);
     if (active) {
