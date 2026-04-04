@@ -14,7 +14,7 @@ import {
   writeFileContent,
 } from "@/lib/storage/fs-operations";
 
-const DEFAULT_QUEUE_NAME = process.env.YANTRA_ABSURD_QUEUE?.trim() || "agent-jobs";
+const DEFAULT_QUEUE_PREFIX = process.env.YANTRA_ABSURD_QUEUE?.trim() || "agent-jobs";
 export const RUN_AGENT_JOB_TASK_NAME = "run-agent-job";
 const DEFAULT_CLAIM_TIMEOUT_SECONDS = Number(process.env.YANTRA_ABSURD_CLAIM_TIMEOUT || 3600);
 const DEFAULT_CONCURRENCY = Number(process.env.YANTRA_ABSURD_WORKER_CONCURRENCY || 2);
@@ -30,10 +30,10 @@ export interface SpawnJobTaskInput {
   idempotencyKey?: string;
 }
 
-let absurdClient: Absurd | null = null;
-let queueReadyPromise: Promise<void> | null = null;
-let workerPromise: Promise<AbsurdWorker> | null = null;
-let tasksRegistered = false;
+let absurdClients = new Map<string, Absurd>();
+let queueReadyPromises = new Map<string, Promise<void>>();
+let workerPromises = new Map<string, Promise<AbsurdWorker>>();
+let tasksRegisteredQueues = new Set<string>();
 
 interface RunAgentJobParams {
   agentSlug: string;
@@ -44,6 +44,7 @@ interface RunAgentJobParams {
 interface JobTaskRef {
   taskID: string;
   runID: string;
+  queueName?: string;
   source?: "manual" | "scheduler" | "api";
   queuedAt: string;
 }
@@ -60,21 +61,62 @@ function getAbsurdDatabaseUrl(): string {
   return url;
 }
 
-function getAbsurdClient(): Absurd {
-  if (!absurdClient) {
-    absurdClient = new Absurd({
-      db: getAbsurdDatabaseUrl(),
-      queueName: DEFAULT_QUEUE_NAME,
-      defaultMaxAttempts: 3,
-      log: console,
-    });
-  }
+function sanitizeQueueSegment(value: string): string {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 
-  return absurdClient;
+  return normalized || "agent";
 }
 
-export function getAbsurdQueueName(): string {
-  return DEFAULT_QUEUE_NAME;
+function getAbsurdClient(queueName = getAbsurdQueuePrefix()): Absurd {
+  const existing = absurdClients.get(queueName);
+  if (existing) return existing;
+
+  const client = new Absurd({
+    db: getAbsurdDatabaseUrl(),
+    queueName,
+    defaultMaxAttempts: 3,
+    log: console,
+  });
+
+  absurdClients.set(queueName, client);
+  return client;
+}
+
+export function getAbsurdQueuePrefix(): string {
+  return DEFAULT_QUEUE_PREFIX;
+}
+
+export function getAbsurdQueueName(agentSlug?: string | null): string {
+  if (!agentSlug) return DEFAULT_QUEUE_PREFIX;
+  return `${DEFAULT_QUEUE_PREFIX}-${sanitizeQueueSegment(agentSlug)}`;
+}
+
+export function getAbsurdWorkerQueueNames(): string[] {
+  return Array.from(workerPromises.keys()).sort();
+}
+
+async function listManagedQueueNames(agentSlugs: string[] = []): Promise<string[]> {
+  const queueNames = new Set<string>([getAbsurdQueuePrefix()]);
+  for (const slug of agentSlugs) {
+    if (!slug) continue;
+    queueNames.add(getAbsurdQueueName(slug));
+  }
+
+  const existingQueues = await getAbsurdClient(getAbsurdQueuePrefix()).listQueues();
+  for (const queueName of existingQueues) {
+    if (
+      queueName === getAbsurdQueuePrefix() ||
+      queueName.startsWith(`${getAbsurdQueuePrefix()}-`)
+    ) {
+      queueNames.add(queueName);
+    }
+  }
+
+  return Array.from(queueNames).sort();
 }
 
 function getJobTaskRefPath(agentSlug: string, jobId: string): string {
@@ -176,26 +218,31 @@ function normalizeTaskStatus(ref: JobTaskRef, snapshot: TaskResultSnapshot | nul
   };
 }
 
-async function ensureAbsurdQueue(): Promise<void> {
-  if (!queueReadyPromise) {
-    queueReadyPromise = getAbsurdClient()
-      .createQueue(DEFAULT_QUEUE_NAME)
-      .catch((error) => {
-        queueReadyPromise = null;
-        throw error;
-      });
+async function ensureAbsurdQueue(queueName: string): Promise<void> {
+  const existing = queueReadyPromises.get(queueName);
+  if (existing) {
+    await existing;
+    return;
   }
 
-  await queueReadyPromise;
+  const promise = getAbsurdClient(queueName)
+    .createQueue(queueName)
+    .catch((error) => {
+      queueReadyPromises.delete(queueName);
+      throw error;
+    });
+
+  queueReadyPromises.set(queueName, promise);
+  await promise;
 }
 
-function registerAbsurdTasks(): void {
-  if (tasksRegistered) return;
+function registerAbsurdTasks(queueName: string): void {
+  if (tasksRegisteredQueues.has(queueName)) return;
 
-  getAbsurdClient().registerTask<RunAgentJobParams>(
+  getAbsurdClient(queueName).registerTask<RunAgentJobParams>(
     {
       name: RUN_AGENT_JOB_TASK_NAME,
-      queue: DEFAULT_QUEUE_NAME,
+      queue: queueName,
       defaultMaxAttempts: 3,
     },
     async (params, ctx) => {
@@ -255,13 +302,14 @@ function registerAbsurdTasks(): void {
     }
   );
 
-  tasksRegistered = true;
+  tasksRegisteredQueues.add(queueName);
 }
 
 export async function spawnJobTask(input: SpawnJobTaskInput) {
-  await ensureAbsurdQueue();
+  const queueName = getAbsurdQueueName(input.agentSlug);
+  await ensureAbsurdQueue(queueName);
 
-  const spawned = await getAbsurdClient().spawn(
+  const spawned = await getAbsurdClient(queueName).spawn(
     RUN_AGENT_JOB_TASK_NAME,
     {
       agentSlug: input.agentSlug,
@@ -269,7 +317,7 @@ export async function spawnJobTask(input: SpawnJobTaskInput) {
       source: input.source || "manual",
     } satisfies RunAgentJobParams,
     {
-      queue: DEFAULT_QUEUE_NAME,
+      queue: queueName,
       maxAttempts: 3,
       retryStrategy: {
         kind: "exponential",
@@ -289,6 +337,7 @@ export async function spawnJobTask(input: SpawnJobTaskInput) {
   await persistLatestJobTaskRef(input.agentSlug, input.jobId, {
     taskID: spawned.taskID,
     runID: spawned.runID,
+    queueName,
     source: input.source || "manual",
     queuedAt: new Date().toISOString(),
   });
@@ -303,52 +352,79 @@ export async function getLatestJobTaskStatus(
   const ref = await readLatestJobTaskRef(agentSlug, jobId);
   if (!ref) return null;
 
-  await ensureAbsurdQueue();
-  const snapshot = await getAbsurdClient().fetchTaskResult(ref.taskID, {
-    queue: DEFAULT_QUEUE_NAME,
-  });
+  const legacyQueueName = getAbsurdQueuePrefix();
+  const primaryQueueName = ref.queueName || getAbsurdQueueName(agentSlug);
+
+  let snapshot: TaskResultSnapshot | null = null;
+
+  if (!ref.queueName && legacyQueueName !== primaryQueueName) {
+    await ensureAbsurdQueue(legacyQueueName);
+    snapshot = await getAbsurdClient(legacyQueueName).fetchTaskResult(ref.taskID, {
+      queue: legacyQueueName,
+    });
+  }
+
+  if (!snapshot) {
+    await ensureAbsurdQueue(primaryQueueName);
+    snapshot = await getAbsurdClient(primaryQueueName).fetchTaskResult(ref.taskID, {
+      queue: primaryQueueName,
+    });
+  }
 
   return normalizeTaskStatus(ref, snapshot);
 }
 
-export async function startAbsurdJobWorker(): Promise<AbsurdWorker> {
-  registerAbsurdTasks();
-  await ensureAbsurdQueue();
+async function startAbsurdWorkerForQueue(queueName: string): Promise<AbsurdWorker> {
+  registerAbsurdTasks(queueName);
+  await ensureAbsurdQueue(queueName);
 
-  if (!workerPromise) {
-    workerPromise = getAbsurdClient()
-      .startWorker({
-        concurrency: DEFAULT_CONCURRENCY,
-        batchSize: DEFAULT_CONCURRENCY,
-        claimTimeout: DEFAULT_CLAIM_TIMEOUT_SECONDS,
-        pollInterval: DEFAULT_POLL_INTERVAL_SECONDS,
-        workerId: `yantra-daemon:${process.pid}`,
-        fatalOnLeaseTimeout: true,
-        onError: (error) => {
-          console.error("Absurd worker error:", error);
-        },
-      })
-      .catch((error) => {
-        workerPromise = null;
-        throw error;
-      });
+  const existing = workerPromises.get(queueName);
+  if (existing) {
+    return existing;
   }
 
-  return workerPromise;
+  const promise = getAbsurdClient(queueName)
+    .startWorker({
+      concurrency: DEFAULT_CONCURRENCY,
+      batchSize: DEFAULT_CONCURRENCY,
+      claimTimeout: DEFAULT_CLAIM_TIMEOUT_SECONDS,
+      pollInterval: DEFAULT_POLL_INTERVAL_SECONDS,
+      workerId: `yantra-daemon:${process.pid}:${queueName}`,
+      fatalOnLeaseTimeout: true,
+      onError: (error) => {
+        console.error(`Absurd worker error for queue ${queueName}:`, error);
+      },
+    })
+    .catch((error) => {
+      workerPromises.delete(queueName);
+      throw error;
+    });
+
+  workerPromises.set(queueName, promise);
+  return promise;
+}
+
+export async function startAbsurdJobWorker(agentSlugs: string[] = []): Promise<AbsurdWorker[]> {
+  const queueNames = await listManagedQueueNames(agentSlugs);
+  return Promise.all(queueNames.map((queueName) => startAbsurdWorkerForQueue(queueName)));
 }
 
 export async function closeAbsurdJobWorker(): Promise<void> {
-  if (workerPromise) {
+  const workers = Array.from(workerPromises.values());
+  workerPromises = new Map();
+
+  for (const workerPromise of workers) {
     const worker = await workerPromise;
     await worker.close();
-    workerPromise = null;
   }
 
-  if (absurdClient) {
-    await absurdClient.close();
-    absurdClient = null;
+  const clients = Array.from(absurdClients.values());
+  absurdClients = new Map();
+
+  for (const client of clients) {
+    await client.close();
   }
 
-  queueReadyPromise = null;
-  tasksRegistered = false;
+  queueReadyPromises = new Map();
+  tasksRegisteredQueues = new Set();
 }

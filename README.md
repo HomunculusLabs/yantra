@@ -131,7 +131,7 @@ cp .env.example .env.local
 | `KB_PASSWORD` | _(empty)_ | Password to protect the UI. Leave empty for no auth. |
 | `DOMAIN` | `localhost` | Domain for the app. |
 | `ABSURD_DATABASE_URL` | `postgresql://absurd:absurd@localhost:5433/absurd` | Required Postgres connection for Absurd durable job execution. |
-| `YANTRA_ABSURD_QUEUE` | `agent-jobs` | Absurd queue used for agent job runs. |
+| `YANTRA_ABSURD_QUEUE` | `agent-jobs` | Absurd queue prefix used for agent job runs; each agent gets its own derived queue. |
 
 ## Commands
 

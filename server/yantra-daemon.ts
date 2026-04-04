@@ -33,7 +33,14 @@ import {
   isDaemonTokenValid,
 } from "../src/lib/agents/daemon-auth";
 import { getYantraRoots } from "../src/lib/config/yantra-roots";
-import { getAbsurdQueueName, spawnJobTask, startAbsurdJobWorker, closeAbsurdJobWorker } from "../src/lib/jobs/absurd";
+import {
+  closeAbsurdJobWorker,
+  getAbsurdQueueName,
+  getAbsurdQueuePrefix,
+  getAbsurdWorkerQueueNames,
+  spawnJobTask,
+  startAbsurdJobWorker,
+} from "../src/lib/jobs/absurd";
 import type { ResolvedLaunchSpec } from "../src/types/launchers";
 
 const PORT = 3001;
@@ -638,6 +645,16 @@ function stopScheduledTasks(): void {
   scheduledHeartbeats.clear();
 }
 
+function listKnownAgentSlugs(): string[] {
+  if (!fs.existsSync(AGENTS_DIR)) return [];
+
+  return fs
+    .readdirSync(AGENTS_DIR, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+    .map((entry) => entry.name)
+    .sort();
+}
+
 function scheduleJob(job: JobConfig): void {
   const key = `${job.agentSlug}/${job.id}`;
 
@@ -657,7 +674,7 @@ function scheduleJob(job: JobConfig): void {
     })
       .then((spawned) => {
         console.log(
-          `Enqueued scheduled job ${key} on Absurd queue ${getAbsurdQueueName()} ` +
+          `Enqueued scheduled job ${key} on Absurd queue ${getAbsurdQueueName(job.agentSlug)} ` +
           `as task ${spawned.taskID}${spawned.created ? "" : " (deduped)"}`
         );
       })
@@ -699,8 +716,12 @@ async function reloadSchedules(): Promise<void> {
   let jobCount = 0;
   let heartbeatCount = 0;
 
+  const agentSlugs: string[] = [];
+
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+
+    agentSlugs.push(entry.name);
 
     const personaPath = path.join(AGENTS_DIR, entry.name, "persona.md");
     if (fs.existsSync(personaPath)) {
@@ -740,6 +761,15 @@ async function reloadSchedules(): Promise<void> {
   }
 
   console.log(`Scheduled ${jobCount} jobs and ${heartbeatCount} heartbeats.`);
+
+  try {
+    await startAbsurdJobWorker(agentSlugs);
+    absurdWorkerReady = true;
+  } catch (error) {
+    absurdWorkerReady = false;
+    console.error("Failed to start agent-specific Absurd workers after schedule reload:", error);
+    throw error;
+  }
 }
 
 function queueScheduleReload(): void {
@@ -758,10 +788,14 @@ function queueScheduleReload(): void {
 function bootAbsurdWorker(attempt = 1): void {
   if (shuttingDown) return;
 
-  void startAbsurdJobWorker()
+  const agentSlugs = listKnownAgentSlugs();
+
+  void startAbsurdJobWorker(agentSlugs)
     .then(() => {
       absurdWorkerReady = true;
-      console.log(`Absurd worker started for queue ${getAbsurdQueueName()}.`);
+      console.log(
+        `Absurd workers started for queues: ${getAbsurdWorkerQueueNames().join(", ") || getAbsurdQueuePrefix()}.`
+      );
     })
     .catch((error) => {
       absurdWorkerReady = false;
@@ -999,7 +1033,8 @@ const server = http.createServer(async (req, res) => {
         ptySessions: sessions.size,
         scheduledJobs: scheduledJobs.size,
         scheduledHeartbeats: scheduledHeartbeats.size,
-        absurdQueue: getAbsurdQueueName(),
+        absurdQueuePrefix: getAbsurdQueuePrefix(),
+        absurdQueues: getAbsurdWorkerQueueNames(),
         absurdWorkerReady,
         subscribers: subscribers.length,
       })
@@ -1099,7 +1134,7 @@ server.listen(PORT, () => {
   console.log(`  Reload schedules: POST http://localhost:${PORT}/reload-schedules`);
   console.log(`  Health check: http://localhost:${PORT}/health`);
   console.log(`  Trigger endpoint: POST http://localhost:${PORT}/trigger`);
-  console.log(`  Absurd queue: ${getAbsurdQueueName()}`);
+  console.log(`  Absurd queue prefix: ${getAbsurdQueuePrefix()}`);
   console.log(`  Using claude: ${CLAUDE_PATH}`);
   console.log(`  Using tmux: ${TMUX_AVAILABLE ? TMUX_PATH : "disabled (fallback to direct)"}`);
   console.log(`  Working directory: ${DATA_DIR}`);
