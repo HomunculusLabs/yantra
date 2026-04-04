@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SchedulePicker } from "./schedule-picker";
+import { AgentAvatar } from "@/components/agents/agent-avatar";
 import { cn } from "@/lib/utils";
 import { Plus, X } from "lucide-react";
 
@@ -29,17 +30,12 @@ interface CreateAgentDialogProps {
   onCreated?: () => void;
 }
 
-const EMOJI_OPTIONS = [
-  "🤖", "👑", "📝", "🎯", "🔍", "🛡️", "🚀", "💼",
-  "📊", "🧠", "⚡", "🔧", "📣", "🎨", "📈", "🌐",
-];
-
 const DEPARTMENTS = ["marketing", "sales", "engineering", "research", "operations", "content", "support", "general"];
 
 export function CreateAgentDialog({ open, onOpenChange, onCreated }: CreateAgentDialogProps) {
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
-  const [emoji, setEmoji] = useState("🤖");
+  const emoji = "";
   const [department, setDepartment] = useState("general");
   const [type, setType] = useState<"specialist" | "lead">("specialist");
   const [heartbeat, setHeartbeat] = useState("0 */4 * * *");
@@ -105,7 +101,6 @@ export function CreateAgentDialog({ open, onOpenChange, onCreated }: CreateAgent
   const resetForm = () => {
     setName("");
     setRole("");
-    setEmoji("🤖");
     setDepartment("general");
     setType("specialist");
     setHeartbeat("0 */4 * * *");
@@ -129,25 +124,13 @@ export function CreateAgentDialog({ open, onOpenChange, onCreated }: CreateAgent
               Identity
             </div>
 
-            {/* Emoji picker */}
             <div className="space-y-1">
               <label className="text-[12px] font-medium">Avatar</label>
-              <div className="flex flex-wrap gap-1">
-                {EMOJI_OPTIONS.map((e) => (
-                  <button
-                    key={e}
-                    type="button"
-                    onClick={() => setEmoji(e)}
-                    className={cn(
-                      "w-8 h-8 rounded-md text-base flex items-center justify-center transition-colors",
-                      emoji === e
-                        ? "bg-primary/20 ring-1 ring-primary"
-                        : "hover:bg-muted"
-                    )}
-                  >
-                    {e}
-                  </button>
-                ))}
+              <div className="flex items-center gap-2 rounded-md border border-border/50 bg-muted/20 px-3 py-2">
+                <AgentAvatar name={name || "New agent"} slug={slug || "agent"} size="md" />
+                <p className="text-[11px] text-muted-foreground">
+                  Avatars are generated from agent names.
+                </p>
               </div>
             </div>
 

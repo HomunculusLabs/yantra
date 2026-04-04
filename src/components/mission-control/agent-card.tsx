@@ -4,6 +4,7 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Pause, Play, Loader2, Inbox } from "lucide-react";
 import { GoalBar } from "./goal-bar";
+import { AgentAvatar } from "@/components/agents/agent-avatar";
 import type { GoalMetric } from "@/types/agents";
 
 interface AgentCardProps {
@@ -120,8 +121,6 @@ function StatusIndicator({ active, running, lastHeartbeat, nextHeartbeat, onTogg
 
 export function AgentCard({
   name,
-  emoji,
-  role,
   active,
   running,
   type,
@@ -159,7 +158,7 @@ export function AgentCard({
       )}
     >
       <div className="flex items-center gap-2 mb-1">
-        <span className="text-sm">{emoji}</span>
+        <AgentAvatar name={name} slug={slug} size="xs" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
             <span className="text-[12px] font-medium truncate">{name}</span>

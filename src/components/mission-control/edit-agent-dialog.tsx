@@ -12,8 +12,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SchedulePicker } from "./schedule-picker";
-import { cn } from "@/lib/utils";
-import { Plus, X, Save, Trash2 } from "lucide-react";
+import { AgentAvatar } from "@/components/agents/agent-avatar";
+import { Plus, Save, Trash2 } from "lucide-react";
 import type { GoalMetric } from "@/types/agents";
 
 interface GoalInput {
@@ -31,18 +31,12 @@ interface EditAgentDialogProps {
   onSaved?: () => void;
 }
 
-const EMOJI_OPTIONS = [
-  "🤖", "👑", "📝", "🎯", "🔍", "🛡️", "🚀", "💼",
-  "📊", "🧠", "⚡", "🔧", "📣", "🎨", "📈", "🌐",
-  "👔", "🛠", "⚙️", "🔬", "✏️", "💡", "🎓", "🏢",
-];
-
 const DEPARTMENTS = ["marketing", "sales", "engineering", "research", "operations", "content", "support", "general"];
 
 export function EditAgentDialog({ open, onOpenChange, slug, onSaved }: EditAgentDialogProps) {
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
-  const [emoji, setEmoji] = useState("🤖");
+  const [emoji] = useState("");
   const [department, setDepartment] = useState("general");
   const [type, setType] = useState<"specialist" | "lead">("specialist");
   const [heartbeat, setHeartbeat] = useState("0 */4 * * *");
@@ -65,7 +59,6 @@ export function EditAgentDialog({ open, onOpenChange, slug, onSaved }: EditAgent
         const p = agentData.persona || agentData;
         setName(p.name || "");
         setRole(p.role || "");
-        setEmoji(p.emoji || "🤖");
         setDepartment(p.department || "general");
         setType(p.type || "specialist");
         setHeartbeat(p.heartbeat || "0 */4 * * *");
@@ -167,7 +160,7 @@ export function EditAgentDialog({ open, onOpenChange, slug, onSaved }: EditAgent
       <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <span className="text-xl">{emoji}</span>
+            <AgentAvatar name={name || "Agent"} slug={slug} size="md" />
             Edit Agent
           </DialogTitle>
           <DialogDescription>
@@ -182,25 +175,13 @@ export function EditAgentDialog({ open, onOpenChange, slug, onSaved }: EditAgent
               Identity
             </div>
 
-            {/* Emoji picker */}
             <div className="space-y-1">
               <label className="text-[12px] font-medium">Avatar</label>
-              <div className="flex flex-wrap gap-1">
-                {EMOJI_OPTIONS.map((e) => (
-                  <button
-                    key={e}
-                    type="button"
-                    onClick={() => { setEmoji(e); markDirty(); }}
-                    className={cn(
-                      "w-7 h-7 rounded-md text-sm flex items-center justify-center transition-colors",
-                      emoji === e
-                        ? "bg-primary/20 ring-1 ring-primary"
-                        : "hover:bg-muted"
-                    )}
-                  >
-                    {e}
-                  </button>
-                ))}
+              <div className="flex items-center gap-2 rounded-md border border-border/50 bg-muted/20 px-3 py-2">
+                <AgentAvatar name={name || "Agent"} slug={slug} size="md" />
+                <p className="text-[11px] text-muted-foreground">
+                  Avatars are generated from agent names.
+                </p>
               </div>
             </div>
 

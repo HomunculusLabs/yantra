@@ -15,7 +15,7 @@ export interface SlackMessage {
   id: string;
   channel: string;
   agent: string;        // agent slug or "human"
-  emoji?: string;       // agent emoji for display (e.g., "📝")
+  emoji?: string;       // legacy avatar field retained for compatibility
   displayName?: string; // agent display name (e.g., "Content Agent")
   type: "message" | "task" | "alert" | "report" | "question";
   content: string;

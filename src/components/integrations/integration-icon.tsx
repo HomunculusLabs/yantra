@@ -5,67 +5,67 @@ import { cn } from "@/lib/utils";
 // Integration brand colors for the icon backgrounds
 const integrationMeta: Record<string, { label: string; color: string; bg: string; icon: string }> = {
   // Google ecosystem
-  "google-sheets":    { label: "Google Sheets",    color: "#0F9D58", bg: "bg-[#0F9D58]/10", icon: "📊" },
-  "google-analytics": { label: "Google Analytics",  color: "#E37400", bg: "bg-[#E37400]/10", icon: "📈" },
-  "gmail":            { label: "Gmail",             color: "#EA4335", bg: "bg-[#EA4335]/10", icon: "✉️" },
-  "gcp":              { label: "Google Cloud",      color: "#4285F4", bg: "bg-[#4285F4]/10", icon: "☁️" },
-  "gemini":           { label: "Gemini",            color: "#886FBF", bg: "bg-[#886FBF]/10", icon: "✨" },
+  "google-sheets": { label: "Google Sheets", color: "#0F9D58", bg: "bg-[#0F9D58]/10", icon: "GS" },
+  "google-analytics": { label: "Google Analytics", color: "#E37400", bg: "bg-[#E37400]/10", icon: "GA" },
+  gmail: { label: "Gmail", color: "#EA4335", bg: "bg-[#EA4335]/10", icon: "GM" },
+  gcp: { label: "Google Cloud", color: "#4285F4", bg: "bg-[#4285F4]/10", icon: "GC" },
+  gemini: { label: "Gemini", color: "#886FBF", bg: "bg-[#886FBF]/10", icon: "GE" },
 
   // Social platforms
-  "linkedin":   { label: "LinkedIn",    color: "#0A66C2", bg: "bg-[#0A66C2]/10", icon: "in" },
-  "twitter":    { label: "X / Twitter", color: "#1DA1F2", bg: "bg-[#1DA1F2]/10", icon: "𝕏" },
-  "reddit":     { label: "Reddit",      color: "#FF4500", bg: "bg-[#FF4500]/10", icon: "🔴" },
-  "instagram":  { label: "Instagram",   color: "#E4405F", bg: "bg-[#E4405F]/10", icon: "📷" },
-  "tiktok":     { label: "TikTok",      color: "#000000", bg: "bg-[#010101]/10", icon: "🎵" },
-  "youtube":    { label: "YouTube",     color: "#FF0000", bg: "bg-[#FF0000]/10", icon: "▶️" },
+  linkedin: { label: "LinkedIn", color: "#0A66C2", bg: "bg-[#0A66C2]/10", icon: "in" },
+  twitter: { label: "X / Twitter", color: "#1DA1F2", bg: "bg-[#1DA1F2]/10", icon: "X" },
+  reddit: { label: "Reddit", color: "#FF4500", bg: "bg-[#FF4500]/10", icon: "RD" },
+  instagram: { label: "Instagram", color: "#E4405F", bg: "bg-[#E4405F]/10", icon: "IG" },
+  tiktok: { label: "TikTok", color: "#000000", bg: "bg-[#010101]/10", icon: "TT" },
+  youtube: { label: "YouTube", color: "#FF0000", bg: "bg-[#FF0000]/10", icon: "YT" },
 
   // Dev tools
-  "github":   { label: "GitHub",   color: "#333333", bg: "bg-[#333333]/10", icon: "🐙" },
-  "linear":   { label: "Linear",   color: "#5E6AD2", bg: "bg-[#5E6AD2]/10", icon: "◆" },
-  "jira":     { label: "Jira",     color: "#0052CC", bg: "bg-[#0052CC]/10", icon: "🔷" },
-  "vercel":   { label: "Vercel",   color: "#000000", bg: "bg-[#010101]/10", icon: "▲" },
-  "notion":   { label: "Notion",   color: "#000000", bg: "bg-[#010101]/10", icon: "📝" },
-  "figma":    { label: "Figma",    color: "#F24E1E", bg: "bg-[#F24E1E]/10", icon: "🎨" },
+  github: { label: "GitHub", color: "#333333", bg: "bg-[#333333]/10", icon: "GH" },
+  linear: { label: "Linear", color: "#5E6AD2", bg: "bg-[#5E6AD2]/10", icon: "LN" },
+  jira: { label: "Jira", color: "#0052CC", bg: "bg-[#0052CC]/10", icon: "JI" },
+  vercel: { label: "Vercel", color: "#000000", bg: "bg-[#010101]/10", icon: "VC" },
+  notion: { label: "Notion", color: "#000000", bg: "bg-[#010101]/10", icon: "NO" },
+  figma: { label: "Figma", color: "#F24E1E", bg: "bg-[#F24E1E]/10", icon: "FG" },
 
   // CRM & Sales
-  "hubspot":    { label: "HubSpot",    color: "#FF7A59", bg: "bg-[#FF7A59]/10", icon: "🟠" },
-  "salesforce": { label: "Salesforce",  color: "#00A1E0", bg: "bg-[#00A1E0]/10", icon: "☁️" },
-  "stripe":     { label: "Stripe",      color: "#635BFF", bg: "bg-[#635BFF]/10", icon: "💳" },
+  hubspot: { label: "HubSpot", color: "#FF7A59", bg: "bg-[#FF7A59]/10", icon: "HS" },
+  salesforce: { label: "Salesforce", color: "#00A1E0", bg: "bg-[#00A1E0]/10", icon: "SF" },
+  stripe: { label: "Stripe", color: "#635BFF", bg: "bg-[#635BFF]/10", icon: "ST" },
 
   // Monitoring & Security
-  "sentry":    { label: "Sentry",    color: "#362D59", bg: "bg-[#362D59]/10", icon: "🛡" },
-  "datadog":   { label: "Datadog",   color: "#632CA6", bg: "bg-[#632CA6]/10", icon: "🐕" },
-  "grafana":   { label: "Grafana",   color: "#F46800", bg: "bg-[#F46800]/10", icon: "📉" },
-  "pagerduty": { label: "PagerDuty", color: "#06AC38", bg: "bg-[#06AC38]/10", icon: "🚨" },
-  "semgrep":   { label: "Semgrep",   color: "#2B2B2B", bg: "bg-[#2B2B2B]/10", icon: "🔍" },
-  "snyk":      { label: "Snyk",      color: "#4C4A73", bg: "bg-[#4C4A73]/10", icon: "🔐" },
+  sentry: { label: "Sentry", color: "#362D59", bg: "bg-[#362D59]/10", icon: "SY" },
+  datadog: { label: "Datadog", color: "#632CA6", bg: "bg-[#632CA6]/10", icon: "DD" },
+  grafana: { label: "Grafana", color: "#F46800", bg: "bg-[#F46800]/10", icon: "GF" },
+  pagerduty: { label: "PagerDuty", color: "#06AC38", bg: "bg-[#06AC38]/10", icon: "PD" },
+  semgrep: { label: "Semgrep", color: "#2B2B2B", bg: "bg-[#2B2B2B]/10", icon: "SG" },
+  snyk: { label: "Snyk", color: "#4C4A73", bg: "bg-[#4C4A73]/10", icon: "SN" },
 
   // Support & CS
-  "intercom": { label: "Intercom", color: "#1F8DED", bg: "bg-[#1F8DED]/10", icon: "💬" },
-  "zendesk":  { label: "Zendesk",  color: "#03363D", bg: "bg-[#03363D]/10", icon: "🎫" },
+  intercom: { label: "Intercom", color: "#1F8DED", bg: "bg-[#1F8DED]/10", icon: "IC" },
+  zendesk: { label: "Zendesk", color: "#03363D", bg: "bg-[#03363D]/10", icon: "ZD" },
 
   // Analytics
-  "mixpanel":  { label: "Mixpanel",  color: "#7856FF", bg: "bg-[#7856FF]/10", icon: "📊" },
-  "amplitude": { label: "Amplitude", color: "#1C1C1C", bg: "bg-[#1C1C1C]/10", icon: "📈" },
-  "segment":   { label: "Segment",   color: "#52BD95", bg: "bg-[#52BD95]/10", icon: "🔗" },
+  mixpanel: { label: "Mixpanel", color: "#7856FF", bg: "bg-[#7856FF]/10", icon: "MX" },
+  amplitude: { label: "Amplitude", color: "#1C1C1C", bg: "bg-[#1C1C1C]/10", icon: "AM" },
+  segment: { label: "Segment", color: "#52BD95", bg: "bg-[#52BD95]/10", icon: "SE" },
 
   // Email
-  "sendgrid":  { label: "SendGrid",  color: "#1A82E2", bg: "bg-[#1A82E2]/10", icon: "📧" },
-  "mailchimp": { label: "Mailchimp", color: "#FFE01B", bg: "bg-[#FFE01B]/15", icon: "🐵" },
+  sendgrid: { label: "SendGrid", color: "#1A82E2", bg: "bg-[#1A82E2]/10", icon: "SD" },
+  mailchimp: { label: "Mailchimp", color: "#FFE01B", bg: "bg-[#FFE01B]/15", icon: "MC" },
 
   // AI & Media
-  "elevenlabs": { label: "ElevenLabs", color: "#000000", bg: "bg-[#010101]/10", icon: "🔊" },
-  "openai":     { label: "OpenAI",     color: "#10A37F", bg: "bg-[#10A37F]/10", icon: "🤖" },
-  "flux":       { label: "FLUX",       color: "#7C3AED", bg: "bg-[#7C3AED]/10", icon: "🖼" },
+  elevenlabs: { label: "ElevenLabs", color: "#000000", bg: "bg-[#010101]/10", icon: "11" },
+  openai: { label: "OpenAI", color: "#10A37F", bg: "bg-[#10A37F]/10", icon: "OA" },
+  flux: { label: "FLUX", color: "#7C3AED", bg: "bg-[#7C3AED]/10", icon: "FX" },
 
   // Infrastructure
-  "aws":      { label: "AWS",        color: "#FF9900", bg: "bg-[#FF9900]/10", icon: "☁️" },
-  "postgres": { label: "PostgreSQL", color: "#336791", bg: "bg-[#336791]/10", icon: "🐘" },
-  "slack":    { label: "Slack",      color: "#4A154B", bg: "bg-[#4A154B]/10", icon: "💬" },
+  aws: { label: "AWS", color: "#FF9900", bg: "bg-[#FF9900]/10", icon: "AWS" },
+  postgres: { label: "PostgreSQL", color: "#336791", bg: "bg-[#336791]/10", icon: "PG" },
+  slack: { label: "Slack", color: "#4A154B", bg: "bg-[#4A154B]/10", icon: "SL" },
 
   // Local / generic
-  "csv":      { label: "CSV",      color: "#2E7D32", bg: "bg-emerald-500/10", icon: "📋" },
-  "markdown": { label: "Markdown", color: "#333333", bg: "bg-[#333333]/10",   icon: "📄" },
+  csv: { label: "CSV", color: "#2E7D32", bg: "bg-emerald-500/10", icon: "CSV" },
+  markdown: { label: "Markdown", color: "#333333", bg: "bg-[#333333]/10", icon: "MD" },
 };
 
 interface IntegrationIconProps {
@@ -79,7 +79,7 @@ interface IntegrationIconProps {
 export function IntegrationIcon({ slug, required, size = "sm", showLabel = true, className }: IntegrationIconProps) {
   const meta = integrationMeta[slug];
   const label = meta?.label || slug;
-  const icon = meta?.icon || "⚡";
+  const icon = meta?.icon || "+";
   const bgColor = meta?.bg || "bg-muted";
 
   const sizeClasses = {
@@ -89,9 +89,9 @@ export function IntegrationIcon({ slug, required, size = "sm", showLabel = true,
   };
 
   const iconSizeClasses = {
-    sm: "w-4 h-4 text-[10px]",
-    md: "w-5 h-5 text-[12px]",
-    lg: "w-6 h-6 text-[14px]",
+    sm: "min-w-[16px] h-4 px-1 text-[8px]",
+    md: "min-w-[20px] h-5 px-1 text-[9px]",
+    lg: "min-w-[24px] h-6 px-1.5 text-[10px]",
   };
 
   return (
@@ -107,7 +107,7 @@ export function IntegrationIcon({ slug, required, size = "sm", showLabel = true,
       title={`${label}${required ? " (required)" : " (optional)"}`}
       style={required ? { color: meta?.color || "inherit" } : undefined}
     >
-      <span className={cn("flex items-center justify-center shrink-0 leading-none", iconSizeClasses[size])}>
+      <span className={cn("flex items-center justify-center shrink-0 rounded-sm border border-current/10 bg-background/40 font-semibold leading-none", iconSizeClasses[size])}>
         {icon}
       </span>
       {showLabel && (

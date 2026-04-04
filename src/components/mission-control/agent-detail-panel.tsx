@@ -32,6 +32,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { GoalBar } from "./goal-bar";
 import { EditAgentDialog } from "./edit-agent-dialog";
+import { AgentAvatar } from "@/components/agents/agent-avatar";
 import { cronToHuman } from "@/lib/agents/cron-utils";
 import type { GoalMetric, SlackMessage } from "@/types/agents";
 
@@ -362,7 +363,7 @@ export function AgentDetailPanel({ slug, onClose, onNavigateToAgent, onOpenFile 
             <div className="px-5 py-4 border-b border-border shrink-0">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-3">
-                  <span className="text-2xl">{agent.emoji}</span>
+                  <AgentAvatar name={agent.name} slug={agent.slug} size="lg" />
                   <div>
                     <h2 className="text-[16px] font-semibold tracking-[-0.02em]">
                       {agent.name}
@@ -590,7 +591,7 @@ export function AgentDetailPanel({ slug, onClose, onNavigateToAgent, onOpenFile 
                             )}
                             <div className="flex items-center gap-2 mt-1">
                               <span className="text-[10px] text-muted-foreground/40">
-                                from {task.fromEmoji || ""} {task.fromName || task.fromAgent}
+                                from {task.fromName || task.fromAgent}
                               </span>
                               <span className="text-[10px] text-muted-foreground/30">
                                 {timeAgo(task.createdAt)}

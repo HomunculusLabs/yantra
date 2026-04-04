@@ -13,6 +13,7 @@ import {
   Filter,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AgentAvatar } from "@/components/agents/agent-avatar";
 import { useAppStore } from "@/stores/app-store";
 import { useTreeStore } from "@/stores/tree-store";
 
@@ -149,7 +150,10 @@ export function WorkspaceGallery({ onClose }: { onClose: () => void }) {
                 : "text-muted-foreground/60 hover:text-foreground"
             )}
           >
-            {agent.emoji} {agent.name}
+            <span className="flex items-center gap-1.5">
+              <AgentAvatar name={agent.name} slug={agent.slug} size="xs" />
+              <span>{agent.name}</span>
+            </span>
           </button>
         ))}
       </div>
@@ -190,8 +194,8 @@ export function WorkspaceGallery({ onClose }: { onClose: () => void }) {
                       <p className="text-[13px] font-medium truncate group-hover:text-primary transition-colors">
                         {item.name}
                       </p>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className="text-[11px]">{item.agentEmoji}</span>
+                      <div className="mt-0.5 flex items-center gap-1.5">
+                        <AgentAvatar name={item.agent} slug={item.agentSlug} size="xs" />
                         <span className="text-[11px] text-muted-foreground/60 truncate">
                           {item.agent}
                         </span>

@@ -190,8 +190,8 @@ export async function readPersona(slug: string): Promise<AgentPersona | null> {
     workdir: (data.workdir as string) || "/data",
     focus: (data.focus as string[]) || [],
     tags: (data.tags as string[]) || [],
-    // New fields with backward-compatible defaults
-    emoji: (data.emoji as string) || "🤖",
+    // Preserve the legacy field for compatibility, even though the UI no longer renders emoji
+    emoji: (data.emoji as string) || "",
     department: (data.department as string) || "general",
     type: (data.type as AgentPersona["type"]) || "specialist",
     goals: (data.goals as AgentPersona["goals"]) || [],
@@ -256,8 +256,8 @@ export async function writePersona(slug: string, persona: Partial<AgentPersona> 
     workdir: merged.workdir,
     focus: merged.focus,
     tags: merged.tags,
-    // Always write these fields for consistency
-    emoji: merged.emoji || "🤖",
+    // Preserve the legacy field for compatibility
+    emoji: merged.emoji || "",
     department: merged.department || "general",
     type: merged.type || "specialist",
     workspace: merged.workspace || "workspace",

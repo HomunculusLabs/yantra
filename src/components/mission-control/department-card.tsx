@@ -4,6 +4,7 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { FolderOpen, Pause, Play, MoreHorizontal, RefreshCw, ChevronDown, ChevronRight } from "lucide-react";
 import { AgentCard } from "./agent-card";
+import { AgentAvatar } from "@/components/agents/agent-avatar";
 import type { GoalMetric } from "@/types/agents";
 
 interface AgentSummary {
@@ -92,7 +93,7 @@ export function DepartmentCard({ department, agents, onAgentClick, onAgentToggle
             ) : (
               <ChevronDown className="h-3 w-3 text-muted-foreground/50 shrink-0" />
             )}
-            {lead && <span className="text-sm">{lead.emoji}</span>}
+            {lead && <AgentAvatar name={lead.name} slug={lead.slug} size="xs" />}
             <div>
               <h3 className="text-[12px] font-semibold capitalize">
                 {department}
@@ -164,7 +165,7 @@ export function DepartmentCard({ department, agents, onAgentClick, onAgentToggle
                 onClick={(e) => { e.stopPropagation(); onAgentClick?.(a.slug); }}
                 className="w-full flex items-center gap-2 px-1.5 py-1 rounded-md hover:bg-muted/30 transition-colors text-left group"
               >
-                <span className="text-sm shrink-0">{a.emoji}</span>
+                <AgentAvatar name={a.name} slug={a.slug} size="xs" className="shrink-0" />
                 <span className="text-[11px] font-medium truncate min-w-0 flex-1">{a.name}</span>
                 {a.goals.length > 0 && a.goals.some(g => g.target > 0) ? (
                   <div className="flex items-center gap-1.5 shrink-0">

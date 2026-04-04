@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
       workdir: fm.workdir || "/data",
       focus: fm.focus || [],
       tags: fm.tags || [],
-      emoji: fm.emoji || "🤖",
+      emoji: "",
       department: fm.department || "general",
       type: fm.type || "specialist",
       goals: fm.goals || [],

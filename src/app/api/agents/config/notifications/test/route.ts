@@ -7,7 +7,6 @@ export async function POST() {
       title: "Yantra Test Notification",
       message: "If you see this, your notification setup is working correctly!",
       agentName: "Yantra System",
-      agentEmoji: "\u{2705}",
       channel: "test",
       severity: "info",
     });

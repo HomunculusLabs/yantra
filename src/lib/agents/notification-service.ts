@@ -47,7 +47,7 @@ export async function sendNotification(opts: {
   if (!config) return { sent: [] };
 
   const sent: string[] = [];
-  const { title, message, agentName, agentEmoji, severity } = opts;
+  const { title, message, agentName } = opts;
   const requestedChannel = opts.channel || "default";
   const shouldSend = (channel: string) =>
     requestedChannel === "default" || requestedChannel === channel;
@@ -57,10 +57,9 @@ export async function sendNotification(opts: {
     const { bot_token, chat_id } = config.notifications.telegram;
     if (bot_token && chat_id) {
       try {
-        const icon = severity === "critical" ? "\u{1F6A8}" : severity === "warning" ? "\u{26A0}\u{FE0F}" : "\u{1F4E2}";
         const text = [
-          `${icon} *${title}*`,
-          agentEmoji && agentName ? `${agentEmoji} ${agentName}` : "",
+          `*${title}*`,
+          agentName || "",
           message,
         ].filter(Boolean).join("\n");
 
@@ -84,10 +83,9 @@ export async function sendNotification(opts: {
     const { url } = config.notifications.slack_webhook;
     if (url) {
       try {
-        const icon = severity === "critical" ? ":rotating_light:" : severity === "warning" ? ":warning:" : ":loudspeaker:";
         const text = [
-          `${icon} *${title}*`,
-          agentEmoji && agentName ? `${agentEmoji} ${agentName}` : "",
+          `*${title}*`,
+          agentName || "",
           message,
         ].filter(Boolean).join("\n");
 
@@ -116,10 +114,9 @@ export async function sendNotification(opts: {
       roomToken
     ) {
       try {
-        const icon = severity === "critical" ? "🚨" : severity === "warning" ? "⚠️" : "📣";
         const text = [
-          `${icon} ${title}`,
-          agentEmoji && agentName ? `${agentEmoji} ${agentName}` : "",
+          title,
+          agentName || "",
           message,
         ].filter(Boolean).join("\n");
 

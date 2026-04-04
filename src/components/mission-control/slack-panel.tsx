@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Send, GripHorizontal, Hash, Plus, MessageCircle, ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { AgentAvatar } from "@/components/agents/agent-avatar";
 import type { SlackMessage } from "@/types/agents";
 
 interface AgentMention {
@@ -237,7 +238,7 @@ export function SlackPanel({ height: initialHeight = 200, onOpenFile }: SlackPan
           (d.personas || []).map((p: { slug: string; name: string; emoji?: string }) => ({
             slug: p.slug,
             name: p.name,
-            emoji: p.emoji || "🤖",
+            emoji: p.emoji || "",
           }))
         );
       })
@@ -480,7 +481,7 @@ export function SlackPanel({ height: initialHeight = 200, onOpenFile }: SlackPan
                         <span className="text-[12px] font-medium text-muted-foreground/60 italic">system</span>
                       ) : (
                         <>
-                          {msg.emoji && <span className="text-[11px]">{msg.emoji}</span>}
+                          <AgentAvatar name={msg.displayName || msg.agent} slug={msg.agent} size="xs" />
                           <span className="text-[12px] font-medium text-foreground">
                             {msg.displayName || msg.agent}
                           </span>
@@ -533,7 +534,7 @@ export function SlackPanel({ height: initialHeight = 200, onOpenFile }: SlackPan
               .filter((a) => a.channel === activeChannel)
               .map((a) => (
                 <span key={a.slug} className="flex items-center gap-1">
-                  <span className="text-[10px]">{a.emoji}</span>
+                  <AgentAvatar name={a.name} slug={a.slug} size="xs" />
                   <span className="font-medium">{a.name}</span>
                 </span>
               ))}
@@ -574,7 +575,7 @@ export function SlackPanel({ height: initialHeight = 200, onOpenFile }: SlackPan
                     i === mentionIdx ? "bg-primary/10 text-primary" : "hover:bg-muted"
                   )}
                 >
-                  <span className="text-sm">{a.emoji}</span>
+                  <AgentAvatar name={a.name} slug={a.slug} size="xs" />
                   <span className="font-medium">{a.name}</span>
                   <span className="text-muted-foreground/50 text-[10px]">@{a.slug}</span>
                 </button>

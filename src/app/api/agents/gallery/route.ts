@@ -162,7 +162,7 @@ export async function GET() {
       const items = await scanWorkspace(
         workspaceDir,
         persona.name,
-        persona.emoji || "🤖",
+        persona.emoji || "",
         persona.slug,
         persona.department || "general",
         basePath,

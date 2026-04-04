@@ -25,6 +25,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { WebTerminal } from "@/components/terminal/web-terminal";
+import { AgentAvatar } from "@/components/agents/agent-avatar";
 import { useAIPanelStore } from "@/stores/ai-panel-store";
 import { useTreeStore } from "@/stores/tree-store";
 import { useAppStore } from "@/stores/app-store";
@@ -50,7 +51,7 @@ type ViewFilter = "all" | "running" | "failed";
 const GENERAL_AGENT: AgentSummary = {
   name: "General",
   slug: "general",
-  emoji: "🤖",
+  emoji: "",
   role: "Manual Yantra assistant",
   active: true,
   runningCount: 0,
@@ -398,7 +399,7 @@ export function AgentChatsPanel() {
                 {selectedConversationMeta
                   ? selectedConversationMeta.title
                   : activeAgent
-                    ? `${activeAgent.emoji} ${activeAgent.name}`
+                    ? activeAgent.name
                     : "Inbox across your team"}
               </p>
             </div>
@@ -457,10 +458,12 @@ export function AgentChatsPanel() {
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="shrink-0 border-b border-border px-3 py-3">
             <div className="flex items-start gap-3">
-              <div className="pt-0.5 text-lg">
-                {orderedAgents.find((agent) => agent.slug === selectedConversationMeta.agentSlug)
-                  ?.emoji || "🤖"}
-              </div>
+              <AgentAvatar
+                name={orderedAgents.find((agent) => agent.slug === selectedConversationMeta.agentSlug)?.name}
+                slug={selectedConversationMeta.agentSlug}
+                size="md"
+                className="mt-0.5"
+              />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span
@@ -534,9 +537,7 @@ export function AgentChatsPanel() {
                   )}
                 >
                   <span className="truncate">
-                    {activeAgent
-                      ? `${activeAgent.emoji} ${activeAgent.name}`
-                      : "All agents"}
+                    {activeAgent ? activeAgent.name : "All agents"}
                   </span>
                   <ChevronDown data-icon="inline-end" />
                 </DropdownMenuTrigger>
@@ -553,7 +554,10 @@ export function AgentChatsPanel() {
                         key={agent.slug}
                         onClick={() => setActiveAgentSlug(agent.slug)}
                       >
-                        <span className="truncate">{agent.emoji} {agent.name}</span>
+                        <span className="flex items-center gap-2 truncate">
+                          <AgentAvatar name={agent.name} slug={agent.slug} size="xs" />
+                          <span className="truncate">{agent.name}</span>
+                        </span>
                         {activeAgentSlug === agent.slug ? (
                           <span className="ml-auto text-[10px] text-muted-foreground">
                             Selected

@@ -217,7 +217,7 @@ async function processHeartbeatOutput(
       await postMessage({
         channel: match[1],
         agent: slug,
-        emoji: persona.emoji,
+        emoji: "",
         displayName: persona.name,
         type: "message",
         content: match[2].trim(),
@@ -241,15 +241,15 @@ async function processHeartbeatOutput(
       const title = match[3].trim();
       const description = match[4]?.trim() || "";
       await createTask({
-        fromAgent: slug, fromEmoji: persona.emoji, fromName: persona.name,
+        fromAgent: slug, fromEmoji: "", fromName: persona.name,
         toAgent, channel: persona.channels?.[0] || "general",
         title, description, kbRefs: [], priority,
       });
       await postMessage({
         channel: persona.channels?.[0] || "general",
-        agent: slug, emoji: persona.emoji, displayName: persona.name,
+        agent: slug, emoji: "", displayName: persona.name,
         type: "task",
-        content: `📋 Task created for **@${toAgent}**: ${title}${description ? ` — ${description}` : ""}`,
+        content: `Task created for **@${toAgent}**: ${title}${description ? ` — ${description}` : ""}`,
         mentions: [toAgent], kbRefs: [],
       });
     }
@@ -277,7 +277,7 @@ async function processHeartbeatOutput(
             const elapsed = Date.now() - startDate;
             if (elapsed / (endDate - startDate) >= 0.8) {
               await postMessage({
-                channel: "alerts", agent: slug, emoji: persona.emoji, displayName: persona.name,
+                channel: "alerts", agent: slug, emoji: "", displayName: persona.name,
                 type: "alert",
                 content: `**${g.metric}** at ${current}/${g.target} (floor: ${g.floor}) with ${Math.round(((endDate - Date.now()) / 86400000))}d left. @human`,
                 mentions: ["human"], kbRefs: [],
@@ -293,7 +293,7 @@ async function processHeartbeatOutput(
   if (status === "completed" && persona.channels && persona.channels.length > 0) {
     const summaryLine = output.slice(0, 300).split("\n")[0] || "Heartbeat completed";
     await postMessage({
-      channel: persona.channels[0], agent: slug, emoji: persona.emoji, displayName: persona.name,
+      channel: persona.channels[0], agent: slug, emoji: "", displayName: persona.name,
       type: "report", content: summaryLine, mentions: [], kbRefs: [],
     });
   }
@@ -334,7 +334,7 @@ async function processHeartbeatOutput(
       await writePersona(slug, { active: false });
       await reloadDaemonSchedules().catch(() => {});
       await postMessage({
-        channel: "alerts", agent: slug, emoji: persona.emoji, displayName: persona.name,
+        channel: "alerts", agent: slug, emoji: "", displayName: persona.name,
         type: "alert",
         content: `Auto-paused after 3 consecutive failures. Last error: ${output.slice(0, 150)}. @human`,
         mentions: ["human"], kbRefs: [],
@@ -377,7 +377,7 @@ export async function runHeartbeat(slug: string): Promise<StartedConversation | 
       onComplete: async (completion) => {
         if (completion.status === "failed" && !completion.output) {
           await postMessage({
-            channel: "alerts", agent: slug, emoji: persona.emoji, displayName: persona.name,
+            channel: "alerts", agent: slug, emoji: "", displayName: persona.name,
             type: "alert",
             content: `Heartbeat timed out or failed for ${slug}. @human`,
             mentions: ["human"], kbRefs: [],
@@ -535,7 +535,7 @@ Respond naturally as ${persona.name}. Be concise (1-3 short paragraphs max). Ref
     await postMessage({
       channel,
       agent: slug,
-      emoji: persona.emoji,
+      emoji: "",
       displayName: persona.name,
       type: "message",
       content: response,

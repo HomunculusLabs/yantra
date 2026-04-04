@@ -24,8 +24,9 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
 import { SchedulePicker } from "@/components/mission-control/schedule-picker";
+import { cn } from "@/lib/utils";
+import { AgentAvatar } from "@/components/agents/agent-avatar";
 import { cronToHuman } from "@/lib/agents/cron-utils";
 import type { JobTaskStatus } from "@/types/jobs";
 
@@ -111,7 +112,7 @@ export function JobsManager() {
         (personas as { slug: string; name: string; emoji: string }[]).map(async (p) => {
           const jRes = await fetch(`/api/agents/${p.slug}/jobs`);
           const jobs = jRes.ok ? (await jRes.json()).jobs || [] : [];
-          return { slug: p.slug, name: p.name, emoji: p.emoji || "🤖", jobs };
+          return { slug: p.slug, name: p.name, emoji: p.emoji || "", jobs };
         })
       );
       setAgents(withJobs);
@@ -294,7 +295,7 @@ export function JobsManager() {
                   ) : (
                     <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                   )}
-                  <span className="text-base">{agent.emoji}</span>
+                  <AgentAvatar name={agent.name} slug={agent.slug} size="xs" />
                   <span className="text-[13px] font-medium flex-1">{agent.name}</span>
                   <span className="text-[11px] text-muted-foreground">
                     {agent.jobs.length} {agent.jobs.length === 1 ? "job" : "jobs"}

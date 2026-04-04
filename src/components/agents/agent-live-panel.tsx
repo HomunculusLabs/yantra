@@ -16,6 +16,7 @@ import {
   Bot,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AgentAvatar } from "@/components/agents/agent-avatar";
 import { cn } from "@/lib/utils";
 import { WebTerminal } from "@/components/terminal/web-terminal";
 import { useAIPanelStore } from "@/stores/ai-panel-store";
@@ -213,9 +214,9 @@ export function AgentLivePanel({ persona, onBack }: AgentLivePanelProps) {
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <Bot className="h-4 w-4 text-primary" />
+          <AgentAvatar name={persona.name} slug={persona.slug} size="xs" />
           <span className="text-[13px] font-semibold tracking-[-0.02em]">
-            {persona.emoji ? `${persona.emoji} ` : ""}{persona.name}
+            {persona.name}
           </span>
           <span className="text-[11px] text-muted-foreground">{persona.heartbeat}</span>
         </div>

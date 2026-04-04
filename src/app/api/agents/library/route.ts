@@ -21,7 +21,7 @@ export async function GET() {
         templates.push({
           slug: data.slug || entry.name,
           name: data.name || entry.name,
-          emoji: data.emoji || "",
+          emoji: "",
           type: data.type || "specialist",
           department: data.department || "general",
           role: data.role || "",

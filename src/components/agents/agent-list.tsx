@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAppStore } from "@/stores/app-store";
+import { AgentAvatar } from "@/components/agents/agent-avatar";
 import { cn } from "@/lib/utils";
 
 interface AgentCard {
@@ -48,7 +49,7 @@ function AgentCardItem({
       className="bg-card border border-border rounded-lg p-4 text-left hover:border-primary/30 hover:bg-accent/30 transition-colors cursor-pointer w-full"
     >
       <div className="flex items-start justify-between">
-        <span className="text-2xl">{agent.emoji}</span>
+        <AgentAvatar name={agent.name} slug={agent.slug} size="lg" />
         <div
           className={cn(
             "flex items-center gap-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full",
@@ -157,7 +158,7 @@ function LibraryDialog({
                     >
                       <div className="flex items-start justify-between">
                         <div>
-                          <span className="text-lg">{t.emoji}</span>
+                          <AgentAvatar name={t.name} slug={t.slug} size="md" />
                           <h4 className="text-[13px] font-medium mt-1">
                             {t.name}
                           </h4>

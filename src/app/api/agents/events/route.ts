@@ -145,7 +145,7 @@ export async function GET() {
             return {
               slug,
               channel: info.channel,
-              emoji: p?.emoji || "🤖",
+              emoji: p?.emoji || "",
               name: p?.name || slug,
             };
           });

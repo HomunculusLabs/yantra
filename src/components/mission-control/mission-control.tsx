@@ -15,6 +15,7 @@ import { CreateAgentDialog } from "./create-agent-dialog";
 import { AgentDetailPanel } from "./agent-detail-panel";
 import { GoalBar } from "./goal-bar";
 import { WorkspaceGallery } from "./workspace-gallery";
+import { AgentAvatar } from "@/components/agents/agent-avatar";
 import type { GoalMetric } from "@/types/agents";
 
 interface AgentSummary {
@@ -96,7 +97,7 @@ export function MissionControl() {
         setAgents(
           (data.personas || []).map((p: Record<string, unknown>) => ({
             name: p.name as string,
-            emoji: (p.emoji as string) || "🤖",
+            emoji: (p.emoji as string) || "",
             role: (p.role as string) || "",
             slug: p.slug as string,
             active: p.active as boolean,
@@ -213,13 +214,13 @@ export function MissionControl() {
           if ("Notification" in window && Notification.permission === "granted") {
             if (data.channel === "alerts" && data.preview) {
               new Notification("Yantra Alert", {
-                body: `${data.agentEmoji || "⚠️"} ${data.agentName || "Agent"}: ${data.preview}`,
+                body: `${data.agentName || "Agent"}: ${data.preview}`,
                 icon: "/favicon.ico",
                 tag: `yantra-alert-${Date.now()}`,
               });
             } else if (data.hasHumanMention && data.preview) {
               new Notification("Agent needs your attention", {
-                body: `${data.agentEmoji || "🤖"} ${data.agentName || "Agent"} in #${data.channel}: ${data.preview}`,
+                body: `${data.agentName || "Agent"} in #${data.channel}: ${data.preview}`,
                 icon: "/favicon.ico",
                 tag: `yantra-mention-${Date.now()}`,
               });
@@ -369,13 +370,13 @@ Return JSON with these fields:
   "name": "Agent Name",
   "slug": "agent-name",
   "role": "Brief role description",
-  "emoji": "single emoji",
+  "emoji": "",
   "department": "marketing|sales|engineering|research|operations|content|support|general",
   "type": "specialist|lead",
   "body": "You are [Name]. [2-3 sentence persona description with personality and goals]"
 }
 
-Choose an appropriate department. Pick a descriptive emoji. Make the body a compelling persona prompt.`,
+Choose an appropriate department. Leave the emoji field empty. Make the body a compelling persona prompt.`,
         }),
       });
 
@@ -394,7 +395,7 @@ Choose an appropriate department. Pick a descriptive emoji. Make the body a comp
               slug: config.slug || config.name.toLowerCase().replace(/\s+/g, "-"),
               name: config.name,
               role: config.role || "",
-              emoji: config.emoji || "🤖",
+              emoji: config.emoji || "",
               department: config.department || "general",
               type: config.type || "specialist",
               heartbeat: "0 */4 * * *",
@@ -543,7 +544,7 @@ Choose an appropriate department. Pick a descriptive emoji. Make the body a comp
             {mcAgents.filter((a) => a.goals.length > 0).map((agent) => (
               <div key={agent.slug} className="space-y-1.5">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-sm">{agent.emoji}</span>
+                  <AgentAvatar name={agent.name} slug={agent.slug} size="xs" />
                   <span className="text-[11px] font-medium truncate">{agent.name}</span>
                 </div>
                 {agent.goals.map((g) => (

@@ -12,6 +12,7 @@ import {
   X,
   Loader2,
 } from "lucide-react";
+import { AgentAvatar } from "@/components/agents/agent-avatar";
 
 interface PulseMetrics {
   totalAgents: number;
@@ -25,7 +26,8 @@ interface PulseMetrics {
 }
 
 interface TickerMessage {
-  emoji: string;
+  name: string;
+  slug: string;
   text: string;
   time: string;
 }
@@ -180,7 +182,8 @@ export function PulseStrip({ metrics, onAlertClick, onGoalClick, onPlaybookClick
         const latest = msgs[msgs.length - 1];
         const timeStr = new Date(latest.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
         setTicker({
-          emoji: latest.emoji || "🤖",
+          name: latest.displayName || latest.agent,
+          slug: latest.agent,
           text: `${latest.displayName || latest.agent}: ${latest.content?.slice(0, 80)}`,
           time: timeStr,
         });
@@ -211,7 +214,7 @@ export function PulseStrip({ metrics, onAlertClick, onGoalClick, onPlaybookClick
         .map((p: { slug: string; name: string; emoji?: string; lastHeartbeat?: string }) => ({
           slug: p.slug,
           name: p.name,
-          emoji: p.emoji || "🤖",
+          emoji: p.emoji || "",
           startedAt: p.lastHeartbeat,
         }));
       setRunningAgents(running);
@@ -232,7 +235,7 @@ export function PulseStrip({ metrics, onAlertClick, onGoalClick, onPlaybookClick
         .filter((p: { slug: string }) => p.slug !== "editor")
         .map((p: { slug: string; name: string; emoji?: string; heartbeatsUsed?: number }) => ({
           agent: p.name,
-          emoji: p.emoji || "🤖",
+          emoji: p.emoji || "",
           heartbeats: p.heartbeatsUsed || 0,
           cost: (p.heartbeatsUsed || 0) * costPerHeartbeat,
         }))
@@ -333,7 +336,7 @@ export function PulseStrip({ metrics, onAlertClick, onGoalClick, onPlaybookClick
                   onClick={() => { onAgentClick?.(a.slug); setShowRunning(false); }}
                   className="w-full flex items-center gap-2.5 py-2 px-2 rounded-lg hover:bg-muted/30 transition-colors text-left"
                 >
-                  <span className="text-sm">{a.emoji}</span>
+                  <AgentAvatar name={a.name} slug={a.slug} size="xs" />
                   <div className="flex-1 min-w-0">
                     <p className="text-[12px] font-medium truncate">{a.name}</p>
                     <p className="text-[10px] text-muted-foreground/50">
@@ -374,7 +377,7 @@ export function PulseStrip({ metrics, onAlertClick, onGoalClick, onPlaybookClick
                   <div key={entry.agent} className="space-y-1">
                     <div className="flex items-center justify-between text-[11px]">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-sm">{entry.emoji}</span>
+                        <AgentAvatar name={entry.agent} size="xs" />
                         <span className="font-medium">{entry.agent}</span>
                       </div>
                       <div className="flex items-center gap-2 text-muted-foreground/60">
@@ -404,9 +407,9 @@ export function PulseStrip({ metrics, onAlertClick, onGoalClick, onPlaybookClick
       {ticker && (
         <div className="flex items-center gap-2 px-4 py-1 text-[11px] text-muted-foreground/60 border-t border-border/30 bg-muted/10">
           <Activity className="h-3 w-3 text-emerald-500/50 shrink-0 animate-pulse" />
-          <span className="truncate">
-            <span>{ticker.emoji} </span>
-            <span>{ticker.text}</span>
+          <span className="flex min-w-0 items-center gap-2 truncate">
+            <AgentAvatar name={ticker.name} slug={ticker.slug} size="xs" />
+            <span className="truncate">{ticker.text}</span>
           </span>
           <span className="text-[10px] text-muted-foreground/40 shrink-0 tabular-nums ml-auto">
             {ticker.time}

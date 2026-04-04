@@ -10,6 +10,7 @@ import {
   Check,
   Loader2,
 } from "lucide-react";
+import { AgentAvatar } from "@/components/agents/agent-avatar";
 
 interface OnboardingAnswers {
   companyName: string;
@@ -57,7 +58,7 @@ function suggestTeam(answers: OnboardingAnswers): SuggestedAgent[] {
 
   // If no specific agents matched, add content marketer as a reasonable default
   if (agents.length === 2) {
-    agents.push({ slug: "content-marketer", name: "Content Marketer", emoji: "\u{1F4E3}", role: "Blog, social media, newsletters", checked: true });
+    agents.push({ slug: "content-marketer", name: "Content Marketer", emoji: "", role: "Blog, social media, newsletters", checked: true });
   }
 
   return agents;
@@ -321,7 +322,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
                       <Check className="h-3 w-3 text-primary-foreground" />
                     )}
                   </div>
-                  <span className="text-xl">{agent.emoji}</span>
+                  <AgentAvatar name={agent.name} slug={agent.slug} size="md" />
                   <div className="flex-1 min-w-0">
                     <p className="text-[13px] font-medium">{agent.name}</p>
                     <p className="text-[11px] text-muted-foreground">
