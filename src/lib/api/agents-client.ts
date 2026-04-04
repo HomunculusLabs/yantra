@@ -1,6 +1,10 @@
 import type {
+  AgentDetailResponse,
+  AgentRelatedFile,
   AgentSummary,
   CreateAgentPersonaRequest,
+  CreateDaemonSessionRequest,
+  CreateDaemonSessionResponse,
   SaveAgentPersonaRequest,
 } from "@/types/agent-api";
 import type { AgentStackConfig, AgentStackPayload } from "@/types/agent-stack";
@@ -10,7 +14,7 @@ import type {
   ConversationStatus,
   ConversationTrigger,
 } from "@/types/conversations";
-import type { JobConfig, JobRun } from "@/types/jobs";
+import type { CreateJobPayload, JobConfig, JobRun, UpdateJobPayload } from "@/types/jobs";
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
@@ -41,6 +45,12 @@ export async function getAgentPersona(slug: string): Promise<AgentSummary> {
     `/api/agents/personas/${slug}`
   );
   return data.persona;
+}
+
+export async function getAgentDetail(
+  slug: string
+): Promise<AgentDetailResponse> {
+  return requestJson<AgentDetailResponse>(`/api/agents/personas/${slug}`);
 }
 
 export async function createAgentPersona(
@@ -96,6 +106,37 @@ export async function deleteAgentPersona(slug: string): Promise<void> {
   });
 }
 
+export async function getAgentRelatedFiles(
+  slug: string
+): Promise<AgentRelatedFile[]> {
+  const data = await requestJson<{ files?: AgentRelatedFile[] }>(
+    `/api/agents/personas/${slug}/files`
+  );
+  return data.files || [];
+}
+
+export async function renderMarkdownPreview(payload: {
+  markdown: string;
+  pagePath?: string;
+}): Promise<string> {
+  const data = await requestJson<{ html?: string }>("/api/ai/render-md", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return data.html || "";
+}
+
+export async function createDaemonSession(
+  payload: CreateDaemonSessionRequest
+): Promise<CreateDaemonSessionResponse> {
+  return requestJson<CreateDaemonSessionResponse>("/api/daemon/sessions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function listAgentConversations(params: {
   agentSlug?: string | null;
   trigger?: ConversationTrigger;
@@ -145,7 +186,7 @@ export async function listAgentJobs(slug: string): Promise<JobConfig[]> {
 
 export async function createAgentJob(
   slug: string,
-  job: JobConfig
+  job: CreateJobPayload | JobConfig
 ): Promise<JobConfig> {
   const data = await requestJson<{ ok: true; job: JobConfig }>(
     `/api/agents/${slug}/jobs`,
@@ -161,9 +202,7 @@ export async function createAgentJob(
 export async function saveAgentJob(
   slug: string,
   jobId: string,
-  updates: Partial<
-    Pick<JobConfig, "name" | "schedule" | "prompt" | "timeout" | "enabled">
-  >
+  updates: UpdateJobPayload
 ): Promise<JobConfig> {
   const data = await requestJson<{ ok: true; job: JobConfig }>(
     `/api/agents/${slug}/jobs/${jobId}`,
@@ -171,6 +210,21 @@ export async function saveAgentJob(
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(updates),
+    }
+  );
+  return data.job;
+}
+
+export async function toggleAgentJob(
+  slug: string,
+  jobId: string
+): Promise<JobConfig> {
+  const data = await requestJson<{ ok: true; job: JobConfig }>(
+    `/api/agents/${slug}/jobs/${jobId}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "toggle" }),
     }
   );
   return data.job;

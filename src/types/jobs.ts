@@ -25,6 +25,28 @@ export interface JobConfig {
   latestTask?: JobTaskStatus;
 }
 
+export type CreateJobPayload = Partial<
+  Pick<
+    JobConfig,
+    | "id"
+    | "name"
+    | "enabled"
+    | "schedule"
+    | "provider"
+    | "agentSlug"
+    | "workdir"
+    | "timeout"
+    | "prompt"
+    | "execution"
+    | "on_complete"
+    | "on_failure"
+  >
+>;
+
+export type UpdateJobPayload = Partial<
+  Pick<JobConfig, "name" | "enabled" | "schedule" | "timeout" | "prompt" | "execution">
+>;
+
 export interface JobRun {
   id: string;
   jobId: string;
