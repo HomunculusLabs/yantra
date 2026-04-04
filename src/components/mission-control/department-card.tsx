@@ -2,44 +2,30 @@
 
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { FolderOpen, Pause, Play, MoreHorizontal, RefreshCw, ChevronDown, ChevronRight } from "lucide-react";
+import { FolderOpen, Pause, Play, RefreshCw, ChevronDown, ChevronRight } from "lucide-react";
 import { AgentCard } from "./agent-card";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
-import type { GoalMetric } from "@/types/agents";
-
-interface AgentSummary {
-  name: string;
-  emoji: string;
-  role: string;
-  slug: string;
-  active: boolean;
-  running?: boolean;
-  type: string;
-  goals: GoalMetric[];
-  lastHeartbeat?: string;
-  nextHeartbeat?: string;
-  lastAction?: string;
-  pendingTasks?: number;
-}
+import type { AgentSummary } from "@/types/agent-api";
 
 interface DepartmentCardProps {
   department: string;
   agents: AgentSummary[];
   onAgentClick?: (slug: string) => void;
-  onAgentToggle?: (slug: string, active: boolean) => void;
+  onAgentToggle?: (slug: string) => void | Promise<void>;
   onAgentRun?: (slug: string) => Promise<void>;
+  onBulkToggle?: (slugs: string[], action: "activate" | "pause") => void | Promise<void>;
   onViewWorkspace?: (department: string) => void;
   defaultCollapsed?: boolean;
 }
 
-export function DepartmentCard({ department, agents, onAgentClick, onAgentToggle, onAgentRun, onViewWorkspace, defaultCollapsed }: DepartmentCardProps) {
-  const lead = agents.find((a) => a.type === "lead");
-  const specialists = agents.filter((a) => a.type !== "lead");
+export function DepartmentCard({ department, agents, onAgentClick, onAgentToggle, onAgentRun, onBulkToggle, onViewWorkspace, defaultCollapsed }: DepartmentCardProps) {
+  const lead = agents.find((a) => (a.type || "specialist") === "lead");
+  const specialists = agents.filter((a) => (a.type || "specialist") !== "lead");
   const activeCount = agents.filter((a) => a.active).length;
   const [togglingAll, setTogglingAll] = useState(false);
   const [collapsed, setCollapsed] = useState(defaultCollapsed ?? agents.length > 2);
 
-  const allGoals = agents.flatMap((a) => a.goals);
+  const allGoals = agents.flatMap((a) => a.goals ?? []);
   const goalsWithData = allGoals.filter((g) => g.target > 0 && g.current > 0);
   const totalGoals = goalsWithData.length;
   const onTrack = goalsWithData.filter((g) => g.current / g.target >= 0.4).length;
@@ -50,19 +36,11 @@ export function DepartmentCard({ department, agents, onAgentClick, onAgentToggle
     setTogglingAll(true);
     try {
       const action = activeCount > 0 ? "pause" : "activate";
-      const slugs = agents.map((a) => a.slug);
-      await fetch("/api/agents/scheduler", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, slugs }),
-      });
-      // Trigger refresh via toggle callbacks
-      for (const a of agents) {
-        if ((action === "pause" && a.active) || (action === "activate" && !a.active)) {
-          onAgentToggle?.(a.slug, a.active);
-        }
-      }
-    } catch { /* ignore */ } finally {
+      await onBulkToggle?.(
+        agents.map((agent) => agent.slug),
+        action
+      );
+    } finally {
       setTogglingAll(false);
     }
   };
@@ -130,8 +108,10 @@ export function DepartmentCard({ department, agents, onAgentClick, onAgentToggle
             <AgentCard
               key={lead.slug}
               {...lead}
+              type={lead.type || "specialist"}
+              goals={lead.goals || []}
               onClick={() => onAgentClick?.(lead.slug)}
-              onToggle={() => onAgentToggle?.(lead.slug, lead.active)}
+              onToggle={() => onAgentToggle?.(lead.slug)}
               onRun={onAgentRun ? () => onAgentRun(lead.slug) : undefined}
             />
           )}
@@ -139,8 +119,10 @@ export function DepartmentCard({ department, agents, onAgentClick, onAgentToggle
             <AgentCard
               key={agent.slug}
               {...agent}
+              type={agent.type || "specialist"}
+              goals={agent.goals || []}
               onClick={() => onAgentClick?.(agent.slug)}
-              onToggle={() => onAgentToggle?.(agent.slug, agent.active)}
+              onToggle={() => onAgentToggle?.(agent.slug)}
               onRun={onAgentRun ? () => onAgentRun(agent.slug) : undefined}
             />
           ))}
@@ -151,12 +133,14 @@ export function DepartmentCard({ department, agents, onAgentClick, onAgentToggle
       {collapsed && (
         <div className="px-2 py-1.5 space-y-0.5">
           {agents.map((a) => {
-            const topGoal = a.goals.length > 0
-              ? a.goals.reduce((best, g) => (g.target > 0 ? (best.target > 0 ? (g.current / g.target > best.current / best.target ? g : best) : g) : best), a.goals[0])
+            const goals = a.goals || [];
+            const topGoal = goals.length > 0
+              ? goals.reduce((best, g) => (g.target > 0 ? (best.target > 0 ? (g.current / g.target > best.current / best.target ? g : best) : g) : best), goals[0])
               : null;
             const pct = topGoal && topGoal.target > 0 ? Math.min(100, Math.round((topGoal.current / topGoal.target) * 100)) : 0;
-            const totalPct = a.goals.length > 0
-              ? Math.round(a.goals.reduce((sum, g) => sum + (g.target > 0 ? Math.min(1, g.current / g.target) : 0), 0) / a.goals.filter(g => g.target > 0).length * 100) || 0
+            const trackableGoals = goals.filter((g) => g.target > 0);
+            const totalPct = trackableGoals.length > 0
+              ? Math.round(goals.reduce((sum, g) => sum + (g.target > 0 ? Math.min(1, g.current / g.target) : 0), 0) / trackableGoals.length * 100) || 0
               : 0;
             const isBehind = totalPct > 0 && totalPct < 40;
             return (
@@ -167,7 +151,7 @@ export function DepartmentCard({ department, agents, onAgentClick, onAgentToggle
               >
                 <AgentAvatar name={a.name} slug={a.slug} size="xs" className="shrink-0" />
                 <span className="text-[11px] font-medium truncate min-w-0 flex-1">{a.name}</span>
-                {a.goals.length > 0 && a.goals.some(g => g.target > 0) ? (
+                {goals.length > 0 && goals.some(g => g.target > 0) ? (
                   <div className="flex items-center gap-1.5 shrink-0">
                     <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
                       <div

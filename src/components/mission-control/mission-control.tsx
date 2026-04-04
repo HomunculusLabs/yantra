@@ -15,24 +15,10 @@ import { CreateAgentDialog } from "./create-agent-dialog";
 import { AgentDetailPanel } from "./agent-detail-panel";
 import { GoalBar } from "./goal-bar";
 import { WorkspaceGallery } from "./workspace-gallery";
+import { useMissionControlData } from "./use-mission-control-data";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
-import type { GoalMetric } from "@/types/agents";
-
-interface AgentSummary {
-  name: string;
-  emoji: string;
-  role: string;
-  slug: string;
-  active: boolean;
-  running?: boolean;
-  type: string;
-  department: string;
-  goals: GoalMetric[];
-  lastHeartbeat?: string;
-  nextHeartbeat?: string;
-  lastAction?: string;
-  pendingTasks?: number;
-}
+import type { AgentSummary } from "@/types/agent-api";
+import type { MissionControlPulseMetrics } from "@/types/agents";
 
 interface DepartmentGroup {
   name: string;
@@ -40,20 +26,12 @@ interface DepartmentGroup {
 }
 
 export function MissionControl() {
-  const [agents, setAgents] = useState<AgentSummary[]>([]);
-  const [alertCount, setAlertCount] = useState(0);
-  const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [nlOpen, setNlOpen] = useState(false);
   const [nlInput, setNlInput] = useState("");
-  const [nlGenerating, setNlGenerating] = useState(false);
   const [detailSlug, setDetailSlug] = useState<string | null>(null);
   const [showGoalSummary, setShowGoalSummary] = useState(false);
-  const [schedulerRunning, setSchedulerRunning] = useState(false);
-  const [schedulerToggling, setSchedulerToggling] = useState(false);
-  const [scheduledCount, setScheduledCount] = useState(0);
   const [confirmStart, setConfirmStart] = useState(false);
-  const [companyName, setCompanyName] = useState("");
   const [showGallery, setShowGallery] = useState(false);
   const [gridExpanded, setGridExpanded] = useState(false);
   const setSection = useAppStore((s) => s.setSection);
@@ -75,92 +53,23 @@ export function MissionControl() {
     loadPage(normalized);
   }, [loadPage, selectPage, setSection]);
 
-  // Load company name from config
-  useEffect(() => {
-    fetch("/api/agents/config")
-      .then((r) => r.json())
-      .then((d) => {
-        const name = d.company?.name || d.company || "";
-        if (name && typeof name === "string") setCompanyName(name);
-      })
-      .catch(() => {});
-  }, []);
-
-  const loadAgents = useCallback(async () => {
-    try {
-      const [agentRes, alertsRes] = await Promise.all([
-        fetch("/api/agents/personas"),
-        fetch("/api/agents/slack?channel=alerts&limit=100"),
-      ]);
-      if (agentRes.ok) {
-        const data = await agentRes.json();
-        setAgents(
-          (data.personas || []).map((p: Record<string, unknown>) => ({
-            name: p.name as string,
-            emoji: (p.emoji as string) || "",
-            role: (p.role as string) || "",
-            slug: p.slug as string,
-            active: p.active as boolean,
-            type: (p.type as string) || "specialist",
-            department: (p.department as string) || "general",
-            goals: (p.goals as GoalMetric[]) || [],
-            lastHeartbeat: p.lastHeartbeat as string | undefined,
-            nextHeartbeat: p.nextHeartbeat as string | undefined,
-          }))
-        );
-      }
-      if (alertsRes.ok) {
-        const data = await alertsRes.json();
-        setAlertCount((data.messages || []).length);
-      }
-
-      // Fetch task counts per agent
-      try {
-        const taskRes = await fetch("/api/agents/tasks?all=true&status=pending");
-        if (taskRes.ok) {
-          const taskData = await taskRes.json();
-          const counts: Record<string, number> = {};
-          for (const t of taskData.tasks || []) {
-            counts[t.toAgent] = (counts[t.toAgent] || 0) + 1;
-          }
-          setAgents((prev) =>
-            prev.map((a) => ({ ...a, pendingTasks: counts[a.slug] || 0 }))
-          );
-        }
-      } catch { /* ignore */ }
-
-      // Fetch scheduler status
-      const schedRes = await fetch("/api/agents/scheduler");
-      if (schedRes.ok) {
-        const schedData = await schedRes.json();
-        setSchedulerRunning(schedData.status === "running");
-        setScheduledCount(schedData.scheduledAgents?.length || 0);
-      }
-
-      // Fetch last actions from #general channel
-      const generalRes = await fetch("/api/agents/slack?channel=general&limit=50");
-      if (generalRes.ok) {
-        const data = await generalRes.json();
-        const msgs = data.messages || [];
-        const lastActions: Record<string, string> = {};
-        for (const msg of msgs) {
-          if (msg.agent && msg.agent !== "human" && msg.agent !== "system") {
-            lastActions[msg.agent] = msg.content?.slice(0, 100) || "";
-          }
-        }
-        setAgents((prev) =>
-          prev.map((a) => ({
-            ...a,
-            lastAction: lastActions[a.slug] || undefined,
-          }))
-        );
-      }
-    } catch {
-      /* ignore */
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const {
+    agents,
+    alertCount,
+    loading,
+    nlGenerating,
+    schedulerRunning,
+    schedulerToggling,
+    scheduledCount,
+    companyName,
+    loadAgents,
+    runSchedulerAction,
+    toggleAgent,
+    runAgent,
+    bulkToggleDepartment,
+    createAgentFromDescription,
+    importBundle,
+  } = useMissionControlData();
 
   // Request browser notification permission on mount
   useEffect(() => {
@@ -169,79 +78,6 @@ export function MissionControl() {
     }
   }, []);
 
-  useEffect(() => {
-    loadAgents();
-
-    // SSE connection for real-time updates
-    let es: EventSource | null = null;
-    try {
-      es = new EventSource("/api/agents/events");
-      es.addEventListener("agent_status", (e) => {
-        try {
-          const statuses: { slug: string; active: boolean; running?: boolean; lastHeartbeat?: string; nextHeartbeat?: string }[] = JSON.parse(e.data);
-          setAgents((prev) =>
-            prev.map((a) => {
-              const s = statuses.find((st) => st.slug === a.slug);
-              if (!s) return a;
-              return { ...a, active: s.active, running: s.running, lastHeartbeat: s.lastHeartbeat, nextHeartbeat: s.nextHeartbeat };
-            })
-          );
-        } catch { /* ignore parse errors */ }
-      });
-      es.addEventListener("pulse", (e) => {
-        try {
-          const pulse = JSON.parse(e.data);
-          setSchedulerRunning(pulse.scheduledAgents > 0);
-          setScheduledCount(pulse.scheduledAgents);
-        } catch { /* ignore */ }
-      });
-      // Clear responding indicator when no agent_responding event is received
-      // (handled by the agent_responding listener above — when it receives an empty array
-      // or stops receiving events, the typing indicators naturally clear)
-      es.addEventListener("agent_responding", (e) => {
-        try {
-          const agents = JSON.parse(e.data);
-          window.dispatchEvent(new CustomEvent("yantra:agent-responding", { detail: agents }));
-        } catch { /* ignore */ }
-      });
-      es.addEventListener("slack_activity", (e) => {
-        // Trigger a lightweight refresh of Slack panel
-        window.dispatchEvent(new CustomEvent("yantra:slack-refresh"));
-
-        // Browser notifications for #alerts and @human mentions
-        try {
-          const data = JSON.parse(e.data);
-          if ("Notification" in window && Notification.permission === "granted") {
-            if (data.channel === "alerts" && data.preview) {
-              new Notification("Yantra Alert", {
-                body: `${data.agentName || "Agent"}: ${data.preview}`,
-                icon: "/favicon.ico",
-                tag: `yantra-alert-${Date.now()}`,
-              });
-            } else if (data.hasHumanMention && data.preview) {
-              new Notification("Agent needs your attention", {
-                body: `${data.agentName || "Agent"} in #${data.channel}: ${data.preview}`,
-                icon: "/favicon.ico",
-                tag: `yantra-mention-${Date.now()}`,
-              });
-            }
-          }
-        } catch { /* ignore */ }
-      });
-      es.onerror = () => {
-        // Reconnect on error — EventSource auto-reconnects
-      };
-    } catch {
-      // SSE not supported, fall back to polling
-    }
-
-    // Fallback: still poll every 30s as a safety net
-    const interval = setInterval(loadAgents, 30000);
-    return () => {
-      clearInterval(interval);
-      es?.close();
-    };
-  }, [loadAgents]);
 
   // Listen for Cmd+N create agent shortcut
   useEffect(() => {
@@ -281,11 +117,11 @@ export function MissionControl() {
   departments.sort((a, b) => a.name.localeCompare(b.name));
 
   // Compute pulse metrics (exclude system agents like Editor)
-  const allGoals = mcAgents.flatMap((a) => a.goals);
+  const allGoals = mcAgents.flatMap((a) => a.goals ?? []);
   const goalsWithData = allGoals.filter((g) => g.target > 0 && g.current > 0);
   const goalsOnTrack = goalsWithData.filter((g) => g.current / g.target >= 0.4).length;
 
-  const pulseMetrics = {
+  const pulseMetrics: MissionControlPulseMetrics = {
     totalAgents: mcAgents.length,
     activeAgents: mcAgents.filter((a) => a.active).length,
     runningPlays: mcAgents.filter((a) => a.running).length,
@@ -302,29 +138,11 @@ export function MissionControl() {
       return;
     }
     setConfirmStart(false);
-    setSchedulerToggling(true);
-    try {
-      const action = schedulerRunning ? "stop-all" : "start-all";
-      await fetch("/api/agents/scheduler", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
-      });
-      await loadAgents();
-    } catch { /* ignore */ } finally {
-      setSchedulerToggling(false);
-    }
+    await runSchedulerAction(schedulerRunning ? "stop-all" : "start-all");
   };
 
-  const handleAgentToggle = async (slug: string, currentlyActive: boolean) => {
-    try {
-      await fetch(`/api/agents/personas/${slug}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "toggle" }),
-      });
-      await loadAgents();
-    } catch { /* ignore */ }
+  const handleAgentToggle = async (slug: string) => {
+    await toggleAgent(slug);
   };
 
   const handleAgentClick = (slug: string) => {
@@ -332,94 +150,15 @@ export function MissionControl() {
   };
 
   const handleAgentRun = async (slug: string) => {
-    try {
-      // Activate if paused
-      const agent = mcAgents.find(a => a.slug === slug);
-      if (agent && !agent.active) {
-        await fetch(`/api/agents/personas/${slug}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "toggle" }),
-        });
-      }
-      // Trigger heartbeat
-      await fetch(`/api/agents/personas/${slug}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "heartbeat" }),
-      });
-      await loadAgents();
-    } catch { /* ignore */ }
+    await runAgent(slug);
   };
 
   const handleNlCreate = async () => {
     if (!nlInput.trim()) return;
-    setNlGenerating(true);
-    try {
-      // Use headless AI to generate agent config from description
-      const res = await fetch("/api/agents/headless", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          instruction: `You are a Yantra Agent creator. Based on the following description, generate a JSON object for creating a new agent. Return ONLY valid JSON, no other text.
-
-Description: "${nlInput.trim()}"
-
-Return JSON with these fields:
-{
-  "name": "Agent Name",
-  "slug": "agent-name",
-  "role": "Brief role description",
-  "emoji": "",
-  "department": "marketing|sales|engineering|research|operations|content|support|general",
-  "type": "specialist|lead",
-  "body": "You are [Name]. [2-3 sentence persona description with personality and goals]"
-}
-
-Choose an appropriate department. Leave the emoji field empty. Make the body a compelling persona prompt.`,
-        }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        const output = data.output || "";
-        // Extract JSON from output
-        const jsonMatch = output.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const config = JSON.parse(jsonMatch[0]);
-          // Create the agent
-          const createRes = await fetch("/api/agents/personas", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              slug: config.slug || config.name.toLowerCase().replace(/\s+/g, "-"),
-              name: config.name,
-              role: config.role || "",
-              emoji: config.emoji || "",
-              department: config.department || "general",
-              type: config.type || "specialist",
-              heartbeat: "0 */4 * * *",
-              budget: 200,
-              active: false,
-              workdir: "/data",
-              channels: [config.department === "general" ? "general" : config.department, "general"],
-              tags: [config.department || "general"],
-              focus: [],
-              body: config.body || `You are ${config.name}. ${config.role}`,
-            }),
-          });
-
-          if (createRes.ok) {
-            setNlOpen(false);
-            setNlInput("");
-            loadAgents();
-          }
-        }
-      }
-    } catch {
-      /* ignore */
-    } finally {
-      setNlGenerating(false);
+    const created = await createAgentFromDescription(nlInput);
+    if (created) {
+      setNlOpen(false);
+      setNlInput("");
     }
   };
 
@@ -481,7 +220,7 @@ Choose an appropriate department. Leave the emoji field empty. Make the body a c
             variant="ghost"
             size="sm"
             className="h-7 text-[12px] gap-1.5 hidden md:flex"
-            onClick={loadAgents}
+            onClick={() => void loadAgents()}
           >
             <RefreshCw className="h-3 w-3" />
             Refresh
@@ -541,13 +280,13 @@ Choose an appropriate department. Leave the emoji field empty. Make the body a c
             </button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            {mcAgents.filter((a) => a.goals.length > 0).map((agent) => (
+            {mcAgents.filter((a) => (a.goals || []).length > 0).map((agent) => (
               <div key={agent.slug} className="space-y-1.5">
                 <div className="flex items-center gap-1.5">
                   <AgentAvatar name={agent.name} slug={agent.slug} size="xs" />
                   <span className="text-[11px] font-medium truncate">{agent.name}</span>
                 </div>
-                {agent.goals.map((g) => (
+                {(agent.goals || []).map((g) => (
                   <GoalBar
                     key={g.metric}
                     label={g.metric.replace(/_/g, " ")}
@@ -560,7 +299,7 @@ Choose an appropriate department. Leave the emoji field empty. Make the body a c
                 ))}
               </div>
             ))}
-            {mcAgents.filter((a) => a.goals.length > 0).length === 0 && (
+            {mcAgents.filter((a) => (a.goals || []).length > 0).length === 0 && (
               <p className="text-[11px] text-muted-foreground/50 col-span-full">No agents have goals configured.</p>
             )}
           </div>
@@ -615,6 +354,7 @@ Choose an appropriate department. Leave the emoji field empty. Make the body a c
                   onAgentClick={handleAgentClick}
                   onAgentToggle={handleAgentToggle}
                   onAgentRun={handleAgentRun}
+                  onBulkToggle={bulkToggleDepartment}
                   onViewWorkspace={(deptName) => {
                     // Find the lead agent for this department and navigate to its workspace
                     const lead = dept.agents.find((a) => a.type === "lead");
@@ -632,8 +372,10 @@ Choose an appropriate department. Leave the emoji field empty. Make the body a c
                 <div key={agent.slug} className="border border-border rounded-xl overflow-hidden bg-card p-2">
                   <AgentCard
                     {...agent}
+                    type={agent.type || "specialist"}
+                    goals={agent.goals || []}
                     onClick={() => handleAgentClick(agent.slug)}
-                    onToggle={() => handleAgentToggle(agent.slug, agent.active)}
+                    onToggle={() => handleAgentToggle(agent.slug)}
                     onRun={() => handleAgentRun(agent.slug)}
                   />
                 </div>
@@ -675,14 +417,7 @@ Choose an appropriate department. Leave the emoji field empty. Make the body a c
                           try {
                             const text = await file.text();
                             const bundle = JSON.parse(text);
-                            const res = await fetch("/api/agents/import", {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify(bundle),
-                            });
-                            if (res.ok) {
-                              loadAgents();
-                            }
+                            await importBundle(bundle);
                           } catch { /* ignore */ }
                         };
                         input.click();

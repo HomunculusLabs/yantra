@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useEffect, useState } from "react";
 import {
   X,
   Pause,
@@ -32,64 +32,18 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { GoalBar } from "./goal-bar";
 import { EditAgentDialog } from "./edit-agent-dialog";
+import { useAgentDetailPanel } from "./use-agent-detail-panel";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
 import { cronToHuman } from "@/lib/agents/cron-utils";
-import type { GoalMetric, SlackMessage } from "@/types/agents";
-
-interface AgentDetail {
-  name: string;
-  emoji: string;
-  role: string;
-  slug: string;
-  active: boolean;
-  type: string;
-  department: string;
-  goals: GoalMetric[];
-  channels: string[];
-  lastHeartbeat?: string;
-  heartbeat: string;
-  body: string;
-}
-
-interface HeartbeatRecord {
-  agentSlug: string;
-  timestamp: string;
-  duration: number;
-  status: "completed" | "failed";
-  summary: string;
-}
-
-interface WorkspaceFile {
-  name: string;
-  type: "file" | "directory";
-  path: string;
-  modified?: string;
-}
+import type { AgentHeartbeatRecord } from "@/types/agent-api";
+import type { AgentTask, SlackMessage } from "@/types/agents";
 
 // Unified activity item for the activity feed
 interface ActivityItem {
   type: "heartbeat" | "slack";
   timestamp: string;
-  heartbeat?: HeartbeatRecord;
+  heartbeat?: AgentHeartbeatRecord;
   slack?: SlackMessage;
-}
-
-interface AgentTask {
-  id: string;
-  fromAgent: string;
-  fromEmoji?: string;
-  fromName?: string;
-  toAgent: string;
-  channel?: string;
-  title: string;
-  description: string;
-  kbRefs: string[];
-  status: "pending" | "in_progress" | "completed" | "failed";
-  priority: number;
-  createdAt: string;
-  updatedAt: string;
-  completedAt?: string;
-  result?: string;
 }
 
 interface AgentDetailPanelProps {
@@ -149,89 +103,31 @@ function getFileIcon(name: string) {
 }
 
 export function AgentDetailPanel({ slug, onClose, onNavigateToAgent, onOpenFile }: AgentDetailPanelProps) {
-  const [agent, setAgent] = useState<AgentDetail | null>(null);
-  const [history, setHistory] = useState<HeartbeatRecord[]>([]);
-  const [slackMessages, setSlackMessages] = useState<SlackMessage[]>([]);
-  const [memory, setMemory] = useState<string>("");
-  const [memoryFiles, setMemoryFiles] = useState<Record<string, string>>({});
+  const {
+    agent,
+    history,
+    slackMessages,
+    memory,
+    memoryFiles,
+    workspace,
+    goalHistory,
+    tasks,
+    loading,
+    toggling,
+    runningHeartbeat,
+    sessionOutputs,
+    refresh,
+    toggleActive,
+    runHeartbeat,
+    deleteAgent,
+    exportBundle,
+    updateTaskStatus,
+    ensureSessionOutputLoaded,
+    stopRunPolling,
+  } = useAgentDetailPanel(slug);
   const [activeMemoryTab, setActiveMemoryTab] = useState<string>("context.md");
-  const [workspace, setWorkspace] = useState<WorkspaceFile[]>([]);
-  const [goalHistory, setGoalHistory] = useState<Record<string, { current: number; target: number; period_start: string; period_end: string; history: { period: string; actual: number; target: number }[] }>>({});
-  const [tasks, setTasks] = useState<AgentTask[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [toggling, setToggling] = useState(false);
   const [activeTab, setActiveTab] = useState<"all" | "heartbeats" | "messages">("all");
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
-  const [sessionOutputs, setSessionOutputs] = useState<Record<string, string>>({});
-
-  const loadAll = useCallback(async () => {
-    try {
-      // Load agent detail, workspace, and slack messages in parallel
-      const [agentRes, wsRes, slackRes] = await Promise.all([
-        fetch(`/api/agents/personas/${slug}`),
-        fetch(`/api/agents/personas/${slug}/workspace`),
-        // Fetch messages from all channels this agent participates in
-        fetch(`/api/agents/slack?limit=100`),
-      ]);
-
-      if (agentRes.ok) {
-        const data = await agentRes.json();
-        setAgent(data.persona || data);
-        setHistory(data.history || []);
-        setGoalHistory(data.goalHistory || {});
-        // Extract memory files
-        const memObj = data.memory || {};
-        setMemoryFiles(memObj);
-        setMemory(memObj["context.md"] || memObj["notes.md"] || "");
-      }
-
-      if (wsRes.ok) {
-        const data = await wsRes.json();
-        setWorkspace(data.files || []);
-      }
-
-      if (slackRes.ok) {
-        const data = await slackRes.json();
-        // Filter to only messages from this agent
-        const agentMsgs = (data.messages || []).filter(
-          (m: SlackMessage) => m.agent === slug
-        );
-        setSlackMessages(agentMsgs.slice(-20)); // Keep last 20
-      }
-
-      // Load task inbox for this agent
-      try {
-        const taskRes = await fetch(`/api/agents/tasks?agent=${slug}`);
-        if (taskRes.ok) {
-          const taskData = await taskRes.json();
-          setTasks(taskData.tasks || []);
-        }
-      } catch { /* ignore */ }
-
-    } catch { /* ignore */ }
-  }, [slug]);
-
-  useEffect(() => {
-    setLoading(true);
-    loadAll().finally(() => setLoading(false));
-  }, [loadAll]);
-
-  // Pre-load last heartbeat output for the "Last Output" section
-  useEffect(() => {
-    if (history.length > 0) {
-      const key = `hb-${history[0].timestamp}`;
-      if (!sessionOutputs[key]) {
-        fetch(`/api/agents/personas/${slug}?session=${encodeURIComponent(history[0].timestamp)}`)
-          .then((r) => r.json())
-          .then((d) => {
-            if (d.output) {
-              setSessionOutputs((prev) => ({ ...prev, [key]: d.output }));
-            }
-          })
-          .catch(() => {});
-      }
-    }
-  }, [history, slug, sessionOutputs]);
 
   // Close on Escape
   useEffect(() => {
@@ -244,74 +140,22 @@ export function AgentDetailPanel({ slug, onClose, onNavigateToAgent, onOpenFile 
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
-  const handleToggleActive = async () => {
-    if (!agent) return;
-    setToggling(true);
-    try {
-      await fetch(`/api/agents/personas/${slug}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "toggle" }),
-      });
-      await loadAll();
-    } catch { /* ignore */ } finally {
-      setToggling(false);
-    }
-  };
-
-  const [runningHeartbeat, setRunningHeartbeat] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  const handleToggleActive = async () => {
+    await toggleActive();
+  };
+
   const handleRunHeartbeat = async () => {
-    setRunningHeartbeat(true);
-    const initialHistoryLen = history.length;
-    try {
-      // Auto-activate if paused
-      if (agent && !agent.active) {
-        await fetch(`/api/agents/personas/${slug}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "toggle" }),
-        });
-      }
-      await fetch(`/api/agents/personas/${slug}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "run" }),
-      });
-      // Poll until a new heartbeat history entry appears
-      const poll = setInterval(async () => {
-        await loadAll();
-      }, 3000);
-      // Check for completion by watching history length
-      const checkDone = setInterval(() => {
-        if (history.length > initialHistoryLen) {
-          clearInterval(poll);
-          clearInterval(checkDone);
-          setRunningHeartbeat(false);
-          loadAll();
-        }
-      }, 1000);
-      // Safety timeout: 5 minutes
-      setTimeout(() => {
-        clearInterval(poll);
-        clearInterval(checkDone);
-        setRunningHeartbeat(false);
-        loadAll();
-      }, 300000);
-    } catch {
-      setRunningHeartbeat(false);
-    }
+    await runHeartbeat();
   };
 
   const handleDelete = async () => {
-    try {
-      const res = await fetch(`/api/agents/personas/${slug}`, { method: "DELETE" });
-      if (res.ok) {
-        onClose();
-      }
-    } catch { /* ignore */ }
+    const deleted = await deleteAgent();
+    if (deleted) {
+      onClose();
+    }
   };
 
   const statusDot = agent?.active ? (
@@ -341,7 +185,7 @@ export function AgentDetailPanel({ slug, onClose, onNavigateToAgent, onOpenFile 
         onOpenChange={setEditDialogOpen}
         slug={slug}
         onSaved={() => {
-          loadAll();
+          void refresh();
         }}
       />
 
@@ -392,18 +236,15 @@ export function AgentDetailPanel({ slug, onClose, onNavigateToAgent, onOpenFile 
                     size="sm"
                     className="h-7 text-[11px] gap-1"
                     onClick={async () => {
-                      try {
-                        const res = await fetch(`/api/agents/personas/${slug}/export`);
-                        if (!res.ok) return;
-                        const bundle = await res.json();
-                        const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement("a");
-                        a.href = url;
-                        a.download = `${slug}-agent-bundle.json`;
-                        a.click();
-                        URL.revokeObjectURL(url);
-                      } catch { /* ignore */ }
+                      const bundle = await exportBundle();
+                      if (!bundle) return;
+                      const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `${slug}-agent-bundle.json`;
+                      a.click();
+                      URL.revokeObjectURL(url);
                     }}
                     title="Export agent bundle"
                   >
@@ -608,18 +449,8 @@ export function AgentDetailPanel({ slug, onClose, onNavigateToAgent, onOpenFile 
                               variant="ghost"
                               size="sm"
                               className="h-5 text-[10px] px-1.5 text-primary/60 hover:text-primary"
-                              onClick={async () => {
-                                await fetch("/api/agents/tasks", {
-                                  method: "POST",
-                                  headers: { "Content-Type": "application/json" },
-                                  body: JSON.stringify({
-                                    action: "update",
-                                    agent: slug,
-                                    taskId: task.id,
-                                    status: "in_progress",
-                                  }),
-                                });
-                                loadAll();
+                              onClick={() => {
+                                void updateTaskStatus(task.id, "in_progress");
                               }}
                             >
                               Start
@@ -646,9 +477,8 @@ export function AgentDetailPanel({ slug, onClose, onNavigateToAgent, onOpenFile 
                       size="sm"
                       className="h-5 text-[10px] px-1.5 text-red-400 hover:text-red-300 hover:bg-red-500/10"
                       onClick={() => {
-                        // Kill the running heartbeat by toggling agent off
-                        handleToggleActive();
-                        setRunningHeartbeat(false);
+                        void handleToggleActive();
+                        stopRunPolling();
                       }}
                     >
                       Kill
@@ -826,14 +656,7 @@ export function AgentDetailPanel({ slug, onClose, onNavigateToAgent, onOpenFile 
                                     next.add(itemKey);
                                     // Fetch full session output if not cached
                                     if (!sessionOutputs[itemKey]) {
-                                      fetch(`/api/agents/personas/${slug}?session=${encodeURIComponent(h.timestamp)}`)
-                                        .then((r) => r.json())
-                                        .then((d) => {
-                                          if (d.output) {
-                                            setSessionOutputs((prev) => ({ ...prev, [itemKey]: d.output }));
-                                          }
-                                        })
-                                        .catch(() => {});
+                                      void ensureSessionOutputLoaded(h.timestamp);
                                     }
                                   }
                                   return next;

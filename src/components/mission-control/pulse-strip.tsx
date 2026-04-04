@@ -13,17 +13,11 @@ import {
   Loader2,
 } from "lucide-react";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
-
-interface PulseMetrics {
-  totalAgents: number;
-  activeAgents: number;
-  runningPlays: number;
-  playsThisWeek?: number;
-  goalsOnTrack: number;
-  totalGoals: number;
-  alerts: number;
-  estimatedCost?: number; // Estimated daily cost in dollars
-}
+import {
+  listAgentPersonas,
+  listSlackMessages,
+} from "@/lib/api/agents-client";
+import type { MissionControlPulseMetrics } from "@/types/agents";
 
 interface TickerMessage {
   name: string;
@@ -47,7 +41,7 @@ interface CostEntry {
 }
 
 interface PulseStripProps {
-  metrics: PulseMetrics;
+  metrics: MissionControlPulseMetrics;
   onAlertClick?: () => void;
   onGoalClick?: () => void;
   onPlaybookClick?: () => void;
@@ -172,11 +166,8 @@ export function PulseStrip({ metrics, onAlertClick, onGoalClick, onPlaybookClick
 
   const loadTicker = useCallback(async () => {
     try {
-      const res = await fetch("/api/agents/slack?limit=10");
-      if (!res.ok) return;
-      const data = await res.json();
-      const msgs = (data.messages || []).filter(
-        (m: { agent: string }) => m.agent !== "human" && m.agent !== "system"
+      const msgs = (await listSlackMessages({ limit: 10 })).filter(
+        (message) => message.agent !== "human" && message.agent !== "system"
       );
       if (msgs.length > 0) {
         const latest = msgs[msgs.length - 1];
@@ -205,17 +196,14 @@ export function PulseStrip({ metrics, onAlertClick, onGoalClick, onPlaybookClick
   const loadRunningAgents = useCallback(async () => {
     setLoadingPanel(true);
     try {
-      const res = await fetch("/api/agents/personas");
-      if (!res.ok) return;
-      const data = await res.json();
-      const personas = data.personas || [];
+      const personas = await listAgentPersonas();
       const running = personas
-        .filter((p: { running?: boolean; slug: string }) => p.running && p.slug !== "editor")
-        .map((p: { slug: string; name: string; emoji?: string; lastHeartbeat?: string }) => ({
-          slug: p.slug,
-          name: p.name,
-          emoji: p.emoji || "",
-          startedAt: p.lastHeartbeat,
+        .filter((persona) => persona.running && persona.slug !== "editor")
+        .map((persona) => ({
+          slug: persona.slug,
+          name: persona.name,
+          emoji: persona.emoji || "",
+          startedAt: persona.lastHeartbeat,
         }));
       setRunningAgents(running);
     } catch { /* ignore */ } finally {
@@ -226,18 +214,15 @@ export function PulseStrip({ metrics, onAlertClick, onGoalClick, onPlaybookClick
   const loadCostBreakdown = useCallback(async () => {
     setLoadingPanel(true);
     try {
-      const res = await fetch("/api/agents/personas");
-      if (!res.ok) return;
-      const data = await res.json();
-      const personas = data.personas || [];
+      const personas = await listAgentPersonas();
       const costPerHeartbeat = 0.15;
       const entries: CostEntry[] = personas
-        .filter((p: { slug: string }) => p.slug !== "editor")
-        .map((p: { slug: string; name: string; emoji?: string; heartbeatsUsed?: number }) => ({
-          agent: p.name,
-          emoji: p.emoji || "",
-          heartbeats: p.heartbeatsUsed || 0,
-          cost: (p.heartbeatsUsed || 0) * costPerHeartbeat,
+        .filter((persona) => persona.slug !== "editor")
+        .map((persona) => ({
+          agent: persona.name,
+          emoji: persona.emoji || "",
+          heartbeats: persona.heartbeatsUsed || 0,
+          cost: (persona.heartbeatsUsed || 0) * costPerHeartbeat,
         }))
         .filter((e: CostEntry) => e.heartbeats > 0)
         .sort((a: CostEntry, b: CostEntry) => b.cost - a.cost);

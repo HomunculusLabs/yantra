@@ -52,3 +52,14 @@ export interface Department {
   lead?: string;        // slug of lead agent
   agents: string[];     // slugs of all agents in department
 }
+
+export interface MissionControlPulseMetrics {
+  totalAgents: number;
+  activeAgents: number;
+  runningPlays: number;
+  playsThisWeek?: number;
+  goalsOnTrack: number;
+  totalGoals: number;
+  alerts: number;
+  estimatedCost?: number;
+}
