@@ -17,7 +17,8 @@ import {
   getDaemonSessionOutput,
   type DaemonSessionHandle,
 } from "./daemon-client";
-import { readPersona, type AgentPersona } from "./persona-manager";
+import type { AgentPersona } from "@/types/personas";
+import { readPersona } from "./persona-manager";
 import { resolveLaunchSpec } from "./launcher-manager";
 import { sendNotification } from "./notification-service";
 import type { ResolvedLaunchSpec } from "@/types/launchers";
