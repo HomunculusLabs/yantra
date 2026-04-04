@@ -5,6 +5,8 @@ services:
     environment:
       - KB_PASSWORD=${KB_PASSWORD:-}
       - NODE_ENV=production
+      - ABSURD_DATABASE_URL=${ABSURD_DATABASE_URL:-}
+      - YANTRA_ABSURD_QUEUE=${YANTRA_ABSURD_QUEUE:-agent-jobs}
     volumes:
       - ./data:/app/data
     ports:

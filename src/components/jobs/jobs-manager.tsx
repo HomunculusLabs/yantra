@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { cronToHuman } from "@/lib/agents/cron-utils";
+import type { JobTaskStatus } from "@/types/jobs";
 
 interface JobConfig {
   id: string;
@@ -42,6 +43,7 @@ interface JobConfig {
   };
   createdAt?: string;
   updatedAt?: string;
+  latestTask?: JobTaskStatus | null;
 }
 
 interface AgentWithJobs {
@@ -51,14 +53,33 @@ interface AgentWithJobs {
   jobs: JobConfig[];
 }
 
-function formatTimeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
+function formatTaskStatus(task?: JobTaskStatus | null): {
+  label: string;
+  tone: string;
+  Icon: typeof Clock;
+} | null {
+  if (!task) return null;
+
+  if (task.state === "pending") {
+    return { label: "Queued", tone: "text-amber-500", Icon: Clock };
+  }
+  if (task.state === "running" || task.state === "sleeping") {
+    return { label: task.state === "sleeping" ? "Sleeping" : "Running", tone: "text-blue-500", Icon: RefreshCw };
+  }
+  if (task.state === "cancelled") {
+    return { label: "Cancelled", tone: "text-muted-foreground", Icon: Pause };
+  }
+  if (task.state === "failed") {
+    return { label: "Task failed", tone: "text-red-500", Icon: XCircle };
+  }
+  if (task.outcome === "failed") {
+    return { label: "Run failed", tone: "text-red-500", Icon: XCircle };
+  }
+  if (task.outcome === "skipped") {
+    return { label: "Skipped", tone: "text-muted-foreground", Icon: Pause };
+  }
+
+  return { label: "Completed", tone: "text-green-600", Icon: CheckCircle };
 }
 
 export function JobsManager() {
@@ -106,12 +127,22 @@ export function JobsManager() {
     }
   }, []);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    void refresh();
+    const interval = window.setInterval(() => {
+      void refresh();
+    }, 3000);
+    return () => window.clearInterval(interval);
+  }, [refresh]);
 
   const toggleExpand = (slug: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
-      next.has(slug) ? next.delete(slug) : next.add(slug);
+      if (next.has(slug)) {
+        next.delete(slug);
+      } else {
+        next.add(slug);
+      }
       return next;
     });
   };
@@ -296,12 +327,32 @@ export function JobsManager() {
                           className="flex items-start gap-3 px-10 py-2.5 border-t border-border/50"
                         >
                           <div className="flex-1 min-w-0">
+                            {(() => {
+                              const taskStatus = formatTaskStatus(job.latestTask);
+                              return (
+                                <>
                             <div className="flex items-center gap-2">
                               <span className={cn(
                                 "w-1.5 h-1.5 rounded-full shrink-0",
                                 job.enabled ? "bg-green-500" : "bg-muted-foreground/30"
                               )} />
                               <span className="text-[13px] font-medium truncate">{job.name}</span>
+                              {taskStatus && (
+                                <span
+                                  className={cn(
+                                    "inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px]",
+                                    taskStatus.tone
+                                  )}
+                                >
+                                  <taskStatus.Icon
+                                    className={cn(
+                                      "h-3 w-3",
+                                      taskStatus.Icon === RefreshCw && "animate-spin"
+                                    )}
+                                  />
+                                  {taskStatus.label}
+                                </span>
+                              )}
                             </div>
                             <div className="flex items-center gap-2 mt-0.5">
                               <Clock className="h-3 w-3 text-muted-foreground shrink-0" />
@@ -312,6 +363,17 @@ export function JobsManager() {
                             <p className="text-[11px] text-muted-foreground/60 truncate mt-0.5">
                               {job.prompt.slice(0, 80)}{job.prompt.length > 80 ? "…" : ""}
                             </p>
+                            {job.latestTask && (
+                              <p className="text-[10px] text-muted-foreground/70 truncate mt-1">
+                                {job.latestTask.summary ||
+                                  job.latestTask.reason ||
+                                  job.latestTask.error ||
+                                  `Task ${job.latestTask.taskID.slice(0, 8)}`}
+                              </p>
+                            )}
+                                </>
+                              );
+                            })()}
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
                             <button

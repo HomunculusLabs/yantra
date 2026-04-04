@@ -1,7 +1,7 @@
 import path from "path";
 import yaml from "js-yaml";
 import type { JobConfig, JobRun } from "@/types/jobs";
-import { getCabinetRoots } from "@/lib/config/cabinet-roots";
+import { getYantraRoots } from "@/lib/config/yantra-roots";
 import {
   readFileContent,
   writeFileContent,
@@ -9,10 +9,10 @@ import {
   ensureDirectory,
   listDirectory,
 } from "@/lib/storage/fs-operations";
-import { startJobConversation } from "@/lib/agents/conversation-runner";
+import { spawnJobTask } from "@/lib/jobs/absurd";
 import { reloadDaemonSchedules } from "@/lib/agents/daemon-client";
 
-const { runtimeJobsRoot, runtimeAgentsRoot } = getCabinetRoots();
+const { runtimeJobsRoot, runtimeAgentsRoot } = getYantraRoots();
 const JOBS_DIR = runtimeJobsRoot;
 const AGENTS_DIR = runtimeAgentsRoot;
 const HISTORY_DIR = path.join(JOBS_DIR, ".history");
@@ -155,7 +155,24 @@ export function scheduleJob(job: JobConfig): void {
 }
 
 export async function executeJob(job: JobConfig): Promise<JobRun> {
-  const run = await startJobConversation(job);
+  if (!job.agentSlug) {
+    throw new Error(`Cannot execute job ${job.id} without an agentSlug`);
+  }
+
+  const spawned = await spawnJobTask({
+    agentSlug: job.agentSlug,
+    jobId: job.id,
+    source: "manual",
+  });
+
+  const run: JobRun = {
+    id: spawned.taskID,
+    jobId: job.id,
+    status: "running",
+    startedAt: new Date().toISOString(),
+    output: "",
+  };
+
   runHistory.set(run.id, run);
   return run;
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { loadAgentJobsBySlug, saveAgentJob } from "@/lib/jobs/job-manager";
 import type { JobConfig } from "@/types/jobs";
 import { reloadDaemonSchedules } from "@/lib/agents/daemon-client";
+import { getLatestJobTaskStatus } from "@/lib/jobs/absurd";
 
 export async function GET(
   _req: NextRequest,
@@ -10,7 +11,13 @@ export async function GET(
   const { id: slug } = await params;
   try {
     const jobs = await loadAgentJobsBySlug(slug);
-    return NextResponse.json({ jobs });
+    const jobsWithStatus = await Promise.all(
+      jobs.map(async (job) => ({
+        ...job,
+        latestTask: await getLatestJobTaskStatus(slug, job.id).catch(() => null),
+      }))
+    );
+    return NextResponse.json({ jobs: jobsWithStatus });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

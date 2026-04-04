@@ -6,6 +6,7 @@ import {
   executeJob,
 } from "@/lib/jobs/job-manager";
 import { reloadDaemonSchedules } from "@/lib/agents/daemon-client";
+import { getLatestJobTaskStatus } from "@/lib/jobs/absurd";
 
 export async function GET(
   _req: NextRequest,
@@ -18,7 +19,12 @@ export async function GET(
     if (!job) {
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }
-    return NextResponse.json({ job });
+    return NextResponse.json({
+      job: {
+        ...job,
+        latestTask: await getLatestJobTaskStatus(slug, id).catch(() => null),
+      },
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

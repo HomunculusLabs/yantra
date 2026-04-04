@@ -1,20 +1,15 @@
-![Cabinet demo](https://runcabinet.com/demo.gif)
-
-# Cabinet
+# Yantra
 
 **Your knowledge base. Your AI team.**
 
 The AI-first startup OS where everything lives as markdown files on disk. No database. No vendor lock-in. Self-hosted. Your data never leaves your machine.
 
-[runcabinet.com](https://runcabinet.com) | [hi@runcabinet.com](mailto:hi@runcabinet.com) | [Star on GitHub](https://github.com/hilash/cabinet)
-
 ---
 
-## From zero to AI team in 2 minutes
+## Run locally in 2 minutes
 
 ```bash
-npx create-cabinet@latest
-cd cabinet
+npm install
 npm run dev:all
 ```
 
@@ -55,13 +50,13 @@ One knowledge base. AI agents that remember everything. Scheduled jobs that comp
 
 ## Ship HTML apps inside your knowledge base
 
-This is the biggest difference between Cabinet and tools like Obsidian or Notion. Drop an `index.html` in any directory — it renders as an embedded app. Full-screen mode with sidebar auto-collapse. AI-generated apps written directly into your KB. Version controlled via git. No build step.
+This is the biggest difference between Yantra and tools like Obsidian or Notion. Drop an `index.html` in any directory — it renders as an embedded app. Full-screen mode with sidebar auto-collapse. AI-generated apps written directly into your KB. Version controlled via git. No build step.
 
 ---
 
 ## Not another note-taking app
 
-| Feature | Cabinet | Obsidian | Notion |
+| Feature | Yantra | Obsidian | Notion |
 |---|---|---|---|
 | AI agent orchestration | Yes | No | No |
 | Scheduled cron jobs | Yes | No | No |
@@ -76,7 +71,7 @@ This is the biggest difference between Cabinet and tools like Obsidian or Notion
 
 ## Hire your AI team in 5 questions
 
-Cabinet ships with 20 pre-built agent templates. Each has a role, recurring jobs, and a workspace in the knowledge base.
+Yantra ships with 20 pre-built agent templates. Each has a role, recurring jobs, and a workspace in the knowledge base.
 
 | Department | Agents |
 |---|---|
@@ -93,7 +88,7 @@ Cabinet ships with 20 pre-built agent templates. Each has a role, recurring jobs
 ## How it works
 
 1. **Install & Run** — One command. Next.js + daemon start.
-2. **Answer 5 Questions** — Cabinet builds your custom AI team.
+2. **Answer 5 Questions** — Yantra builds your custom AI team.
 3. **Watch Your Team Work** — Agents create missions, write content, scout Reddit, file reports.
 4. **Knowledge Compounds** — Every agent run, every edit adds to the KB. Context builds over time.
 
@@ -102,14 +97,14 @@ Cabinet ships with 20 pre-built agent templates. Each has a role, recurring jobs
 ## Architecture
 
 ```
-cabinet/
+yantra/
   src/
     app/api/         -> Next.js API routes
     components/      -> React components (sidebar, editor, agents, jobs, terminal)
     stores/          -> Zustand state management
     lib/             -> Storage, markdown, git, agents, jobs
   server/
-    cabinet-daemon.ts -> WebSocket + job scheduler + agent executor
+    yantra-daemon.ts -> WebSocket + job scheduler + agent executor
   data/
     .agents/.library/ -> 20 pre-built agent templates
     getting-started/  -> Default KB page
@@ -135,6 +130,8 @@ cp .env.example .env.local
 |----------|---------|-------------|
 | `KB_PASSWORD` | _(empty)_ | Password to protect the UI. Leave empty for no auth. |
 | `DOMAIN` | `localhost` | Domain for the app. |
+| `ABSURD_DATABASE_URL` | `postgresql://absurd:absurd@localhost:5433/absurd` | Required Postgres connection for Absurd durable job execution. |
+| `YANTRA_ABSURD_QUEUE` | `agent-jobs` | Absurd queue used for agent job runs. |
 
 ## Commands
 
@@ -150,13 +147,13 @@ npm run start        # Production mode (both servers)
 
 ## Ready to build your AI team?
 
-Cabinet is free, open source, and self-hosted. Your data never leaves your machine.
+Yantra is free, open source, and self-hosted. Your data never leaves your machine.
+
+From the repo root:
 
 ```bash
-npx create-cabinet my-startup
+npm run dev:all
 ```
-
-[Get Started](https://runcabinet.com) | [Star on GitHub](https://github.com/hilash/cabinet)
 
 ---
 

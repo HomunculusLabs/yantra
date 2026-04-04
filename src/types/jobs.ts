@@ -22,6 +22,7 @@ export interface JobConfig {
   on_failure?: JobPostAction[];
   createdAt: string;
   updatedAt: string;
+  latestTask?: JobTaskStatus;
 }
 
 export interface JobRun {
@@ -32,4 +33,30 @@ export interface JobRun {
   completedAt?: string;
   duration?: number;
   output: string;
+}
+
+export type JobTaskState =
+  | "pending"
+  | "running"
+  | "sleeping"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type JobTaskOutcome = "completed" | "failed" | "skipped";
+
+export interface JobTaskStatus {
+  taskID: string;
+  runID?: string;
+  state: JobTaskState;
+  outcome?: JobTaskOutcome;
+  source?: string;
+  queuedAt?: string;
+  startedAt?: string;
+  completedAt?: string | null;
+  conversationId?: string;
+  summary?: string | null;
+  reason?: string | null;
+  exitCode?: number | null;
+  error?: string | null;
 }
