@@ -36,14 +36,15 @@ import { useAppStore } from "@/stores/app-store";
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const mounted = typeof window !== "undefined";
+
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
     check();
-    setMounted(true);
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, []);
+
   return { isMobile, mounted };
 }
 
@@ -87,30 +88,120 @@ function getAgentIcon(slug: string): LucideIcon {
   return AGENT_ICONS[slug] || Bot;
 }
 
-function NavButton({
-  icon: Icon,
-  label,
-  active,
-  onClick,
-}: {
-  icon: typeof Users;
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
+function TeamSection() {
+  const section = useAppStore((s) => s.section);
+  const setSection = useAppStore((s) => s.setSection);
+  const [agentsExpanded, setAgentsExpanded] = useState(true);
+  const [agents, setAgents] = useState<AgentSummary[]>([]);
+
+  const loadAgents = useCallback(async () => {
+    try {
+      const res = await fetch("/api/agents/personas");
+      if (!res.ok) return;
+      const data = await res.json();
+      setAgents(
+        (data.personas || []).map((agent: AgentSummary) => ({
+          name: agent.name,
+          slug: agent.slug,
+          emoji: agent.emoji,
+          active: agent.active,
+          runningCount: agent.runningCount || 0,
+        }))
+      );
+    } catch {
+      // ignore polling failures
+    }
+  }, []);
+
+  useEffect(() => {
+    const initialLoad = window.setTimeout(() => {
+      void loadAgents();
+    }, 0);
+    const interval = window.setInterval(() => {
+      void loadAgents();
+    }, 5000);
+    window.addEventListener("focus", loadAgents);
+    return () => {
+      window.clearTimeout(initialLoad);
+      window.clearInterval(interval);
+      window.removeEventListener("focus", loadAgents);
+    };
+  }, [loadAgents]);
+
   return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-[12px] transition-colors",
-        active
-          ? "bg-accent text-foreground font-medium"
-          : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+    <div className="px-3 pt-2 pb-1">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+        Team
+      </p>
+      <button
+        onClick={() => {
+          setAgentsExpanded((current) => !current);
+          setSection({ type: "agents" });
+        }}
+        className={cn(
+          "flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-[12px] transition-colors",
+          section.type === "agents"
+            ? "bg-accent text-foreground font-medium"
+            : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+        )}
+      >
+        <ChevronRight
+          className={cn(
+            "h-3 w-3 shrink-0 transition-transform",
+            agentsExpanded && "rotate-90"
+          )}
+        />
+        <Users className="h-3.5 w-3.5 shrink-0" />
+        Agents
+      </button>
+
+      {agentsExpanded && (
+        <div className="ml-3 mt-0.5 space-y-0.5">
+          <button
+            onClick={() => setSection({ type: "agent", slug: "general" })}
+            className={cn(
+              "flex items-center gap-2 w-full px-2 py-1 rounded-md text-[11px] transition-colors",
+              section.type === "agent" && section.slug === "general"
+                ? "bg-accent text-foreground font-medium"
+                : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+            )}
+          >
+            <Bot className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">General</span>
+          </button>
+
+          {[
+            ...agents.filter((agent) => agent.slug === "editor"),
+            ...agents.filter((agent) => agent.slug !== "editor"),
+          ].map((agent) => (
+            <button
+              key={agent.slug}
+              onClick={() => setSection({ type: "agent", slug: agent.slug })}
+              className={cn(
+                "flex items-center gap-2 w-full px-2 py-1 rounded-md text-[11px] transition-colors",
+                section.type === "agent" && section.slug === agent.slug
+                  ? "bg-accent text-foreground font-medium"
+                  : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+              )}
+            >
+              {(() => {
+                const Icon = getAgentIcon(agent.slug);
+                return <Icon className="h-3.5 w-3.5 shrink-0" />;
+              })()}
+              <span className="truncate">{agent.name}</span>
+              <span
+                className={cn(
+                  "ml-auto w-1.5 h-1.5 rounded-full shrink-0",
+                  (agent.runningCount || 0) > 0
+                    ? "bg-green-500"
+                    : "bg-muted-foreground/30"
+                )}
+              />
+            </button>
+          ))}
+        </div>
       )}
-    >
-      <Icon className="h-3.5 w-3.5 shrink-0" />
-      {label}
-    </button>
+    </div>
   );
 }
 
@@ -120,41 +211,6 @@ export function Sidebar() {
   const setCollapsed = useAppStore((s) => s.setSidebarCollapsed);
   const section = useAppStore((s) => s.section);
   const setSection = useAppStore((s) => s.setSection);
-
-  const [agentsExpanded, setAgentsExpanded] = useState(true);
-  const [agents, setAgents] = useState<AgentSummary[]>([]);
-
-  const loadAgents = useCallback(async () => {
-    try {
-      const res = await fetch("/api/agents/personas");
-      if (res.ok) {
-        const data = await res.json();
-        setAgents(
-          (data.personas || []).map((p: AgentSummary) => ({
-            name: p.name,
-            slug: p.slug,
-            emoji: p.emoji,
-            active: p.active,
-            runningCount: p.runningCount || 0,
-          }))
-        );
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadAgents();
-    const interval = window.setInterval(() => {
-      void loadAgents();
-    }, 5000);
-    window.addEventListener("focus", loadAgents);
-    return () => {
-      window.clearInterval(interval);
-      window.removeEventListener("focus", loadAgents);
-    };
-  }, [loadAgents]);
 
   useEffect(() => {
     if (mounted && isMobile) setCollapsed(true);
@@ -201,89 +257,9 @@ export function Sidebar() {
         </div>
         <Separator />
 
-        {/* Team section */}
-        <div className="px-3 pt-2 pb-1">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
-            Team
-          </p>
-          {/* Agents header with expand/collapse */}
-          <button
-            onClick={() => {
-              setAgentsExpanded(!agentsExpanded);
-              setSection({ type: "agents" });
-            }}
-            className={cn(
-              "flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-[12px] transition-colors",
-              section.type === "agents"
-                ? "bg-accent text-foreground font-medium"
-                : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
-            )}
-          >
-            <ChevronRight
-              className={cn(
-                "h-3 w-3 shrink-0 transition-transform",
-                agentsExpanded && "rotate-90"
-              )}
-            />
-            <Users className="h-3.5 w-3.5 shrink-0" />
-            Agents
-          </button>
-
-          {/* Collapsible agent list */}
-          {agentsExpanded && (
-            <div className="ml-3 mt-0.5 space-y-0.5">
-              {/* General agent (always present) */}
-              <button
-                onClick={() =>
-                  setSection({ type: "agent", slug: "general" })
-                }
-                className={cn(
-                  "flex items-center gap-2 w-full px-2 py-1 rounded-md text-[11px] transition-colors",
-                  section.type === "agent" && section.slug === "general"
-                    ? "bg-accent text-foreground font-medium"
-                    : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
-                )}
-              >
-                <Bot className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">General</span>
-              </button>
-              {/* Editor first, then rest */}
-              {[
-                ...agents.filter((a) => a.slug === "editor"),
-                ...agents.filter((a) => a.slug !== "editor"),
-              ].map((agent) => (
-                <button
-                  key={agent.slug}
-                  onClick={() =>
-                    setSection({ type: "agent", slug: agent.slug })
-                  }
-                  className={cn(
-                    "flex items-center gap-2 w-full px-2 py-1 rounded-md text-[11px] transition-colors",
-                    section.type === "agent" && section.slug === agent.slug
-                      ? "bg-accent text-foreground font-medium"
-                      : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
-                  )}
-                >
-                  {(() => { const Icon = getAgentIcon(agent.slug); return <Icon className="h-3.5 w-3.5 shrink-0" />; })()}
-                  <span className="truncate">{agent.name}</span>
-                  <span
-                    className={cn(
-                      "ml-auto w-1.5 h-1.5 rounded-full shrink-0",
-                      (agent.runningCount || 0) > 0
-                        ? "bg-green-500"
-                        : "bg-muted-foreground/30"
-                    )}
-                  />
-                </button>
-              ))}
-            </div>
-          )}
-
-        </div>
-
+        <TeamSection />
         <Separator />
 
-        {/* Knowledge Base */}
         <div className="px-3 pt-2">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
             Knowledge Base
@@ -300,7 +276,7 @@ export function Sidebar() {
             size="icon"
             className={cn(
               "h-7 w-7 shrink-0",
-              (section.type === "settings") && "bg-accent text-foreground"
+              section.type === "settings" && "bg-accent text-foreground"
             )}
             onClick={() => setSection({ type: "settings" })}
           >

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
-import { Sparkles, Code2 } from "lucide-react";
+import { Sparkles, Code2, Loader2, RotateCcw } from "lucide-react";
 import { editorExtensions } from "./extensions";
 import { EditorToolbar } from "./editor-toolbar";
 import { SlashCommands } from "./slash-commands";
@@ -11,6 +11,7 @@ import { useEditorStore } from "@/stores/editor-store";
 import { useAIPanelStore } from "@/stores/ai-panel-store";
 import { markdownToHtml } from "@/lib/markdown/to-html";
 import { htmlToMarkdown } from "@/lib/markdown/to-markdown";
+import { Button } from "@/components/ui/button";
 import type { SaveStatus } from "@/types";
 
 async function uploadFile(pagePath: string, file: File): Promise<string | null> {
@@ -47,6 +48,34 @@ function EmptyEditorState() {
         <p className="text-sm text-muted-foreground/70">
           Select a page from the sidebar or create a new one
         </p>
+      </div>
+    </div>
+  );
+}
+
+function LoadingEditorState({ label }: { label: string }) {
+  return (
+    <div className="flex-1 flex items-center justify-center text-muted-foreground">
+      <div className="flex items-center gap-2 text-sm">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        <span>{label}</span>
+      </div>
+    </div>
+  );
+}
+
+function ErrorEditorState({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="flex-1 flex items-center justify-center text-muted-foreground">
+      <div className="text-center space-y-3">
+        <p className="text-lg font-medium tracking-[-0.02em]">Couldn&apos;t load this page</p>
+        <p className="text-sm text-muted-foreground/70">
+          Try again. If the file moved or was deleted, refresh the tree and reopen it.
+        </p>
+        <Button variant="outline" size="sm" onClick={onRetry} className="gap-2">
+          <RotateCcw className="h-3.5 w-3.5" />
+          Retry
+        </Button>
       </div>
     </div>
   );
@@ -91,17 +120,20 @@ function TextPageEditor({
 
 function RichPageEditor({
   currentPath,
-  content,
+  preparedHtml,
+  preparedHtmlVersion,
   saveStatus,
   isRtl,
 }: {
   currentPath: string;
-  content: string;
+  preparedHtml: string;
+  preparedHtmlVersion: number;
   saveStatus: SaveStatus;
   isRtl?: boolean;
 }) {
   const { open: openAI, clearMessages } = useAIPanelStore();
   const isLoadingRef = useRef(false);
+  const appliedPreparedVersionRef = useRef(0);
   const [sourceMode, setSourceMode] = useState(false);
   const [sourceText, setSourceText] = useState("");
 
@@ -163,23 +195,17 @@ function RichPageEditor({
     immediatelyRender: false,
   });
 
-  const prevPathRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!editor || !currentPath) return;
-    if (useEditorStore.getState().isDirty && currentPath === prevPathRef.current) return;
-    prevPathRef.current = currentPath;
+    if (!editor || !preparedHtml || preparedHtmlVersion === 0) return;
+    if (appliedPreparedVersionRef.current === preparedHtmlVersion) return;
 
-    const setContent = async () => {
-      isLoadingRef.current = true;
-      const html = await markdownToHtml(content, currentPath);
-      editor.commands.setContent(html);
-      setTimeout(() => {
-        isLoadingRef.current = false;
-      }, 50);
-    };
-
-    void setContent();
-  }, [editor, content, currentPath]);
+    appliedPreparedVersionRef.current = preparedHtmlVersion;
+    isLoadingRef.current = true;
+    editor.commands.setContent(preparedHtml);
+    setTimeout(() => {
+      isLoadingRef.current = false;
+    }, 50);
+  }, [editor, preparedHtml, preparedHtmlVersion]);
 
   const handleOpenAI = () => {
     clearMessages();
@@ -228,7 +254,7 @@ function RichPageEditor({
         <div className="flex-1 overflow-y-auto p-4" dir={isRtl ? "rtl" : undefined}>
           <textarea
             value={sourceText}
-            onChange={(e) => setSourceText(e.target.value)}
+            onChange={(event) => setSourceText(event.target.value)}
             className="w-full h-full min-h-[calc(100vh-12rem)] bg-transparent font-mono text-[13px] leading-relaxed resize-none focus:outline-none"
             spellCheck={false}
           />
@@ -256,14 +282,32 @@ function RichPageEditor({
 }
 
 export function KBEditor() {
-  const { currentPath, content, saveStatus, frontmatter, pageKind } = useEditorStore();
+  const {
+    currentPath,
+    content,
+    saveStatus,
+    frontmatter,
+    pageKind,
+    pageLoadState,
+    preparedHtml,
+    preparedHtmlVersion,
+    retryCurrentPage,
+  } = useEditorStore();
   const isRtl = frontmatter?.dir === "rtl";
 
   if (!currentPath) {
     return <EmptyEditorState />;
   }
 
+  if (pageLoadState === "error") {
+    return <ErrorEditorState onRetry={() => void retryCurrentPage()} />;
+  }
+
   if (pageKind === "text") {
+    if (pageLoadState === "loading" && !content) {
+      return <LoadingEditorState label="Loading text page..." />;
+    }
+
     return (
       <TextPageEditor
         currentPath={currentPath}
@@ -274,10 +318,20 @@ export function KBEditor() {
     );
   }
 
+  if ((pageLoadState === "loading" || pageLoadState === "preparing") && !preparedHtml) {
+    return <LoadingEditorState label="Preparing page..." />;
+  }
+
+  if (!preparedHtml) {
+    return <LoadingEditorState label="Preparing page..." />;
+  }
+
   return (
     <RichPageEditor
+      key={currentPath}
       currentPath={currentPath}
-      content={content}
+      preparedHtml={preparedHtml}
+      preparedHtmlVersion={preparedHtmlVersion}
       saveStatus={saveStatus}
       isRtl={isRtl}
     />

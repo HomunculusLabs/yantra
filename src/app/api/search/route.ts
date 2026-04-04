@@ -39,9 +39,7 @@ async function collectPages(
         const tags = (data.tags as string[]) || [];
         const modified = data.modified as string | undefined;
 
-        // Tag filter
         if (opts.tag && !tags.some((t) => t.toLowerCase() === opts.tag!.toLowerCase())) {
-          // Still recurse into children
           await collectPages(fullPath, opts, results);
           continue;
         }
@@ -79,9 +77,7 @@ async function collectPages(
         tags.some((t) => t.toLowerCase().includes(lowerQuery));
 
       if (matches) {
-        const vPath = fullPath
-          .replace(DATA_DIR + "/", "")
-          .replace(/\.md$/, "");
+        const vPath = fullPath.replace(DATA_DIR + "/", "");
         const snippet = opts.query
           ? extractSnippet(content, lowerQuery)
           : content.slice(0, 120).trim() + "...";

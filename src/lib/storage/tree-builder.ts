@@ -78,7 +78,6 @@ async function buildTreeRecursive(dirPath: string): Promise<TreeNode[]> {
       const repoYaml = path.join(fullPath, ".repo.yaml");
       const hasRepo = await fileExists(repoYaml);
 
-      // Website or App: has index.html but no index.md
       if (hasIndexHtml && !hasIndexMd) {
         const appMarker = path.join(fullPath, ".app");
         const isApp = await fileExists(appMarker);
@@ -86,6 +85,7 @@ async function buildTreeRecursive(dirPath: string): Promise<TreeNode[]> {
           name: entry.name,
           path: vPath,
           type: isApp ? "app" : "website",
+          canOpen: true,
           hasRepo: hasRepo || undefined,
           frontmatter: {
             title: entry.name,
@@ -101,6 +101,7 @@ async function buildTreeRecursive(dirPath: string): Promise<TreeNode[]> {
         name: entry.name,
         path: vPath,
         type: "directory",
+        canOpen: hasIndexMd,
         hasRepo: hasRepo || undefined,
         frontmatter: {
           title: (fm.title as string) || entry.name,
@@ -114,6 +115,7 @@ async function buildTreeRecursive(dirPath: string): Promise<TreeNode[]> {
         name: entry.name,
         path: vPath,
         type: "pdf",
+        canOpen: true,
         frontmatter: {
           title: entry.name.replace(/\.pdf$/i, ""),
         },
@@ -123,6 +125,7 @@ async function buildTreeRecursive(dirPath: string): Promise<TreeNode[]> {
         name: entry.name,
         path: vPath,
         type: "csv",
+        canOpen: true,
         frontmatter: {
           title: entry.name.replace(/\.csv$/i, ""),
         },
@@ -133,6 +136,7 @@ async function buildTreeRecursive(dirPath: string): Promise<TreeNode[]> {
         name: entry.name,
         path: vPath,
         type: "file",
+        canOpen: true,
         frontmatter: {
           title: (fm.title as string) || entry.name.replace(/\.md$/, ""),
           icon: fm.icon as string | undefined,
@@ -144,6 +148,7 @@ async function buildTreeRecursive(dirPath: string): Promise<TreeNode[]> {
         name: entry.name,
         path: vPath,
         type: "text",
+        canOpen: true,
         frontmatter: {
           title: entry.name,
         },
@@ -151,7 +156,6 @@ async function buildTreeRecursive(dirPath: string): Promise<TreeNode[]> {
     }
   }
 
-  // Sort by order field, then alphabetically
   nodes.sort((a, b) => {
     const orderA = a.frontmatter?.order ?? 999;
     const orderB = b.frontmatter?.order ?? 999;

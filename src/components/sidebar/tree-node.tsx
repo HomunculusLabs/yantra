@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { memo, useCallback, useState } from "react";
 import {
   ChevronRight,
   FileText,
@@ -16,9 +16,8 @@ import {
   Table,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { TreeNode as TreeNodeType } from "@/types";
+import type { VisibleTreeRow } from "@/types";
 import { useTreeStore } from "@/stores/tree-store";
-import { useEditorStore } from "@/stores/editor-store";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -35,64 +34,65 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
-interface TreeNodeProps {
-  node: TreeNodeType;
-  depth: number;
+interface TreeNodeRowProps {
+  row: VisibleTreeRow;
+  rowId: string;
+  isFocused: boolean;
+  isSelected: boolean;
+  onOpen: () => void;
+  onToggleExpand: () => void;
 }
 
-export function TreeNode({ node, depth }: TreeNodeProps) {
-  const {
-    selectedPath,
-    expandedPaths,
-    dragOverPath,
-    toggleExpand,
-    selectPage,
-    deletePage,
-    movePage,
-    setDragOver,
-    createPage,
-    renamePage,
-  } = useTreeStore();
-  const loadPage = useEditorStore((s) => s.loadPage);
+function RowIcon({ row }: { row: VisibleTreeRow }) {
+  if (row.type === "csv") return <Table className="h-4 w-4 shrink-0 text-green-400" />;
+  if (row.type === "pdf") return <FileType className="h-4 w-4 shrink-0 text-red-400" />;
+  if (row.type === "app") return <AppWindow className="h-4 w-4 shrink-0 text-emerald-400" />;
+  if (row.type === "website") return <Globe className="h-4 w-4 shrink-0 text-blue-400" />;
+  if (row.hasRepo) return <GitBranch className="h-4 w-4 shrink-0 text-orange-400" />;
+  if (row.hasChildren) {
+    return row.isExpanded ? (
+      <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
+    ) : (
+      <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
+    );
+  }
+  return <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />;
+}
+
+export const TreeNodeRow = memo(function TreeNodeRow({
+  row,
+  rowId,
+  isFocused,
+  isSelected,
+  onOpen,
+  onToggleExpand,
+}: TreeNodeRowProps) {
+  const deletePage = useTreeStore((s) => s.deletePage);
+  const movePage = useTreeStore((s) => s.movePage);
+  const setDragOver = useTreeStore((s) => s.setDragOver);
+  const createPage = useTreeStore((s) => s.createPage);
+  const renamePage = useTreeStore((s) => s.renamePage);
+  const openPath = useTreeStore((s) => s.openPath);
+  const isDragOver = useTreeStore((s) => s.dragOverPath === row.path);
+
   const [subPageOpen, setSubPageOpen] = useState(false);
   const [subPageTitle, setSubPageTitle] = useState("");
   const [creating, setCreating] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
-  const [renameTitle, setRenameTitle] = useState("");
+  const [renameTitle, setRenameTitle] = useState(row.title);
 
-  const isSelected = selectedPath === node.path;
-  const isDragOver = dragOverPath === node.path;
-  const hasChildren = !!(node.children && node.children.length > 0);
-  const isExpanded = hasChildren && expandedPaths.has(node.path);
-  const title = node.frontmatter?.title || node.name;
-
-  const handleClick = () => {
-    if (hasChildren) {
-      toggleExpand(node.path);
+  const handleDelete = useCallback(() => {
+    if (confirm(`Delete "${row.title}"?`)) {
+      void deletePage(row.path);
     }
-    selectPage(node.path);
-    if (["file", "directory", "text"].includes(node.type)) {
-      loadPage(node.path);
-    }
-  };
+  }, [deletePage, row.path, row.title]);
 
-  const handleDelete = () => {
-    if (confirm(`Delete "${title}"?`)) {
-      deletePage(node.path);
-    }
-  };
-
-  const handleCreateSubPage = async () => {
-    if (!subPageTitle.trim()) return;
+  const handleCreateSubPage = useCallback(async () => {
+    if (!subPageTitle.trim() || row.type !== "directory") return;
     setCreating(true);
     try {
-      await createPage(node.path, subPageTitle.trim());
-      const slug = subPageTitle
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-|-$/g, "");
-      loadPage(`${node.path}/${slug}`);
+      const newPath = await createPage(row.path, subPageTitle.trim());
+      await openPath(newPath, { source: "mutation" });
       setSubPageTitle("");
       setSubPageOpen(false);
     } catch (error) {
@@ -100,118 +100,120 @@ export function TreeNode({ node, depth }: TreeNodeProps) {
     } finally {
       setCreating(false);
     }
-  };
+  }, [createPage, openPath, row.path, row.type, subPageTitle]);
 
-  // Drag and drop handlers
   const handleDragStart = useCallback(
-    (e: React.DragEvent) => {
-      e.dataTransfer.setData("text/plain", node.path);
-      e.dataTransfer.effectAllowed = "move";
+    (event: React.DragEvent<HTMLDivElement>) => {
+      event.dataTransfer.setData("text/plain", row.path);
+      event.dataTransfer.effectAllowed = "move";
     },
-    [node.path]
+    [row.path]
   );
 
   const handleDragOver = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      e.dataTransfer.dropEffect = "move";
-      setDragOver(node.path);
+    (event: React.DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.dataTransfer.dropEffect = "move";
+      setDragOver(row.path);
     },
-    [node.path, setDragOver]
+    [row.path, setDragOver]
   );
 
   const handleDragLeave = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (dragOverPath === node.path) {
+    (event: React.DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (isDragOver) {
         setDragOver(null);
       }
     },
-    [node.path, dragOverPath, setDragOver]
+    [isDragOver, setDragOver]
   );
 
   const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
+    (event: React.DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
       setDragOver(null);
 
-      const fromPath = e.dataTransfer.getData("text/plain");
-      if (!fromPath || fromPath === node.path) return;
+      const fromPath = event.dataTransfer.getData("text/plain");
+      if (!fromPath || fromPath === row.path) return;
+      if (fromPath.startsWith(`${row.path}/`)) return;
 
-      // Don't drop onto own children
-      if (fromPath.startsWith(node.path + "/")) return;
-
-      // Drop onto this node's path (it becomes the parent)
-      const isDir = node.type === "directory";
-      const targetParent = isDir ? node.path : node.path.split("/").slice(0, -1).join("/");
+      const targetParent = row.type === "directory"
+        ? row.path
+        : row.path.split("/").slice(0, -1).join("/");
       if (fromPath === targetParent) return;
 
-      movePage(fromPath, targetParent);
+      void movePage(fromPath, targetParent);
     },
-    [node.path, node.type, movePage, setDragOver]
+    [movePage, row.path, row.type, setDragOver]
   );
 
   return (
     <>
       <ContextMenu>
         <ContextMenuTrigger>
-          <button
-            onClick={handleClick}
+          <div
+            id={rowId}
+            role="treeitem"
+            aria-selected={isSelected}
+            aria-expanded={row.hasChildren ? row.isExpanded : undefined}
+            data-tree-path={row.path}
             draggable
+            onClick={onOpen}
             onDragStart={handleDragStart}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
             className={cn(
-              "flex items-center gap-1.5 w-full text-left py-1.5 px-2 text-[13px] rounded-md transition-colors",
-              "hover:bg-accent/50 cursor-grab active:cursor-grabbing",
+              "flex items-center gap-1.5 py-1.5 pr-2 text-[13px] rounded-md transition-colors cursor-pointer",
+              "hover:bg-accent/50",
               isSelected && "bg-accent text-accent-foreground font-medium",
-              isDragOver &&
-                "bg-primary/10 ring-1 ring-primary/30 ring-inset"
+              isFocused && "ring-1 ring-primary/40 ring-inset",
+              isDragOver && "bg-primary/10 ring-1 ring-primary/30 ring-inset"
             )}
-            style={{ paddingLeft: `${depth * 16 + 8}px` }}
+            style={{ paddingLeft: `${row.depth * 16 + 8}px` }}
           >
-            {hasChildren ? (
-              <ChevronRight
-                className={cn(
-                  "h-3.5 w-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-150",
-                  isExpanded && "rotate-90"
-                )}
-              />
+            {row.hasChildren ? (
+              <button
+                type="button"
+                tabIndex={-1}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onToggleExpand();
+                }}
+                className="inline-flex h-4 w-4 items-center justify-center rounded-sm text-muted-foreground/70 hover:bg-accent"
+                aria-label={row.isExpanded ? "Collapse" : "Expand"}
+              >
+                <ChevronRight
+                  className={cn(
+                    "h-3.5 w-3.5 shrink-0 transition-transform duration-150",
+                    row.isExpanded && "rotate-90"
+                  )}
+                />
+              </button>
             ) : (
-              <span className="w-3.5" />
+              <span className="w-4" />
             )}
-            {node.type === "csv" ? (
-              <Table className="h-4 w-4 shrink-0 text-green-400" />
-            ) : node.type === "pdf" ? (
-              <FileType className="h-4 w-4 shrink-0 text-red-400" />
-            ) : node.type === "app" ? (
-              <AppWindow className="h-4 w-4 shrink-0 text-emerald-400" />
-            ) : node.type === "website" ? (
-              <Globe className="h-4 w-4 shrink-0 text-blue-400" />
-            ) : node.hasRepo ? (
-              <GitBranch className="h-4 w-4 shrink-0 text-orange-400" />
-            ) : hasChildren ? (
-              isExpanded ? (
-                <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
-              ) : (
-                <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
-              )
-            ) : (
-              <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-            )}
-            <span className="truncate">{title}</span>
-          </button>
+            <RowIcon row={row} />
+            <span className="truncate">{row.title}</span>
+          </div>
         </ContextMenuTrigger>
         <ContextMenuContent>
-          <ContextMenuItem onClick={() => setSubPageOpen(true)}>
-            <FilePlus className="h-4 w-4 mr-2" />
-            Add Sub Page
-          </ContextMenuItem>
-          <ContextMenuItem onClick={() => { setRenameTitle(title); setRenameOpen(true); }}>
+          {row.type === "directory" && (
+            <ContextMenuItem onClick={() => setSubPageOpen(true)}>
+              <FilePlus className="h-4 w-4 mr-2" />
+              Add Sub Page
+            </ContextMenuItem>
+          )}
+          <ContextMenuItem
+            onClick={() => {
+              setRenameTitle(row.title);
+              setRenameOpen(true);
+            }}
+          >
             <Pencil className="h-4 w-4 mr-2" />
             Rename
           </ContextMenuItem>
@@ -223,32 +225,24 @@ export function TreeNode({ node, depth }: TreeNodeProps) {
         </ContextMenuContent>
       </ContextMenu>
 
-      {hasChildren && isExpanded && (
-        <div>
-          {node.children!.map((child) => (
-            <TreeNode key={child.path} node={child} depth={depth + 1} />
-          ))}
-        </div>
-      )}
-
       <Dialog open={subPageOpen} onOpenChange={setSubPageOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
-              Add Sub Page to &ldquo;{title}&rdquo;
+              Add Sub Page to &ldquo;{row.title}&rdquo;
             </DialogTitle>
           </DialogHeader>
           <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleCreateSubPage();
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleCreateSubPage();
             }}
             className="flex gap-2"
           >
             <Input
               placeholder="Page title..."
               value={subPageTitle}
-              onChange={(e) => setSubPageTitle(e.target.value)}
+              onChange={(event) => setSubPageTitle(event.target.value)}
               autoFocus
             />
             <Button type="submit" disabled={!subPageTitle.trim() || creating}>
@@ -264,17 +258,17 @@ export function TreeNode({ node, depth }: TreeNodeProps) {
             <DialogTitle>Rename</DialogTitle>
           </DialogHeader>
           <form
-            onSubmit={async (e) => {
-              e.preventDefault();
+            onSubmit={async (event) => {
+              event.preventDefault();
               if (!renameTitle.trim()) return;
-              await renamePage(node.path, renameTitle.trim());
+              await renamePage(row.path, renameTitle.trim());
               setRenameOpen(false);
             }}
             className="flex gap-2"
           >
             <Input
               value={renameTitle}
-              onChange={(e) => setRenameTitle(e.target.value)}
+              onChange={(event) => setRenameTitle(event.target.value)}
               autoFocus
             />
             <Button type="submit" disabled={!renameTitle.trim()}>
@@ -285,4 +279,4 @@ export function TreeNode({ node, depth }: TreeNodeProps) {
       </Dialog>
     </>
   );
-}
+});

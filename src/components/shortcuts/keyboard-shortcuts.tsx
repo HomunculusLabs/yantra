@@ -4,37 +4,34 @@ import { useEffect } from "react";
 import { useAppStore } from "@/stores/app-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useAIPanelStore } from "@/stores/ai-panel-store";
+import { KB_TREE_ROOT_ID } from "@/components/sidebar/tree-view";
 
 export function KeyboardShortcuts() {
-  const { toggleTerminal, section, setSection } = useAppStore();
+  const { toggleTerminal, section, setSection, sidebarCollapsed, setSidebarCollapsed } = useAppStore();
   const { save } = useEditorStore();
   const { toggle: toggleAI } = useAIPanelStore();
 
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const isMod = e.metaKey || e.ctrlKey;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const isMod = event.metaKey || event.ctrlKey;
 
-      // Cmd+S — save current page
-      if (isMod && e.key === "s") {
-        e.preventDefault();
-        save();
+      if (isMod && event.key === "s") {
+        event.preventDefault();
+        void save();
       }
 
-      // Cmd+` — toggle terminal
-      if (isMod && e.key === "`") {
-        e.preventDefault();
+      if (isMod && event.key === "`") {
+        event.preventDefault();
         toggleTerminal();
       }
 
-      // Cmd+Shift+A — toggle AI panel
-      if (isMod && e.shiftKey && e.key === "a") {
-        e.preventDefault();
+      if (isMod && event.shiftKey && event.key.toLowerCase() === "a") {
+        event.preventDefault();
         toggleAI();
       }
 
-      // Cmd+M — toggle Agents view
-      if (isMod && e.key === "m" && !e.shiftKey) {
-        e.preventDefault();
+      if (isMod && event.key.toLowerCase() === "m" && !event.shiftKey) {
+        event.preventDefault();
         if (section.type === "agents") {
           setSection({ type: "page" });
         } else {
@@ -42,12 +39,20 @@ export function KeyboardShortcuts() {
         }
       }
 
-      // Cmd+K is handled by search-dialog component
+      if (isMod && event.shiftKey && event.key.toLowerCase() === "e") {
+        event.preventDefault();
+        if (sidebarCollapsed) {
+          setSidebarCollapsed(false);
+        }
+        requestAnimationFrame(() => {
+          document.getElementById(KB_TREE_ROOT_ID)?.focus();
+        });
+      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [toggleTerminal, save, toggleAI, section, setSection]);
+  }, [save, section, setSection, sidebarCollapsed, setSidebarCollapsed, toggleAI, toggleTerminal]);
 
   return null;
 }

@@ -8,13 +8,35 @@ export interface FrontMatter {
   dir?: "ltr" | "rtl";
 }
 
+export type TreeNodeType =
+  | "file"
+  | "text"
+  | "directory"
+  | "website"
+  | "app"
+  | "pdf"
+  | "csv";
+
 export interface TreeNode {
   name: string;
   path: string;
-  type: "file" | "text" | "directory" | "website" | "app" | "pdf" | "csv";
+  type: TreeNodeType;
+  canOpen: boolean;
   hasRepo?: boolean;
   frontmatter?: Partial<FrontMatter>;
   children?: TreeNode[];
+}
+
+export interface VisibleTreeRow {
+  path: string;
+  parentPath: string | null;
+  depth: number;
+  type: TreeNodeType;
+  title: string;
+  canOpen: boolean;
+  hasChildren: boolean;
+  isExpanded: boolean;
+  hasRepo?: boolean;
 }
 
 export interface PageData {
@@ -28,3 +50,4 @@ export interface PageData {
 }
 
 export type SaveStatus = "idle" | "saving" | "saved" | "error";
+export type PageLoadState = "idle" | "loading" | "preparing" | "ready" | "error";

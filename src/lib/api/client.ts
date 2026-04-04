@@ -14,8 +14,13 @@ export async function fetchTree(): Promise<TreeNode[]> {
   return res.json();
 }
 
-export async function fetchPage(path: string): Promise<PageData> {
-  const res = await fetch(`/api/pages/${encodePath(path)}`);
+export async function fetchPage(
+  path: string,
+  options?: { signal?: AbortSignal }
+): Promise<PageData> {
+  const res = await fetch(`/api/pages/${encodePath(path)}`, {
+    signal: options?.signal,
+  });
   if (!res.ok) throw new Error(`Failed to fetch page: ${path}`);
   return res.json();
 }

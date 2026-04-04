@@ -18,23 +18,13 @@ import { StatusBar } from "@/components/layout/status-bar";
 import { OnboardingWizard } from "@/components/onboarding/onboarding-wizard";
 import { useTreeStore } from "@/stores/tree-store";
 import { useAppStore } from "@/stores/app-store";
-import type { TreeNode } from "@/types";
-
-function findNode(nodes: TreeNode[], path: string): TreeNode | null {
-  for (const node of nodes) {
-    if (node.path === path) return node;
-    if (node.children) {
-      const found = findNode(node.children, path);
-      if (found) return found;
-    }
-  }
-  return null;
-}
 
 export function AppShell() {
   const loadTree = useTreeStore((s) => s.loadTree);
-  const nodes = useTreeStore((s) => s.nodes);
   const selectedPath = useTreeStore((s) => s.selectedPath);
+  const selectedNode = useTreeStore((s) =>
+    s.selectedPath ? s.nodeByPath[s.selectedPath] ?? null : null
+  );
   const section = useAppStore((s) => s.section);
   const setSection = useAppStore((s) => s.setSection);
   const terminalOpen = useAppStore((s) => s.terminalOpen);
@@ -42,29 +32,28 @@ export function AppShell() {
   const setAiPanelCollapsed = useAppStore((s) => s.setAiPanelCollapsed);
   const aiPanelCollapsed = useAppStore((s) => s.aiPanelCollapsed);
 
-  // Onboarding wizard state
   const [showWizard, setShowWizard] = useState<boolean | null>(null);
 
   useEffect(() => {
-    loadTree();
+    void loadTree();
   }, [loadTree]);
 
-  // Auto-refresh sidebar when /data changes (detected via SSE)
   useEffect(() => {
     let es: EventSource | null = null;
     try {
       es = new EventSource("/api/agents/events");
-      es.addEventListener("tree_changed", () => loadTree());
+      es.addEventListener("tree_changed", () => {
+        void loadTree();
+      });
     } catch {
       // SSE not supported
     }
     return () => es?.close();
   }, [loadTree]);
 
-  // Check if company config exists (first-time setup)
   useEffect(() => {
     fetch("/api/agents/config")
-      .then((r) => r.json())
+      .then((response) => response.json())
       .then((data) => setShowWizard(!data.exists))
       .catch(() => setShowWizard(false));
   }, []);
@@ -72,39 +61,36 @@ export function AppShell() {
   const handleWizardComplete = useCallback(() => {
     setShowWizard(false);
     setSection({ type: "agents" });
-    loadTree();
-  }, [setSection, loadTree]);
+    void loadTree();
+  }, [loadTree, setSection]);
 
-  const selectedNode = selectedPath ? findNode(nodes, selectedPath) : null;
-  // For paths not in the tree (e.g. .agents/ workspace files), infer type from extension
   const inferredType = !selectedNode && selectedPath
-    ? selectedPath.endsWith(".csv") ? "csv"
-    : selectedPath.endsWith(".pdf") ? "pdf"
-    : null
+    ? selectedPath.endsWith(".csv")
+      ? "csv"
+      : selectedPath.endsWith(".pdf")
+        ? "pdf"
+        : null
     : null;
   const isWebsite = selectedNode?.type === "website";
   const isApp = selectedNode?.type === "app";
   const isPdf = selectedNode?.type === "pdf" || inferredType === "pdf";
   const isCsv = selectedNode?.type === "csv" || inferredType === "csv";
 
-  // Auto-collapse sidebar + AI panel when entering app mode
   const prevIsApp = useRef(false);
   useEffect(() => {
     if (isApp && !prevIsApp.current) {
       setSidebarCollapsed(true);
       setAiPanelCollapsed(true);
     }
-    prevIsApp.current = !!isApp;
-  }, [isApp, setSidebarCollapsed, setAiPanelCollapsed]);
+    prevIsApp.current = Boolean(isApp);
+  }, [isApp, setAiPanelCollapsed, setSidebarCollapsed]);
 
   const handleExitApp = () => {
     setSidebarCollapsed(false);
     setAiPanelCollapsed(false);
   };
 
-  // Determine what to render in the main area
   const renderContent = () => {
-    // System sections (non-page views)
     if (section.type === "settings") return <SettingsPage />;
     if (section.type === "jobs") return <JobsManager />;
     if (section.type === "agents") {
@@ -119,7 +105,6 @@ export function AppShell() {
       );
     }
 
-    // Page-based views (when a KB page is selected)
     if (isApp && selectedNode) {
       return (
         <WebsiteViewer
@@ -130,26 +115,27 @@ export function AppShell() {
         />
       );
     }
+
     if (isCsv && (selectedNode || selectedPath)) {
       const csvPath = selectedNode?.path || selectedPath!;
-      const csvTitle = selectedNode?.frontmatter?.title || selectedNode?.name || csvPath.split("/").pop() || "CSV";
-      return (
-        <CsvViewer
-          path={csvPath}
-          title={csvTitle}
-        />
-      );
+      const csvTitle =
+        selectedNode?.frontmatter?.title ||
+        selectedNode?.name ||
+        csvPath.split("/").pop() ||
+        "CSV";
+      return <CsvViewer path={csvPath} title={csvTitle} />;
     }
+
     if (isPdf && (selectedNode || selectedPath)) {
       const pdfPath = selectedNode?.path || selectedPath!;
-      const pdfTitle = selectedNode?.frontmatter?.title || selectedNode?.name || pdfPath.split("/").pop() || "PDF";
-      return (
-        <PdfViewer
-          path={pdfPath}
-          title={pdfTitle}
-        />
-      );
+      const pdfTitle =
+        selectedNode?.frontmatter?.title ||
+        selectedNode?.name ||
+        pdfPath.split("/").pop() ||
+        "PDF";
+      return <PdfViewer path={pdfPath} title={pdfTitle} />;
     }
+
     if (isWebsite && selectedNode) {
       return (
         <WebsiteViewer
@@ -159,7 +145,6 @@ export function AppShell() {
       );
     }
 
-    // Default: editor
     return (
       <>
         <Header />
@@ -168,12 +153,10 @@ export function AppShell() {
     );
   };
 
-  // Show nothing while checking config
   if (showWizard === null) {
     return <div className="flex h-screen bg-background" />;
   }
 
-  // Show onboarding wizard for first-time users
   if (showWizard) {
     return <OnboardingWizard onComplete={handleWizardComplete} />;
   }
@@ -182,9 +165,7 @@ export function AppShell() {
     <div className="flex h-screen bg-background text-foreground">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
-        <main className="flex-1 flex flex-col overflow-hidden">
-          {renderContent()}
-        </main>
+        <main className="flex-1 flex flex-col overflow-hidden">{renderContent()}</main>
         {terminalOpen && <TerminalTabs />}
         <StatusBar />
       </div>
