@@ -121,7 +121,13 @@ export interface IntegrationConfig {
   };
 }
 
-export type StorageRouteKey = "agents" | "skills" | "extensions" | "mcp";
+export type StorageRouteKey =
+  | "agents"
+  | "skills"
+  | "extensions"
+  | "mcp"
+  | "todo"
+  | "tasks";
 
 export interface StorageRouteConfig {
   path: string;

@@ -8,8 +8,10 @@ import {
   ChevronDown,
   FolderTree,
   Loader2,
+  ListTodo,
   Plug,
   Puzzle,
+  SquareCheckBig,
 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -52,6 +54,16 @@ const ROUTE_META: Record<
     label: "MCP folder",
     description: "MCP server notes, configs, and supporting files for tool integrations.",
     icon: Plug,
+  },
+  todo: {
+    label: "TODO folder",
+    description: "Backlog notes, next actions, and planning pages for follow-up work.",
+    icon: ListTodo,
+  },
+  tasks: {
+    label: "Tasks folder",
+    description: "Structured task files or task queues that agents should be able to index.",
+    icon: SquareCheckBig,
   },
 };
 
@@ -108,6 +120,8 @@ export function StorageSettingsTab({
       skills: clearIndexedPreview(storageRoutes.skills),
       extensions: clearIndexedPreview(storageRoutes.extensions),
       mcp: clearIndexedPreview(storageRoutes.mcp),
+      todo: clearIndexedPreview(storageRoutes.todo),
+      tasks: clearIndexedPreview(storageRoutes.tasks),
     }) satisfies RootsConfig["storageRoutes"];
 
   useEffect(() => {

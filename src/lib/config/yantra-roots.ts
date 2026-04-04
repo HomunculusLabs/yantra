@@ -3,7 +3,13 @@ import fsp from "fs/promises";
 import path from "path";
 import { getYantraAppPaths } from "@/lib/config/app-paths";
 
-export type StorageRouteKey = "agents" | "skills" | "extensions" | "mcp";
+export type StorageRouteKey =
+  | "agents"
+  | "skills"
+  | "extensions"
+  | "mcp"
+  | "todo"
+  | "tasks";
 
 export interface YantraStorageRouteConfig {
   path: string;
@@ -15,6 +21,8 @@ export interface YantraStorageRoutes {
   skills: YantraStorageRouteConfig;
   extensions: YantraStorageRouteConfig;
   mcp: YantraStorageRouteConfig;
+  todo: YantraStorageRouteConfig;
+  tasks: YantraStorageRouteConfig;
 }
 
 export interface YantraRoots {
@@ -40,6 +48,8 @@ const DEFAULT_STORAGE_ROUTES: YantraStorageRoutes = {
   skills: { path: ".agents/skills", recursive: true },
   extensions: { path: ".agents/extensions", recursive: true },
   mcp: { path: ".agents/mcp", recursive: true },
+  todo: { path: "TODO", recursive: true },
+  tasks: { path: "tasks", recursive: true },
 };
 
 function toPosix(input: string): string {
@@ -190,6 +200,23 @@ export function getYantraStorageRoutes(
         DEFAULT_STORAGE_ROUTES.mcp.path
       ),
       recursive: config.storageRoutes?.mcp?.recursive ?? DEFAULT_STORAGE_ROUTES.mcp.recursive,
+    },
+    todo: {
+      path: normalizeVaultScopedPath(
+        config.storageRoutes?.todo?.path,
+        vaultRoot,
+        DEFAULT_STORAGE_ROUTES.todo.path
+      ),
+      recursive: config.storageRoutes?.todo?.recursive ?? DEFAULT_STORAGE_ROUTES.todo.recursive,
+    },
+    tasks: {
+      path: normalizeVaultScopedPath(
+        config.storageRoutes?.tasks?.path,
+        vaultRoot,
+        DEFAULT_STORAGE_ROUTES.tasks.path
+      ),
+      recursive:
+        config.storageRoutes?.tasks?.recursive ?? DEFAULT_STORAGE_ROUTES.tasks.recursive,
     },
   };
 }
