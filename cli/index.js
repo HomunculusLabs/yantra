@@ -11,13 +11,14 @@ const args = process.argv.slice(2);
 const COMMANDS = ["init", "help", "--help"];
 const firstArg = args[0] || "init";
 const command = COMMANDS.includes(firstArg) ? firstArg : "init";
-// If first arg isn't a command, treat it as the directory name
 const dirArg = COMMANDS.includes(firstArg) ? args[1] : firstArg;
-const yes = args.includes("--yes") || args.includes("-y");
 
 const log = (msg) => console.log(`\x1b[36m>\x1b[0m ${msg}`);
 const success = (msg) => console.log(`\x1b[32m✓\x1b[0m ${msg}`);
-const error = (msg) => { console.error(`\x1b[31m✗\x1b[0m ${msg}`); process.exit(1); };
+const error = (msg) => {
+  console.error(`\x1b[31m✗\x1b[0m ${msg}`);
+  process.exit(1);
+};
 
 function run(bin, args, opts = {}) {
   const result = spawnSync(bin, args, {
@@ -29,8 +30,13 @@ function run(bin, args, opts = {}) {
   }
 }
 
-function npmCommand() {
-  return process.platform === "win32" ? "npm.cmd" : "npm";
+function bunCommand() {
+  return process.platform === "win32" ? "bun.exe" : "bun";
+}
+
+function hasBun() {
+  const result = spawnSync(bunCommand(), ["--version"], { stdio: "ignore" });
+  return result.status === 0;
 }
 
 function validateTargetDir(targetDir) {
@@ -62,17 +68,19 @@ if (command === "init") {
   log(`Cloning Yantra into ./${targetDir}...`);
   run("git", ["clone", "--depth", "1", REPO, targetDir]);
 
-  log("Installing dependencies...");
-  run(npmCommand(), ["install"], { cwd: targetDir });
+  if (!hasBun()) {
+    error("Bun is required. Install Bun from https://bun.sh before continuing.");
+  }
 
-  // Create .env.local from example
+  log("Installing dependencies...");
+  run(bunCommand(), ["install", "--frozen-lockfile"], { cwd: targetDir });
+
   const envExample = path.join(targetDir, ".env.example");
   const envLocal = path.join(targetDir, ".env.local");
-  if (fs.existsSync(envExample)) {
+  if (fs.existsSync(envExample) && !fs.existsSync(envLocal)) {
     fs.copyFileSync(envExample, envLocal);
   }
 
-  // Remove .git so user starts fresh
   fs.rmSync(path.join(targetDir, ".git"), { recursive: true, force: true });
   run("git", ["init"], { cwd: targetDir });
 
@@ -82,27 +90,24 @@ if (command === "init") {
   Next steps:
 
     cd ${targetDir}
-    npm run dev:all
+    bun run dev
 
-  Open http://localhost:3000
+  Yantra will open as a desktop app.
 
   The onboarding wizard will guide you through
   setting up your AI team.
   `);
-
 } else if (command === "help" || command === "--help") {
   console.log(`
   create-yantra - Create a new Yantra project
 
   Usage:
-    npx create-yantra [directory]          Create a new project
-    npx create-yantra --yes               Skip prompts
-    npx create-yantra help                Show this help
+    bunx create-yantra [directory]         Create a new project
+    bunx create-yantra help                Show this help
 
-  Options:
-    --yes, -y    Accept all defaults
+  Notes:
+    Bun is required for installation and development.
   `);
-
 } else {
-  error(`Unknown command: ${command}. Run "create-yantra help" for usage.`);
+  error(`Unknown command: ${command}. Run \"create-yantra help\" for usage.`);
 }

@@ -1,7 +1,7 @@
 ---
 title: Getting Started
 created: '2026-03-21T00:00:00.000Z'
-modified: '2026-03-31T14:14:24.126Z'
+modified: '2026-04-03T23:30:00.000Z'
 tags:
   - guide
   - onboarding
@@ -60,6 +60,18 @@ We have 2 parts:
     
 -   **Linked Repos** — Add `.repo.yaml` to link a KB directory to a Git repo. AI agents use this to read source code in context
     
+
+## Dataview
+
+Yantra now renders fenced `dataview` blocks inside markdown pages.
+
+```dataview
+TABLE file.link AS Page, tags, modified
+FROM ""
+WHERE contains(tags, "guide")
+SORT modified DESC
+LIMIT 8
+```
 
 ## Sidebar Icons
 

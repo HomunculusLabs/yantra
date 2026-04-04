@@ -11,6 +11,7 @@ import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import { common, createLowlight } from "lowlight";
 import { WikiLink } from "./wiki-link-extension";
 import { CalloutExtension } from "./callout-extension";
+import { DataviewExtension } from "./dataview-extension";
 
 const lowlight = createLowlight(common);
 
@@ -53,4 +54,5 @@ export const editorExtensions = [
   }),
   WikiLink,
   CalloutExtension,
+  DataviewExtension,
 ];

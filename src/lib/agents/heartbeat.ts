@@ -17,7 +17,11 @@ import { readFileContent, fileExists } from "@/lib/storage/fs-operations";
 import { autoCommit } from "@/lib/git/git-service";
 import { postMessage } from "./slack-manager";
 import { getGoalState, updateGoal } from "./goal-manager";
-import { startConversationRun } from "./conversation-runner";
+import {
+  resolveCompletionTimeoutSeconds,
+  startConversationRun,
+  type StartedConversation,
+} from "./conversation-runner";
 import { reloadDaemonSchedules } from "./daemon-client";
 import { getDaemonUrl, getOrCreateDaemonToken } from "./daemon-auth";
 
@@ -349,7 +353,7 @@ async function processHeartbeatOutput(
  * Returns the sessionId (cron ignores it; frontend connects WebTerminal to it).
  * Returns null if the agent is inactive or over budget.
  */
-export async function runHeartbeat(slug: string): Promise<string | null> {
+export async function runHeartbeat(slug: string): Promise<StartedConversation | null> {
   const ctx = await buildHeartbeatContext(slug);
   if (!ctx) return null;
   const { prompt, persona, inbox, startTime, cwd } = ctx;
@@ -369,6 +373,7 @@ export async function runHeartbeat(slug: string): Promise<string | null> {
       prompt,
       cwd,
       timeoutSeconds: 600,
+      completionTimeoutSeconds: resolveCompletionTimeoutSeconds(600),
       onComplete: async (completion) => {
         if (completion.status === "failed" && !completion.output) {
           await postMessage({
@@ -390,7 +395,7 @@ export async function runHeartbeat(slug: string): Promise<string | null> {
       },
     });
 
-    return meta.id;
+    return meta;
   } catch (err) {
     console.error(`Failed to create daemon session for ${slug}:`, err);
     markHeartbeatComplete(slug);
@@ -400,9 +405,11 @@ export async function runHeartbeat(slug: string): Promise<string | null> {
 
 /**
  * Start a manual heartbeat — thin wrapper over runHeartbeat.
- * Returns sessionId for the frontend to connect a WebTerminal to.
+ * Returns the started conversation, including the daemon session id and runtime metadata.
  */
-export async function startManualHeartbeat(slug: string): Promise<string | null> {
+export async function startManualHeartbeat(
+  slug: string
+): Promise<StartedConversation | null> {
   return runHeartbeat(slug);
 }
 

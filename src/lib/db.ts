@@ -1,10 +1,8 @@
 import Database from "better-sqlite3";
-import path from "path";
-import fs from "fs";
 import { getYantraRoots, ensureRuntimeRootExists } from "@/lib/config/yantra-roots";
+import { configureDatabasePragmas, runPendingMigrations } from "@/lib/db/bootstrap";
 
 const DB_PATH = getYantraRoots().databasePath;
-const MIGRATIONS_DIR = path.join(process.cwd(), "server", "migrations");
 
 let _db: Database.Database | null = null;
 
@@ -18,49 +16,10 @@ export function getDb(): Database.Database {
   ensureRuntimeRootExists();
 
   _db = new Database(DB_PATH);
-
-  _db.pragma("journal_mode = WAL");
-  _db.pragma("foreign_keys = ON");
-
-  runMigrations(_db);
+  configureDatabasePragmas(_db);
+  runPendingMigrations(_db);
 
   return _db;
-}
-
-function runMigrations(db: Database.Database): void {
-  const hasVersionTable = db
-    .prepare(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'"
-    )
-    .get();
-
-  let currentVersion = 0;
-  if (hasVersionTable) {
-    const row = db
-      .prepare("SELECT MAX(version) as version FROM schema_version")
-      .get() as { version: number | null } | undefined;
-    currentVersion = row?.version ?? 0;
-  }
-
-  if (!fs.existsSync(MIGRATIONS_DIR)) {
-    return;
-  }
-
-  const migrationFiles = fs
-    .readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith(".sql"))
-    .sort();
-
-  for (const file of migrationFiles) {
-    const versionMatch = file.match(/^(\d+)/);
-    if (!versionMatch) continue;
-
-    const version = parseInt(versionMatch[1], 10);
-    if (version <= currentVersion) continue;
-
-    const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), "utf-8");
-    db.exec(sql);
-  }
 }
 
 export function closeDb(): void {

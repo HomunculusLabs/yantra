@@ -196,6 +196,10 @@ function normalizeTaskStatus(ref: JobTaskRef, snapshot: TaskResultSnapshot | nul
     };
   }
 
+  if (snapshot.state !== "completed") {
+    return null;
+  }
+
   const result = asRecord(snapshot.result);
   return {
     taskID: ref.taskID,
@@ -209,12 +213,12 @@ function normalizeTaskStatus(ref: JobTaskRef, snapshot: TaskResultSnapshot | nul
         : undefined,
     source: ref.source,
     queuedAt: ref.queuedAt,
-    startedAt: getString(result?.startedAt),
-    completedAt: getString(result?.completedAt),
-    conversationId: getString(result?.conversationId),
-    summary: getString(result?.summary),
-    reason: getString(result?.reason),
-    exitCode: getNumber(result?.exitCode),
+    startedAt: getString(result?.startedAt) ?? undefined,
+    completedAt: getString(result?.completedAt) ?? undefined,
+    conversationId: getString(result?.conversationId) ?? undefined,
+    summary: getString(result?.summary) ?? undefined,
+    reason: getString(result?.reason) ?? undefined,
+    exitCode: getNumber(result?.exitCode) ?? undefined,
   };
 }
 

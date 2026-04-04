@@ -5,7 +5,9 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  Check,
   CheckCircle,
+  Copy,
   XCircle,
   Clock,
   Zap,
@@ -63,11 +65,13 @@ export function AgentLivePanel({ persona, onBack }: AgentLivePanelProps) {
   const [history, setHistory] = useState<HeartbeatRecord[]>([]);
   const [expandedPast, setExpandedPast] = useState<Set<string>>(new Set());
   const [running, setRunning] = useState(false);
+  const [copiedSessionId, setCopiedSessionId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const {
     agentSessions,
     addAgentSession,
+    updateAgentSession,
     markAgentSessionCompleted,
     removeAgentSession,
     restoreAgentSessionsFromStorage,
@@ -77,6 +81,35 @@ export function AgentLivePanel({ persona, onBack }: AgentLivePanelProps) {
   useEffect(() => {
     restoreAgentSessionsFromStorage();
   }, [restoreAgentSessionsFromStorage]);
+
+  useEffect(() => {
+    const hydrateRuntimeMetadata = async () => {
+      try {
+        const res = await fetch("/api/daemon/sessions");
+        if (!res.ok) return;
+        const sessions: Array<{
+          id?: string;
+          sessionId?: string;
+          launchTransport: "direct" | "tmux";
+          tmuxSessionName: string | null;
+          tmuxAttachCommand: string | null;
+        }> = await res.json();
+        for (const session of sessions) {
+          const sessionId = session.id || session.sessionId;
+          if (!sessionId) continue;
+          updateAgentSession(sessionId, {
+            launchTransport: session.launchTransport,
+            tmuxSessionName: session.tmuxSessionName,
+            tmuxAttachCommand: session.tmuxAttachCommand,
+          });
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    hydrateRuntimeMetadata();
+  }, [updateAgentSession]);
 
   const currentSessions = agentSessions.filter(
     (s) => s.slug === persona.slug && s.status === "running"
@@ -121,6 +154,9 @@ export function AgentLivePanel({ persona, onBack }: AgentLivePanelProps) {
           personaEmoji: persona.emoji,
           timestamp: Date.now(),
           status: "running",
+          launchTransport: data.launchTransport,
+          tmuxSessionName: data.tmuxSessionName,
+          tmuxAttachCommand: data.tmuxAttachCommand,
         });
       }
     } finally {
@@ -147,6 +183,19 @@ export function AgentLivePanel({ persona, onBack }: AgentLivePanelProps) {
       }
       return next;
     });
+  };
+
+  const handleCopyAttachCommand = async (sessionId: string, command?: string | null) => {
+    if (!command) return;
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopiedSessionId(sessionId);
+      window.setTimeout(() => {
+        setCopiedSessionId((current) => (current === sessionId ? null : current));
+      }, 2000);
+    } catch {
+      // ignore clipboard failures
+    }
   };
 
   const hasAnySessions = currentSessions.length > 0 || history.length > 0;
@@ -292,9 +341,39 @@ export function AgentLivePanel({ persona, onBack }: AgentLivePanelProps) {
               )}
             >
               <div className="flex items-center gap-2 shrink-0">
-                <div className="bg-accent/50 rounded-lg px-3 py-2 text-[13px] leading-relaxed flex-1 flex items-center gap-2">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0" />
-                  Heartbeat running…
+                <div className="bg-accent/50 rounded-lg px-3 py-2 text-[13px] leading-relaxed flex-1 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0" />
+                    <div className="min-w-0">
+                      <div>Heartbeat running…</div>
+                      {session.tmuxSessionName ? (
+                        <div className="text-[10px] text-muted-foreground font-mono truncate">
+                          {session.tmuxSessionName}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                  {session.tmuxAttachCommand ? (
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      className="shrink-0"
+                      onClick={() => void handleCopyAttachCommand(session.sessionId, session.tmuxAttachCommand)}
+                      title={session.tmuxAttachCommand}
+                    >
+                      {copiedSessionId === session.sessionId ? (
+                        <>
+                          <Check className="h-3 w-3" />
+                          Copied
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3 w-3" />
+                          tmux
+                        </>
+                      )}
+                    </Button>
+                  ) : null}
                 </div>
                 <button
                   onClick={() => removeAgentSession(session.sessionId)}

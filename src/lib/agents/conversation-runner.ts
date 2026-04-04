@@ -10,12 +10,19 @@ import {
   createConversation,
   finalizeConversation,
   readConversationMeta,
+  readConversationTranscript,
 } from "./conversation-store";
-import { createDaemonSession, getDaemonSessionOutput } from "./daemon-client";
+import {
+  createDaemonSession,
+  getDaemonSessionOutput,
+  type DaemonSessionHandle,
+} from "./daemon-client";
 import { readPersona, type AgentPersona } from "./persona-manager";
 import { resolveLaunchSpec } from "./launcher-manager";
 import { sendNotification } from "./notification-service";
 import type { ResolvedLaunchSpec } from "@/types/launchers";
+
+export interface StartedConversation extends ConversationMeta, DaemonSessionHandle {}
 
 export interface ConversationCompletion {
   meta: ConversationMeta;
@@ -34,6 +41,7 @@ interface StartConversationInput {
   cwd?: string;
   launch?: ResolvedLaunchSpec;
   timeoutSeconds?: number;
+  completionTimeoutSeconds?: number;
   onComplete?: (completion: ConversationCompletion) => Promise<void> | void;
 }
 
@@ -171,7 +179,7 @@ export async function buildEditorConversationPrompt(input: {
 
 export async function startConversationRun(
   input: StartConversationInput
-): Promise<ConversationMeta> {
+): Promise<StartedConversation> {
   const meta = await createConversation({
     agentSlug: input.agentSlug,
     title: input.title,
@@ -181,6 +189,8 @@ export async function startConversationRun(
     jobId: input.jobId,
     jobName: input.jobName,
   });
+
+  let daemonSession: DaemonSessionHandle;
 
   try {
     const launch =
@@ -192,7 +202,7 @@ export async function startConversationRun(
         cwd: input.cwd,
       }));
 
-    await createDaemonSession({
+    daemonSession = await createDaemonSession({
       id: meta.id,
       prompt: input.prompt,
       launch,
@@ -210,79 +220,129 @@ export async function startConversationRun(
   }
 
   if (input.onComplete) {
-    void waitForConversationCompletion(meta.id, input.onComplete);
+    void waitForConversationCompletion(meta.id, {
+      timeoutSeconds: input.completionTimeoutSeconds,
+      onComplete: input.onComplete,
+    });
   }
 
-  return meta;
+  return {
+    ...meta,
+    ...daemonSession!,
+  };
+}
+
+export function resolveCompletionTimeoutSeconds(
+  timeoutSeconds?: number,
+  graceSeconds = 15
+): number | undefined {
+  if (typeof timeoutSeconds !== "number" || timeoutSeconds <= 0) {
+    return undefined;
+  }
+
+  return timeoutSeconds + graceSeconds;
+}
+
+function buildConversationCompletion(
+  meta: ConversationMeta,
+  output: string
+): ConversationCompletion {
+  return {
+    meta,
+    output,
+    status: meta.status === "completed" ? "completed" : "failed",
+  };
 }
 
 export async function waitForConversationCompletion(
   conversationId: string,
-  onComplete?: (completion: ConversationCompletion) => Promise<void> | void
+  options?: {
+    timeoutSeconds?: number;
+    onComplete?: (completion: ConversationCompletion) => Promise<void> | void;
+  }
 ): Promise<ConversationCompletion> {
-  const deadline = Date.now() + 15 * 60 * 1000;
+  const deadline =
+    typeof options?.timeoutSeconds === "number" && options.timeoutSeconds > 0
+      ? Date.now() + options.timeoutSeconds * 1000
+      : null;
 
-  while (Date.now() < deadline) {
+  while (true) {
     await new Promise((resolve) => setTimeout(resolve, 3000));
 
     try {
       const data = await getDaemonSessionOutput(conversationId);
       if (data.status === "running") {
-        continue;
+        if (!deadline || Date.now() < deadline) {
+          continue;
+        }
+      } else {
+        const normalizedStatus = data.status === "completed" ? "completed" : "failed";
+        const currentMeta = await readConversationMeta(conversationId);
+        const finalMeta =
+          currentMeta?.status === "running"
+            ? await finalizeConversation(conversationId, {
+                status: normalizedStatus,
+                output: data.output,
+                exitCode: normalizedStatus === "completed" ? 0 : 1,
+              })
+            : currentMeta;
+
+        if (!finalMeta) {
+          throw new Error(`Conversation ${conversationId} disappeared during completion`);
+        }
+
+        const completion = buildConversationCompletion(finalMeta, data.output);
+
+        if (options?.onComplete) {
+          await options.onComplete(completion);
+        }
+
+        return completion;
       }
-
-      const normalizedStatus = data.status === "completed" ? "completed" : "failed";
-      const currentMeta = await readConversationMeta(conversationId);
-      const finalMeta =
-        currentMeta?.status === "running"
-          ? await finalizeConversation(conversationId, {
-              status: normalizedStatus,
-              output: data.output,
-              exitCode: normalizedStatus === "completed" ? 0 : 1,
-            })
-          : currentMeta;
-
-      if (!finalMeta) {
-        throw new Error(`Conversation ${conversationId} disappeared during completion`);
-      }
-
-      const completion = {
-        meta: finalMeta,
-        output: data.output,
-        status: normalizedStatus,
-      } satisfies ConversationCompletion;
-
-      if (onComplete) {
-        await onComplete(completion);
-      }
-
-      return completion;
     } catch {
       // Retry until timeout. The daemon can briefly 404 while cleaning up.
+      const currentMeta = await readConversationMeta(conversationId).catch(() => null);
+      if (currentMeta && currentMeta.status !== "running") {
+        const output = await readConversationTranscript(conversationId).catch(() => "");
+        const completion = buildConversationCompletion(currentMeta, output);
+
+        if (options?.onComplete) {
+          await options.onComplete(completion);
+        }
+
+        return completion;
+      }
+
+      if (!deadline || Date.now() < deadline) {
+        continue;
+      }
     }
+
+    if (!deadline || Date.now() < deadline) {
+      continue;
+    }
+
+    const finalMeta = await finalizeConversation(conversationId, {
+      status: "failed",
+      output: "Conversation timed out while waiting for completion.",
+      exitCode: 124,
+    });
+
+    if (!finalMeta) {
+      throw new Error(`Conversation ${conversationId} timed out and no metadata was found`);
+    }
+
+    const completion = buildConversationCompletion(
+      finalMeta,
+      "Conversation timed out while waiting for completion."
+    );
+
+    if (options?.onComplete) {
+      await options.onComplete(completion);
+    }
+
+    return completion;
   }
-
-  const finalMeta = await finalizeConversation(conversationId, {
-    status: "failed",
-    output: "Conversation timed out while waiting for completion.",
-    exitCode: 124,
-  });
-
-  if (!finalMeta) {
-    throw new Error(`Conversation ${conversationId} timed out and no metadata was found`);
-  }
-
-  const completion = {
-    meta: finalMeta,
-    output: "Conversation timed out while waiting for completion.",
-    status: "failed",
-  } satisfies ConversationCompletion;
-
-  if (onComplete) {
-    await onComplete(completion);
-  }
-
-  return completion;
 }
 
 function substituteTemplateVars(text: string, job: JobConfig): string {
@@ -363,6 +423,7 @@ export async function startJobConversation(job: JobConfig): Promise<JobRun> {
     cwd,
     launch,
     timeoutSeconds: job.timeout || 600,
+    completionTimeoutSeconds: resolveCompletionTimeoutSeconds(job.timeout || 600),
     onComplete: async (completion) => {
       if (completion.status === "completed") {
         await processPostActions(job.on_complete, job);

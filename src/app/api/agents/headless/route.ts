@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  resolveCompletionTimeoutSeconds,
   startConversationRun,
   waitForConversationCompletion,
 } from "@/lib/agents/conversation-runner";
@@ -48,7 +49,9 @@ export async function POST(req: NextRequest) {
       timeoutSeconds,
     });
 
-    const completion = await waitForConversationCompletion(conversation.id);
+    const completion = await waitForConversationCompletion(conversation.id, {
+      timeoutSeconds: resolveCompletionTimeoutSeconds(timeoutSeconds),
+    });
 
     return NextResponse.json({
       ok: completion.status === "completed",

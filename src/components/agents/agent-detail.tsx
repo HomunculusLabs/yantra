@@ -9,7 +9,9 @@ import {
   Briefcase,
   Clock,
   Zap,
+  Check,
   CheckCircle,
+  Copy,
   XCircle,
   RefreshCw,
   Plus,
@@ -1314,10 +1316,13 @@ function SessionsTab({
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [prompt, setPrompt] = useState("");
   const [startingSession, setStartingSession] = useState(false);
+  const [copiedTmux, setCopiedTmux] = useState(false);
   // Live terminal session
   const [liveSession, setLiveSession] = useState<{
     id: string;
     userMessage: string;
+    tmuxSessionName?: string | null;
+    tmuxAttachCommand?: string | null;
   } | null>(null);
 
   const selectedSession = selectedIndex !== null ? history[selectedIndex] : null;
@@ -1340,7 +1345,14 @@ function SessionsTab({
         }),
       });
       if (!res.ok) throw new Error("Failed to start session");
-      setLiveSession({ id: sessionId, userMessage });
+      const data = await res.json();
+      setLiveSession({
+        id: data.sessionId || sessionId,
+        userMessage,
+        tmuxSessionName: data.tmuxSessionName,
+        tmuxAttachCommand: data.tmuxAttachCommand,
+      });
+      setCopiedTmux(false);
       setSelectedIndex(null);
       setPrompt("");
     } catch {
@@ -1358,6 +1370,18 @@ function SessionsTab({
   const handleNewSession = () => {
     setSelectedIndex(null);
     setLiveSession(null);
+    setCopiedTmux(false);
+  };
+
+  const handleCopyTmuxCommand = async () => {
+    if (!liveSession?.tmuxAttachCommand) return;
+    try {
+      await navigator.clipboard.writeText(liveSession.tmuxAttachCommand);
+      setCopiedTmux(true);
+      window.setTimeout(() => setCopiedTmux(false), 2000);
+    } catch {
+      // ignore clipboard failures
+    }
   };
 
   const showNewPrompt = !liveSession && selectedIndex === null;
@@ -1464,9 +1488,39 @@ function SessionsTab({
         {liveSession ? (
           /* Live launcher-backed terminal */
           <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-border flex items-center gap-2 shrink-0">
-              <Loader2 className="h-3.5 w-3.5 text-primary animate-spin" />
-              <span className="text-[12px] font-medium">{liveSession.userMessage}</span>
+            <div className="px-4 py-2.5 border-b border-border flex items-center justify-between gap-3 shrink-0">
+              <div className="min-w-0 flex items-center gap-2">
+                <Loader2 className="h-3.5 w-3.5 text-primary animate-spin shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-[12px] font-medium truncate">{liveSession.userMessage}</div>
+                  {liveSession.tmuxSessionName ? (
+                    <div className="text-[10px] text-muted-foreground font-mono truncate">
+                      {liveSession.tmuxSessionName}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+              {liveSession.tmuxAttachCommand ? (
+                <Button
+                  variant="outline"
+                  size="xs"
+                  className="shrink-0"
+                  onClick={() => void handleCopyTmuxCommand()}
+                  title={liveSession.tmuxAttachCommand}
+                >
+                  {copiedTmux ? (
+                    <>
+                      <Check className="h-3 w-3" />
+                      Copied
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3 w-3" />
+                      tmux
+                    </>
+                  )}
+                </Button>
+              ) : null}
             </div>
             <div className="flex-1 min-h-0">
               <WebTerminal

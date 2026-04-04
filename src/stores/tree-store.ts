@@ -14,6 +14,8 @@ type OpenPathSource = "tree-click" | "tree-keyboard" | "search" | "mutation";
 
 interface OpenPathOptions {
   source?: OpenPathSource;
+  pane?: "primary" | "secondary";
+  openInOtherPane?: boolean;
 }
 
 interface TreeState {
@@ -36,6 +38,7 @@ interface TreeState {
   focusLast: () => string | null;
   toggleExpand: (path: string) => void;
   expandPath: (path: string) => void;
+  setSubtreeExpanded: (path: string, expanded: boolean) => void;
   revealPath: (path: string) => void;
   openPath: (path: string, options?: OpenPathOptions) => Promise<void>;
   prefetchAroundPath: (path: string) => void;
@@ -133,19 +136,22 @@ export const useTreeStore = create<TreeState>((set, get) => {
     expandedPaths: Set<string>,
     preferredFocusedPath: string | null,
     preferredSelectedPath: string | null,
-    fallbackIndex?: number
+    fallbackIndex?: number,
+    options?: { revealPreferredPaths?: boolean }
   ) => {
     const nodeByPath: Record<string, TreeNode> = {};
     const parentByPath: Record<string, string | null> = {};
     collectTreeIndexes(nodes, null, nodeByPath, parentByPath);
 
     const effectiveExpandedPaths = new Set(expandedPaths);
-    for (const path of [preferredFocusedPath, preferredSelectedPath]) {
-      if (!path) continue;
-      let current = parentByPath[path] ?? null;
-      while (current) {
-        effectiveExpandedPaths.add(current);
-        current = parentByPath[current] ?? null;
+    if (options?.revealPreferredPaths) {
+      for (const path of [preferredFocusedPath, preferredSelectedPath]) {
+        if (!path) continue;
+        let current = parentByPath[path] ?? null;
+        while (current) {
+          effectiveExpandedPaths.add(current);
+          current = parentByPath[current] ?? null;
+        }
       }
     }
 
@@ -239,7 +245,8 @@ export const useTreeStore = create<TreeState>((set, get) => {
           latest.expandedPaths,
           latest.focusedPath,
           latest.selectedPath,
-          fallbackIndex
+          fallbackIndex,
+          { revealPreferredPaths: true }
         );
         set({ ...derived, loading: false });
         saveExpandedPaths(derived.expandedPaths);
@@ -307,6 +314,39 @@ export const useTreeStore = create<TreeState>((set, get) => {
       commitExpandedPaths(next);
     },
 
+    setSubtreeExpanded: (path, expanded) => {
+      const state = get();
+      const next = new Set(state.expandedPaths);
+      const walk = (nodePath: string) => {
+        const node = state.nodeByPath[nodePath];
+        if (!node?.children?.length) return;
+        if (expanded) {
+          next.add(nodePath);
+        } else {
+          next.delete(nodePath);
+        }
+        for (const child of node.children) {
+          walk(child.path);
+        }
+      };
+      walk(path);
+
+      let nextFocusedPath = state.focusedPath;
+      if (nextFocusedPath && nextFocusedPath.startsWith(`${path}/`)) {
+        nextFocusedPath = path;
+      }
+
+      const derived = buildDerivedState(
+        state.nodes,
+        next,
+        nextFocusedPath,
+        state.selectedPath,
+        nextFocusedPath ? state.visibleIndexByPath[nextFocusedPath] : state.visibleIndexByPath[path]
+      );
+      set(derived);
+      saveExpandedPaths(derived.expandedPaths);
+    },
+
     revealPath: (path) => {
       const state = get();
       const next = new Set(state.expandedPaths);
@@ -360,10 +400,19 @@ export const useTreeStore = create<TreeState>((set, get) => {
             : inferredType === "directory"
               ? "directory-index"
               : "markdown";
-        await useEditorStore.getState().loadPage(path, {
-          source: options?.source,
-          kindHint,
-        });
+
+        if (options?.openInOtherPane) {
+          await useEditorStore.getState().openInOtherPane(path, {
+            source: options?.source,
+            kindHint,
+          });
+        } else {
+          await useEditorStore.getState().loadPage(path, {
+            source: options?.source,
+            kindHint,
+            pane: options?.pane,
+          });
+        }
         get().prefetchAroundPath(path);
       }
     },

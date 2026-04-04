@@ -74,11 +74,17 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
   }
 
   if (body.action === "run") {
-    const sessionId = await startManualHeartbeat(slug);
-    if (!sessionId) {
+    const session = await startManualHeartbeat(slug);
+    if (!session) {
       return NextResponse.json({ ok: false, message: "Agent inactive or over budget" }, { status: 400 });
     }
-    return NextResponse.json({ ok: true, sessionId });
+    return NextResponse.json({
+      ok: true,
+      sessionId: session.id,
+      launchTransport: session.launchTransport,
+      tmuxSessionName: session.tmuxSessionName,
+      tmuxAttachCommand: session.tmuxAttachCommand,
+    });
   }
 
   if (body.action === "updateMemory") {

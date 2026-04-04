@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  resolveCompletionTimeoutSeconds,
   startConversationRun,
   waitForConversationCompletion,
 } from "@/lib/agents/conversation-runner";
@@ -47,15 +48,19 @@ Rules:
 - Acceptance criteria should be concrete and verifiable
 - Output ONLY valid JSON, nothing else`;
 
+    const timeoutSeconds = 120;
+
     const conversation = await startConversationRun({
       agentSlug: "general",
       title: `Task review: ${title}`.slice(0, 80),
       trigger: "manual",
       prompt,
-      timeoutSeconds: 120,
+      timeoutSeconds,
     });
 
-    const completion = await waitForConversationCompletion(conversation.id);
+    const completion = await waitForConversationCompletion(conversation.id, {
+      timeoutSeconds: resolveCompletionTimeoutSeconds(timeoutSeconds),
+    });
     if (completion.status !== "completed") {
       return NextResponse.json(
         { error: completion.output || "Review failed" },

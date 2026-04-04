@@ -7,9 +7,13 @@ import { useAIPanelStore } from "@/stores/ai-panel-store";
 import { KB_TREE_ROOT_ID } from "@/components/sidebar/tree-view";
 
 export function KeyboardShortcuts() {
-  const { toggleTerminal, section, setSection, sidebarCollapsed, setSidebarCollapsed } = useAppStore();
+  const { toggleTerminal, sidebarCollapsed, setSidebarCollapsed } = useAppStore();
   const { save } = useEditorStore();
-  const { toggle: toggleAI } = useAIPanelStore();
+  const panelOpen = useAIPanelStore((state) => state.isOpen);
+  const panelMode = useAIPanelStore((state) => state.mode);
+  const closeAI = useAIPanelStore((state) => state.close);
+  const openEditorPanel = useAIPanelStore((state) => state.openEditorPanel);
+  const openAgentPanel = useAIPanelStore((state) => state.openAgentPanel);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -27,15 +31,19 @@ export function KeyboardShortcuts() {
 
       if (isMod && event.shiftKey && event.key.toLowerCase() === "a") {
         event.preventDefault();
-        toggleAI();
+        if (panelOpen && panelMode === "editor") {
+          closeAI();
+        } else {
+          openEditorPanel();
+        }
       }
 
       if (isMod && event.key.toLowerCase() === "m" && !event.shiftKey) {
         event.preventDefault();
-        if (section.type === "agents") {
-          setSection({ type: "page" });
+        if (panelOpen && panelMode === "agents") {
+          closeAI();
         } else {
-          setSection({ type: "agents" });
+          openAgentPanel(null);
         }
       }
 
@@ -52,7 +60,17 @@ export function KeyboardShortcuts() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [save, section, setSection, sidebarCollapsed, setSidebarCollapsed, toggleAI, toggleTerminal]);
+  }, [
+    closeAI,
+    openAgentPanel,
+    openEditorPanel,
+    panelMode,
+    panelOpen,
+    save,
+    sidebarCollapsed,
+    setSidebarCollapsed,
+    toggleTerminal,
+  ]);
 
   return null;
 }

@@ -3,11 +3,14 @@ import { spawn } from "child_process";
 import { DATA_DIR } from "@/lib/storage/path-utils";
 import path from "path";
 import {
+  resolveCompletionTimeoutSeconds,
   startConversationRun,
   waitForConversationCompletion,
 } from "@/lib/agents/conversation-runner";
 
 export async function POST() {
+  const timeoutSeconds = 60;
+
   try {
     let gitLog = "";
     try {
@@ -62,10 +65,12 @@ Keep it under 200 words. Be specific about what changed.`;
       title: "Daily digest",
       trigger: "manual",
       prompt,
-      timeoutSeconds: 60,
+      timeoutSeconds,
     });
 
-    const completion = await waitForConversationCompletion(conversation.id);
+    const completion = await waitForConversationCompletion(conversation.id, {
+      timeoutSeconds: resolveCompletionTimeoutSeconds(timeoutSeconds),
+    });
     if (completion.status !== "completed") {
       return NextResponse.json(
         { error: completion.output || "Digest generation failed" },

@@ -8,7 +8,7 @@ You are an autonomous development agent working on Yantra. Your job is to implem
 2. **Read `PROGRESS.md`** to see what's already been done.
 3. **Read `CLAUDE.md`** for project rules and conventions.
 4. **Identify the current phase and next unfinished step** from the PRD Implementation Phases (Section 11).
-5. **Implement that ONE step fully** — write the code, ensure it compiles (`npm run build`), and verify it works.
+5. **Implement that ONE step fully** — write the code, ensure it compiles (`bun run build`), and verify it works.
 6. **Update `PROGRESS.md`** with a dated entry describing what you did.
 7. **Commit your changes** with a descriptive message.
 
@@ -51,16 +51,16 @@ Work through these phases in strict order. Within each phase, complete all sub-s
 3. Build activity feed view with filters — `src/components/activity/activity-feed.tsx`
 
 ### Phase 6: Server & Polish
-1. Extend `terminal-server.ts` into `yantra-daemon.ts` — add job scheduler + WebSocket event channels
+1. Extend the daemon runtime in `yantra-daemon.ts` — add job scheduler + WebSocket event channels
 2. Add agent @mention triggering from chat
 3. Agent goal tracking with live progress bars
 4. Skill management UI in agent detail
-5. `npm run start` single command to launch Next.js + daemon
+5. `bun run start` single command to launch Next.js + daemon
 
 ## Rules
 
 - **Always read files before editing them.** Never replace entire files.
-- **Run `npm run build`** after making changes to verify they compile.
+- **Run `bun run build`** after making changes to verify they compile.
 - **Follow existing patterns** in the codebase. Use the same libraries, file structure, and conventions.
 - **shadcn/ui uses base-ui** (not Radix) — no `asChild` prop.
 - **One step per run.** Pick the next unfinished step, implement it fully, commit, and stop.

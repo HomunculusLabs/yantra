@@ -18,6 +18,7 @@ import { StatusBar } from "@/components/layout/status-bar";
 import { OnboardingWizard } from "@/components/onboarding/onboarding-wizard";
 import { useTreeStore } from "@/stores/tree-store";
 import { useAppStore } from "@/stores/app-store";
+import { useAIPanelStore } from "@/stores/ai-panel-store";
 
 export function AppShell() {
   const loadTree = useTreeStore((s) => s.loadTree);
@@ -31,6 +32,8 @@ export function AppShell() {
   const setSidebarCollapsed = useAppStore((s) => s.setSidebarCollapsed);
   const setAiPanelCollapsed = useAppStore((s) => s.setAiPanelCollapsed);
   const aiPanelCollapsed = useAppStore((s) => s.aiPanelCollapsed);
+  const aiPanelOpen = useAIPanelStore((s) => s.isOpen);
+  const openAgentPanel = useAIPanelStore((s) => s.openAgentPanel);
 
   const [showWizard, setShowWizard] = useState<boolean | null>(null);
 
@@ -64,6 +67,19 @@ export function AppShell() {
     void loadTree();
   }, [loadTree, setSection]);
 
+  useEffect(() => {
+    if (section.type === "agents" && section.view !== "settings") {
+      setAiPanelCollapsed(false);
+      openAgentPanel(null);
+      return;
+    }
+
+    if (section.type === "agent" && section.view !== "settings") {
+      setAiPanelCollapsed(false);
+      openAgentPanel(section.slug || null);
+    }
+  }, [openAgentPanel, section, setAiPanelCollapsed]);
+
   const inferredType = !selectedNode && selectedPath
     ? selectedPath.endsWith(".csv")
       ? "csv"
@@ -93,10 +109,30 @@ export function AppShell() {
   const renderContent = () => {
     if (section.type === "settings") return <SettingsPage />;
     if (section.type === "jobs") return <JobsManager />;
-    if (section.type === "agents") {
+    if (section.type === "agent" && section.view === "settings") {
+      return (
+        <AgentsWorkspace
+          selectedScope="agent"
+          selectedAgentSlug={section.slug || null}
+          initialMode="settings"
+          initialSettingsTarget={section.settingsTarget || section.slug || null}
+        />
+      );
+    }
+    if (section.type === "agents" && section.view === "settings") {
+      return (
+        <AgentsWorkspace
+          selectedScope="all"
+          selectedAgentSlug={null}
+          initialMode="settings"
+          initialSettingsTarget={section.settingsTarget || "directory"}
+        />
+      );
+    }
+    if (section.type === "agents" && !aiPanelOpen) {
       return <AgentsWorkspace selectedScope="all" selectedAgentSlug={null} />;
     }
-    if (section.type === "agent") {
+    if (section.type === "agent" && !aiPanelOpen) {
       return (
         <AgentsWorkspace
           selectedScope="agent"

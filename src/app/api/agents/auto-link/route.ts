@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { buildTree } from "@/lib/storage/tree-builder";
 import type { TreeNode } from "@/types";
 import {
+  resolveCompletionTimeoutSeconds,
   startConversationRun,
   waitForConversationCompletion,
 } from "@/lib/agents/conversation-runner";
@@ -35,15 +36,19 @@ ${pageList}
 Return ONLY a JSON array of page paths that are relevant to this task. Example: ["companies/competitors", "engineering/api-docs"]
 If no pages are relevant, return []. Return ONLY the JSON array, nothing else.`;
 
+    const timeoutSeconds = 30;
+
     const conversation = await startConversationRun({
       agentSlug: "general",
       title: `Auto-link: ${title}`.slice(0, 80),
       trigger: "manual",
       prompt,
-      timeoutSeconds: 30,
+      timeoutSeconds,
     });
 
-    const completion = await waitForConversationCompletion(conversation.id);
+    const completion = await waitForConversationCompletion(conversation.id, {
+      timeoutSeconds: resolveCompletionTimeoutSeconds(timeoutSeconds),
+    });
     if (completion.status !== "completed") {
       return NextResponse.json(
         { error: completion.output || "Auto-link failed" },

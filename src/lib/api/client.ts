@@ -38,6 +38,20 @@ export async function savePage(
   if (!res.ok) throw new Error(`Failed to save page: ${path}`);
 }
 
+export async function renderMarkdown(
+  markdown: string,
+  pagePath?: string
+): Promise<string> {
+  const res = await fetch("/api/ai/render-md", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ markdown, pagePath }),
+  });
+  if (!res.ok) throw new Error("Failed to render markdown");
+  const data = await res.json();
+  return data.html || "";
+}
+
 export async function createPageApi(
   parentPath: string,
   title: string

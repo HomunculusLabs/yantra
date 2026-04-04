@@ -1,6 +1,7 @@
 import TurndownService from "turndown";
 // @ts-expect-error — no types available for this package
 import { gfm } from "turndown-plugin-gfm";
+import { decodeDataviewAttribute } from "./dataview-shared";
 
 const turndown = new TurndownService({
   headingStyle: "atx",
@@ -44,6 +45,21 @@ turndown.addRule("wikiLink", {
     const pageName =
       (node as HTMLElement).getAttribute("data-page-name") || content;
     return `[[${pageName}]]`;
+  },
+});
+
+turndown.addRule("dataviewBlock", {
+  filter: (node) => {
+    return (
+      node.nodeName === "DIV" &&
+      node.getAttribute("data-dataview") === "true"
+    );
+  },
+  replacement: (_content, node) => {
+    const source = decodeDataviewAttribute(
+      (node as HTMLElement).getAttribute("data-dataview-source")
+    );
+    return `\n\`\`\`dataview\n${source}\n\`\`\`\n`;
   },
 });
 

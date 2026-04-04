@@ -12,6 +12,59 @@ export function getDaemonUrl(): string {
   return process.env.YANTRA_DAEMON_URL || "http://127.0.0.1:3001";
 }
 
+function toWebSocketOrigin(origin: string): string {
+  const url = new URL(origin);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  return url.toString().replace(/\/$/, "");
+}
+
+function sameOriginWebSocketUrl(
+  protocol: "http" | "https",
+  host: string,
+  pathName: string
+): string {
+  const wsProtocol = protocol === "https" ? "wss" : "ws";
+  return `${wsProtocol}://${host}${pathName}`;
+}
+
+export function getPublicDaemonEndpoints(input?: {
+  requestOrigin?: string;
+  requestHost?: string;
+  requestProtocol?: "http" | "https";
+}): {
+  ptyWebSocketUrl: string;
+  eventsWebSocketUrl: string;
+} {
+  const publicOrigin = process.env.YANTRA_DAEMON_PUBLIC_ORIGIN?.trim();
+  const host = input?.requestHost?.trim() || "";
+  const protocol = input?.requestProtocol || "http";
+
+  if (publicOrigin) {
+    const base = toWebSocketOrigin(publicOrigin);
+    return {
+      ptyWebSocketUrl: `${base}/api/daemon/pty`,
+      eventsWebSocketUrl: `${base}/api/daemon/events`,
+    };
+  }
+
+  const isLocalNextHost =
+    host === "localhost:3000" || host === "127.0.0.1:3000";
+
+  if (isLocalNextHost) {
+    const daemonUrl = new URL(getDaemonUrl());
+    const base = toWebSocketOrigin(daemonUrl.toString());
+    return {
+      ptyWebSocketUrl: `${base}/api/daemon/pty`,
+      eventsWebSocketUrl: `${base}/api/daemon/events`,
+    };
+  }
+
+  return {
+    ptyWebSocketUrl: sameOriginWebSocketUrl(protocol, host, "/api/daemon/pty"),
+    eventsWebSocketUrl: sameOriginWebSocketUrl(protocol, host, "/api/daemon/events"),
+  };
+}
+
 function safeEqual(left: string, right: string): boolean {
   const leftBuffer = Buffer.from(left);
   const rightBuffer = Buffer.from(right);

@@ -11,38 +11,98 @@ const KNOWN_PRESETS: Record<string, string> = {
   "0 */4 * * *": "Every 4 hours",
   "0 9 * * *": "Daily at 9:00 AM",
   "0 9 * * 1-5": "Weekdays at 9:00 AM",
-  "0 9 * * 1": "Weekly on Monday",
-  "0 9 1 * *": "Monthly on the 1st",
+  "0 9 * * 1": "Every Monday at 9:00 AM",
+  "0 9 1 * *": "Monthly on the 1st at 9:00 AM",
 };
+
+const DAY_NAMES: Record<string, string> = {
+  "0": "Sunday",
+  "1": "Monday",
+  "2": "Tuesday",
+  "3": "Wednesday",
+  "4": "Thursday",
+  "5": "Friday",
+  "6": "Saturday",
+  "7": "Sunday",
+};
+
+function isIntegerFieldWithin(value: string, min: number, max: number): boolean {
+  if (!/^\d+$/.test(value)) return false;
+  const parsed = Number.parseInt(value, 10);
+  return parsed >= min && parsed <= max;
+}
+
+function formatTime(hour: string, minute: string): string {
+  const hourNum = Number.parseInt(hour, 10);
+  const minuteNum = Number.parseInt(minute, 10);
+  const ampm = hourNum >= 12 ? "PM" : "AM";
+  const h12 = hourNum % 12 || 12;
+  return `${h12}:${String(minuteNum).padStart(2, "0")} ${ampm}`;
+}
+
+function toOrdinal(value: number): string {
+  const mod100 = value % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${value}th`;
+
+  switch (value % 10) {
+    case 1:
+      return `${value}st`;
+    case 2:
+      return `${value}nd`;
+    case 3:
+      return `${value}rd`;
+    default:
+      return `${value}th`;
+  }
+}
 
 export function cronToHuman(cron: string): string {
   if (KNOWN_PRESETS[cron]) return KNOWN_PRESETS[cron];
 
-  const parts = cron.split(" ");
+  const parts = cron.trim().split(/\s+/);
   if (parts.length !== 5) return cron;
 
-  const [min, hour, , , dow] = parts;
+  const [min, hour, dayOfMonth, month, dayOfWeek] = parts;
 
-  // */N minutes
-  if (min.startsWith("*/") && hour === "*") {
-    const n = min.slice(2);
-    const dayStr = dow === "1-5" ? " on weekdays" : dow === "0,6" ? " on weekends" : "";
-    return `Every ${n} min${dayStr}`;
+  if (min.startsWith("*/") && hour === "*" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
+    const n = Number.parseInt(min.slice(2), 10);
+    if (!Number.isFinite(n) || n < 1 || n > 59) return cron;
+    return `Every ${n} minute${n === 1 ? "" : "s"}`;
   }
-  // Every N hours
-  if (min === "0" && hour.startsWith("*/")) {
-    const n = hour.slice(2);
-    const dayStr = dow === "1-5" ? " on weekdays" : "";
-    return `Every ${n}h${dayStr}`;
+
+  if (min === "0" && hour === "*" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
+    return "Every hour";
   }
-  // Specific hour
-  if (min === "0" && !hour.includes("*") && !hour.includes("/")) {
-    const hourNum = parseInt(hour);
-    const ampm = hourNum >= 12 ? "PM" : "AM";
-    const h12 = hourNum > 12 ? hourNum - 12 : hourNum || 12;
-    const dayStr =
-      dow === "1-5" ? "Weekdays" : dow === "*" ? "Daily" : dow === "1" ? "Mondays" : `(${dow})`;
-    return `${dayStr} at ${h12}:00 ${ampm}`;
+
+  if (min === "0" && hour.startsWith("*/") && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
+    const n = Number.parseInt(hour.slice(2), 10);
+    if (!Number.isFinite(n) || n < 1 || n > 23) return cron;
+    return `Every ${n} hour${n === 1 ? "" : "s"}`;
+  }
+
+  const hasSpecificTime = isIntegerFieldWithin(min, 0, 59) && isIntegerFieldWithin(hour, 0, 23);
+  if (!hasSpecificTime) return cron;
+
+  const time = formatTime(hour, min);
+
+  if (dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
+    return `Daily at ${time}`;
+  }
+
+  if (dayOfMonth === "*" && month === "*" && dayOfWeek === "1-5") {
+    return `Weekdays at ${time}`;
+  }
+
+  if (dayOfMonth === "*" && month === "*" && dayOfWeek === "0,6") {
+    return `Weekends at ${time}`;
+  }
+
+  if (dayOfMonth === "*" && month === "*" && DAY_NAMES[dayOfWeek]) {
+    return `Every ${DAY_NAMES[dayOfWeek]} at ${time}`;
+  }
+
+  if (isIntegerFieldWithin(dayOfMonth, 1, 31) && month === "*" && dayOfWeek === "*") {
+    return `Monthly on the ${toOrdinal(Number.parseInt(dayOfMonth, 10))} at ${time}`;
   }
 
   return cron;
@@ -50,19 +110,37 @@ export function cronToHuman(cron: string): string {
 
 /** Short label for use in agent cards (e.g., "15m", "4h", "Daily 9am") */
 export function cronToShortLabel(cron: string): string {
-  const parts = cron.split(" ");
+  const parts = cron.trim().split(/\s+/);
   if (parts.length !== 5) return cron;
 
-  const [min, hour] = parts;
+  const [min, hour, dayOfMonth, month, dayOfWeek] = parts;
 
-  if (min.startsWith("*/") && hour === "*") return `${min.slice(2)}m`;
-  if (min === "0" && hour.startsWith("*/")) return `${hour.slice(2)}h`;
-  if (min === "0" && hour === "*") return "1h";
-  if (min === "0" && !hour.includes("*")) {
-    const h = parseInt(hour);
-    const ampm = h >= 12 ? "pm" : "am";
-    const h12 = h > 12 ? h - 12 : h || 12;
-    return `${h12}${ampm}`;
+  if (min.startsWith("*/") && hour === "*" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
+    return `${min.slice(2)}m`;
+  }
+
+  if (min === "0" && hour.startsWith("*/") && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
+    return `${hour.slice(2)}h`;
+  }
+
+  if (min === "0" && hour === "*" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
+    return "1h";
+  }
+
+  if (isIntegerFieldWithin(min, 0, 59) && isIntegerFieldWithin(hour, 0, 23)) {
+    const hourNum = Number.parseInt(hour, 10);
+    const minuteNum = Number.parseInt(min, 10);
+    const ampm = hourNum >= 12 ? "pm" : "am";
+    const h12 = hourNum % 12 || 12;
+    const minuteSuffix = minuteNum === 0 ? "" : `:${String(minuteNum).padStart(2, "0")}`;
+
+    if (dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
+      return `${h12}${minuteSuffix}${ampm}`;
+    }
+
+    if (dayOfMonth === "*" && month === "*" && dayOfWeek === "1-5") {
+      return `wkdy ${h12}${minuteSuffix}${ampm}`;
+    }
   }
 
   return cron;

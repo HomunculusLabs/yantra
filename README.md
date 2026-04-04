@@ -1,160 +1,112 @@
 # Yantra
 
-**Your knowledge base. Your AI team.**
+**Your knowledge base. Your AI team. Now desktop-first.**
 
-The AI-first startup OS where everything lives as markdown files on disk. No database. No vendor lock-in. Self-hosted. Your data never leaves your machine.
+Yantra is a local-first startup OS built on markdown files, a local daemon, and an Electron shell around the existing Next.js UI. Your vault stays on disk, your runtime stays local, and the app feels like a real Mac desktop app instead of a browser tab.
 
----
+## Quick start
 
-## Run locally in 2 minutes
+### Source checkout
+
+Requirements:
+
+- Bun `1.2.22`
+- Node `22.x`
+- macOS or Linux
 
 ```bash
-npm install
-npm run dev:all
+bun install --frozen-lockfile
+bun run verify:supply-chain
+bun run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). The onboarding wizard builds your custom AI team in 5 questions.
+That launches the Electron shell, which manages:
 
----
-
-## The problem
-
-Every time you start a new Claude session, it forgets everything. Your project context, your decisions, your research — gone. Scattered docs in Notion. AI sessions with no memory. Manual copy-paste between tools.
-
-## The solution
-
-One knowledge base. AI agents that remember everything. Scheduled jobs that compound. Your team grows while you sleep.
-
-> If it feels like enterprise workflow software, it's wrong. If it feels like watching a team work, it's right.
-
----
-
-## Everything you need. Nothing you don't.
-
-| Feature | What it does |
-|---|---|
-| **WYSIWYG + Markdown** | Rich text editing with Tiptap. Tables, code blocks, slash commands. |
-| **AI Agents** | Each has goals, skills, scheduled jobs. Watch them work like a real team. |
-| **Scheduled Jobs** | Cron-based agent automation. Reddit scout every 6 hours. Weekly reports on Monday. |
-| **Embedded HTML Apps** | Drop an `index.html` in any folder — it renders as an iframe. Full-screen mode. |
-| **Web Terminal** | Full Claude Code terminal in the browser. xterm.js + node-pty. |
-| **File-Based Everything** | No database. Markdown on disk. Your data is always yours, always portable. |
-| **Git-Backed History** | Every save auto-commits. Full diff viewer. Restore any page to any point in time. |
-| **Missions & Tasks** | Break goals into missions. Track progress with Kanban boards. |
-| **Internal Chat** | Built-in team channels. Agents and humans communicate. |
-| **Full-Text Search** | Cmd+K instant search across all pages. Fuzzy matching. |
-| **PDF & CSV Viewers** | First-class support for PDFs and spreadsheets. |
-| **Dark/Light Mode** | Theme toggle. Dark mode by default. |
-
----
-
-## Ship HTML apps inside your knowledge base
-
-This is the biggest difference between Yantra and tools like Obsidian or Notion. Drop an `index.html` in any directory — it renders as an embedded app. Full-screen mode with sidebar auto-collapse. AI-generated apps written directly into your KB. Version controlled via git. No build step.
-
----
-
-## Not another note-taking app
-
-| Feature | Yantra | Obsidian | Notion |
-|---|---|---|---|
-| AI agent orchestration | Yes | No | No |
-| Scheduled cron jobs | Yes | No | No |
-| Embedded HTML apps | Yes | No | No |
-| Web terminal | Yes | No | No |
-| Self-hosted, files on disk | Yes | Yes | No |
-| No database / no lock-in | Yes | Yes | No |
-| Git-backed version history | Yes | Via plugin | No |
-| WYSIWYG + Markdown | Yes | Yes | Yes |
-
----
-
-## Hire your AI team in 5 questions
-
-Yantra ships with 20 pre-built agent templates. Each has a role, recurring jobs, and a workspace in the knowledge base.
-
-| Department | Agents |
-|---|---|
-| **Leadership** | CEO, COO, CFO, CTO |
-| **Product** | Product Manager, UX Designer |
-| **Marketing** | Content Marketer, SEO Specialist, Social Media, Growth Marketer, Copywriter |
-| **Engineering** | Editor, QA Agent, DevOps Engineer |
-| **Sales & Support** | Sales Agent, Customer Success |
-| **Analytics** | Data Analyst |
-| **Operations** | People Ops, Legal Advisor, Researcher |
-
----
-
-## How it works
-
-1. **Install & Run** — One command. Next.js + daemon start.
-2. **Answer 5 Questions** — Yantra builds your custom AI team.
-3. **Watch Your Team Work** — Agents create missions, write content, scout Reddit, file reports.
-4. **Knowledge Compounds** — Every agent run, every edit adds to the KB. Context builds over time.
-
----
+- the Next.js UI on `127.0.0.1:3000`
+- the Yantra daemon on `127.0.0.1:3001`
 
 ## Architecture
 
+Yantra now has three layers:
+
+1. **Electron shell** — desktop window, lifecycle, startup/shutdown orchestration
+2. **Next.js app** — UI, API routes, editor, sidebar, search, panels
+3. **Yantra daemon** — PTY sessions, jobs, websockets, SQLite bootstrap, agent runtime
+
+Key paths:
+
+```text
+electron/                Electron main/runtime/seed code
+src/app/                 Next.js UI + API routes
+server/yantra-daemon.ts  Local daemon backend
+src/lib/config/          Runtime path + roots config
+scripts/                 Desktop staging and verification scripts
 ```
-yantra/
-  src/
-    app/api/         -> Next.js API routes
-    components/      -> React components (sidebar, editor, agents, jobs, terminal)
-    stores/          -> Zustand state management
-    lib/             -> Storage, markdown, git, agents, jobs
-  server/
-    yantra-daemon.ts -> WebSocket + job scheduler + agent executor
-  data/
-    .agents/.library/ -> 20 pre-built agent templates
-    getting-started/  -> Default KB page
+
+## Bun-first and supply-chain hardening
+
+This repo now treats Bun as the package manager authority:
+
+- `packageManager` is pinned to `bun@1.2.22`
+- direct dependencies are exact-pinned
+- `bun.lock` is canonical
+- `bunfig.toml` enforces exact saves, frozen lockfile, and a minimum release age
+- `trustedDependencies` is explicitly allowlisted
+- `bun run verify:supply-chain` fails if unsafe package-runner or lifecycle patterns come back
+
+Native recovery is manual, not automatic:
+
+```bash
+bun run doctor:native
 ```
 
-**Tech stack:** Next.js 16, TypeScript, Tailwind CSS, shadcn/ui, Tiptap, Zustand, xterm.js, node-cron
+## Desktop build flow
 
----
+```bash
+bun run build            # build web + daemon + electron + staged runtime
+bun run dist             # package desktop app with electron-builder
+```
 
-## Requirements
+The staged desktop runtime is validated by:
 
-- **Node.js** 20+
-- **Claude Code CLI** (`npm install -g @anthropic-ai/claude-code`)
-- macOS or Linux (Windows via WSL)
+```bash
+bun run verify:desktop-runtime
+```
+
+## Optional browser/container flow
+
+Yantra still supports a browser-first deployment if you want it:
+
+```bash
+bun run build:web
+bun run build:daemon
+bun run start:web
+bun run start:daemon
+```
+
+In container/reverse-proxy mode, set `YANTRA_DAEMON_HOST=0.0.0.0`.
 
 ## Configuration
 
-```bash
-cp .env.example .env.local
-```
+Use `.env.example` as the starting point. Desktop builds seed `.env.local` into the user config directory automatically on first launch.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `KB_PASSWORD` | _(empty)_ | Password to protect the UI. Leave empty for no auth. |
-| `DOMAIN` | `localhost` | Domain for the app. |
-| `ABSURD_DATABASE_URL` | `postgresql://absurd:absurd@localhost:5433/absurd` | Required Postgres connection for Absurd durable job execution. |
-| `YANTRA_ABSURD_QUEUE` | `agent-jobs` | Absurd queue prefix used for agent job runs; each agent gets its own derived queue. |
+Important variables:
 
-## Commands
+- `KB_PASSWORD`
+- `DOMAIN`
+- `YANTRA_DAEMON_HOST`
+- `YANTRA_DAEMON_PUBLIC_ORIGIN`
+- `ABSURD_DATABASE_URL`
+- `YANTRA_ABSURD_QUEUE`
 
-```bash
-npm run dev          # Next.js dev server (port 3000)
-npm run dev:daemon   # Terminal + job scheduler (port 3001)
-npm run dev:all      # Both servers
-npm run build        # Production build
-npm run start        # Production mode (both servers)
-```
+## Debugging
 
----
-
-## Ready to build your AI team?
-
-Yantra is free, open source, and self-hosted. Your data never leaves your machine.
-
-From the repo root:
+To debug the browser UI in a normal browser session:
 
 ```bash
-npm run dev:all
+bun run debug:chrome
 ```
 
----
+## License
 
-MIT License
+MIT

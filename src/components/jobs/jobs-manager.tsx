@@ -25,6 +25,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { SchedulePicker } from "@/components/mission-control/schedule-picker";
 import { cronToHuman } from "@/lib/agents/cron-utils";
 import type { JobTaskStatus } from "@/types/jobs";
 
@@ -433,16 +434,11 @@ export function JobsManager() {
                 className="mt-1 h-8 text-[13px]"
               />
             </div>
-            <div>
-              <label className="text-[11px] text-muted-foreground uppercase tracking-wide">Schedule (cron)</label>
-              <Input
-                value={form.schedule}
-                onChange={(e) => setForm((f) => ({ ...f, schedule: e.target.value }))}
-                placeholder="0 9 * * *"
-                className="mt-1 h-8 text-[13px] font-mono"
-              />
-              <p className="text-[10px] text-muted-foreground mt-0.5">{cronToHuman(form.schedule)}</p>
-            </div>
+            <SchedulePicker
+              label="Schedule"
+              value={form.schedule}
+              onChange={(schedule) => setForm((f) => ({ ...f, schedule }))}
+            />
             <div>
               <label className="text-[11px] text-muted-foreground uppercase tracking-wide">Prompt</label>
               <textarea
@@ -496,15 +492,11 @@ export function JobsManager() {
                 className="mt-1 h-8 text-[13px]"
               />
             </div>
-            <div>
-              <label className="text-[11px] text-muted-foreground uppercase tracking-wide">Schedule (cron)</label>
-              <Input
-                value={form.schedule}
-                onChange={(e) => setForm((f) => ({ ...f, schedule: e.target.value }))}
-                className="mt-1 h-8 text-[13px] font-mono"
-              />
-              <p className="text-[10px] text-muted-foreground mt-0.5">{cronToHuman(form.schedule)}</p>
-            </div>
+            <SchedulePicker
+              label="Schedule"
+              value={form.schedule}
+              onChange={(schedule) => setForm((f) => ({ ...f, schedule }))}
+            />
             <div>
               <label className="text-[11px] text-muted-foreground uppercase tracking-wide">Prompt</label>
               <textarea

@@ -1,6 +1,7 @@
 import fs from "fs";
 import fsp from "fs/promises";
 import path from "path";
+import { getYantraAppPaths } from "@/lib/config/app-paths";
 
 export interface YantraRoots {
   vaultRoot: string;
@@ -23,16 +24,23 @@ function normalizeRoot(input: string): string {
   return path.resolve(input);
 }
 
+function resolveDefaultRoot(rawValue: string | undefined, fallback: string): string {
+  const value = rawValue?.trim() || fallback;
+  return path.isAbsolute(value)
+    ? normalizeRoot(value)
+    : normalizeRoot(path.join(getYantraAppPaths().projectRoot, value));
+}
+
 function defaultVaultRoot(): string {
-  return path.join(process.cwd(), "data");
+  return resolveDefaultRoot(process.env.YANTRA_DEFAULT_VAULT_ROOT, "data");
 }
 
 function defaultRuntimeRoot(): string {
-  return path.join(process.cwd(), "data");
+  return resolveDefaultRoot(process.env.YANTRA_DEFAULT_RUNTIME_ROOT, "data");
 }
 
 export function getYantraRootsConfigPath(): string {
-  return path.join(process.cwd(), "yantra-roots.json");
+  return getYantraAppPaths().rootsConfigPath;
 }
 
 export function clearYantraRootsCache(): void {
@@ -55,13 +63,15 @@ export function readYantraRootsConfig(): YantraRootsConfigFile {
 export async function saveYantraRootsConfig(
   config: YantraRootsConfigFile
 ): Promise<YantraRootsConfigFile> {
+  const configPath = getYantraRootsConfigPath();
   const next: YantraRootsConfigFile = {
     vaultRoot: normalizeRoot(config.vaultRoot?.trim() || defaultVaultRoot()),
     runtimeRoot: normalizeRoot(config.runtimeRoot?.trim() || defaultRuntimeRoot()),
   };
 
+  await fsp.mkdir(path.dirname(configPath), { recursive: true });
   await fsp.writeFile(
-    getYantraRootsConfigPath(),
+    configPath,
     `${JSON.stringify(next, null, 2)}\n`,
     "utf-8"
   );
@@ -113,7 +123,7 @@ function assertInsideRoot(absPath: string, root: string, label: string): string 
 export function ensureVaultRootExists(): string {
   const { vaultRoot } = getYantraRoots();
   if (!fs.existsSync(vaultRoot)) {
-    throw new Error(`Configured vault root does not exist: ${vaultRoot}`);
+    fs.mkdirSync(vaultRoot, { recursive: true });
   }
   return vaultRoot;
 }

@@ -76,6 +76,10 @@
 
 [2026-04-03] Added tmux-backed agent launching. Launcher resolution now defaults daemon-managed agent runs to tmux when available, the daemon exposes tmux session metadata/attach commands for active sessions, and legacy direct agent runs also prefer tmux with a safe direct fallback when tmux is unavailable.
 
+[2026-04-03] Added tmux attach affordances to agent session UIs. Heartbeat/manual run APIs now return daemon session runtime metadata, live agent sessions persist tmux attach info across reconnects, and both the live agent panel and the agent detail Sessions tab can copy the resolved tmux attach command.
+
+[2026-04-03] Hardened WebTerminal against xterm renderer race conditions and terminal flicker. The terminal now keeps stable callback refs instead of recreating the xterm instance on parent re-renders, and guarded fit/resize calls so xterm isn’t measured while detached or at zero size.
+
 [2026-04-03] Added job description/prompt field — jobs now have a body that serves as the prompt sent to the agent. Visible as a preview on the job card, editable in the expanded edit form. Add-job form also has a prompt textarea. Persona instructions now render as formatted markdown (prose) using a /api/ai/render-md endpoint, with click-to-edit switching to raw markdown textarea. Added @tailwindcss/typography for prose styling.
 
 [2026-04-03] Replaced emoji with Lucide icons for agents in the sidebar. Each agent slug maps to a specific icon: General=Bot, Editor=Pencil, CEO=Crown, Content Marketer=Megaphone, SEO=Search, QA=ShieldCheck, Sales=BarChart3, Developer=Code. Unknown agents fall back to Bot icon.
@@ -87,3 +91,7 @@
 [2026-04-03] Fixed scheduled plays never executing: added cron registration for plays with schedule triggers in play-manager.ts. Plays with schedule triggers now get registered with node-cron on app startup (via /api/agents/personas init) and re-registered when plays are created/updated. Added "schedule" case to trigger-engine.ts. Rewrote README.md with updated problem/solution framing, feature matrix, comparison table, and stronger onboarding copy.
 
 [2026-04-03] Added dataview-style markdown rendering for fenced ```dataview``` blocks. Markdown preview now renders those queries server-side against vault notes, preserves the original query block during editor round-trips, and the Getting Started page includes a live example.
+
+[2026-04-04] Converted Yantra to a Bun-first Electron desktop workflow. Added Electron runtime/main/seed files, desktop staging + verification scripts, exact-pinned Bun package policy with supply-chain checks, centralized app path/DB bootstrap logic, server/daemon health endpoint improvements, and removed the legacy terminal-server entrypoint.
+
+[2026-04-04] Fixed Electron/Desktop dev startup failing to resolve Tailwind from a parent workspace root. Investigation showed Next 16 Turbopack dev was selecting `/Users/t3rpz/projects` because the parent directory also contains lockfiles/package metadata, so the web bootstrap now keeps the env sanitized and forces `next dev --webpack`, which restored `GET /` and Electron renderer startup.

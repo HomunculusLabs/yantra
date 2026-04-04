@@ -22,14 +22,17 @@ import {
   PilcrowRight,
   PilcrowLeft,
 } from "lucide-react";
-import { useEditorStore } from "@/stores/editor-store";
+import { useEditorStore, type EditorPaneId } from "@/stores/editor-store";
 
 interface EditorToolbarProps {
   editor: Editor | null;
+  paneId?: EditorPaneId;
 }
 
-export function EditorToolbar({ editor }: EditorToolbarProps) {
-  const frontmatter = useEditorStore((s) => s.frontmatter);
+export function EditorToolbar({ editor, paneId }: EditorToolbarProps) {
+  const frontmatter = useEditorStore((s) =>
+    paneId ? s.panes[paneId].frontmatter : s.frontmatter
+  );
   const updateFrontmatter = useEditorStore((s) => s.updateFrontmatter);
   const isRtl = frontmatter?.dir === "rtl";
 
@@ -132,7 +135,7 @@ export function EditorToolbar({ editor }: EditorToolbarProps) {
     { separator: true },
     {
       icon: isRtl ? PilcrowLeft : PilcrowRight,
-      action: () => updateFrontmatter({ dir: isRtl ? undefined : "rtl" }),
+      action: () => updateFrontmatter({ dir: isRtl ? undefined : "rtl" }, paneId),
       isActive: isRtl,
       label: isRtl ? "Switch to LTR" : "Switch to RTL",
     },

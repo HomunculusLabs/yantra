@@ -1,0 +1,17 @@
+appId: com.homunculuslabs.yantra
+productName: Yantra
+directories:
+  output: release
+files:
+  - dist/electron/**
+  - package.json
+extraResources:
+  - from: dist/app-runtime
+    to: app-runtime
+asar: true
+mac:
+  category: public.app-category.productivity
+  target:
+    - dmg
+    - zip
+  hardenedRuntime: false

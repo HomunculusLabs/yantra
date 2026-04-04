@@ -8,7 +8,7 @@ import "./load-env";
  * - WebSocket Event Bus (real-time updates to frontend)
  * - SQLite database initialization
  *
- * Usage: npx tsx server/yantra-daemon.ts
+ * Usage: bun run dev:daemon:child
  */
 
 import { WebSocketServer, WebSocket } from "ws";
@@ -44,6 +44,7 @@ import {
 import type { ResolvedLaunchSpec } from "../src/types/launchers";
 
 const PORT = 3001;
+const HOST = process.env.YANTRA_DAEMON_HOST?.trim() || "127.0.0.1";
 const ROOTS = getYantraRoots();
 const DATA_DIR = ROOTS.vaultRoot;
 const AGENTS_DIR = ROOTS.runtimeAgentsRoot;
@@ -308,7 +309,7 @@ setInterval(() => {
 }, 60 * 1000);
 
 function handlePtyConnection(ws: WebSocket, req: http.IncomingMessage): void {
-  const url = new URL(req.url || "", `http://localhost:${PORT}`);
+  const url = new URL(req.url || "", `http://${HOST}:${PORT}`);
   const sessionId = url.searchParams.get("id") || `session-${Date.now()}`;
   const prompt = url.searchParams.get("prompt");
 
@@ -1030,6 +1031,8 @@ const server = http.createServer(async (req, res) => {
     res.end(
       JSON.stringify({
         status: "ok",
+        service: "yantra-daemon",
+        mode: process.env.YANTRA_APP_MODE || "source",
         ptySessions: sessions.size,
         scheduledJobs: scheduledJobs.size,
         scheduledHeartbeats: scheduledHeartbeats.size,
@@ -1126,14 +1129,14 @@ scheduleWatcher.on("all", () => {
   queueScheduleReload();
 });
 
-server.listen(PORT, () => {
-  console.log(`Yantra Daemon running on port ${PORT}`);
-  console.log(`  Terminal WebSocket: ws://localhost:${PORT}/api/daemon/pty`);
-  console.log(`  Events WebSocket: ws://localhost:${PORT}/api/daemon/events`);
-  console.log(`  Session API: http://localhost:${PORT}/sessions`);
-  console.log(`  Reload schedules: POST http://localhost:${PORT}/reload-schedules`);
-  console.log(`  Health check: http://localhost:${PORT}/health`);
-  console.log(`  Trigger endpoint: POST http://localhost:${PORT}/trigger`);
+server.listen(PORT, HOST, () => {
+  console.log(`Yantra Daemon running on ${HOST}:${PORT}`);
+  console.log(`  Terminal WebSocket: ws://${HOST}:${PORT}/api/daemon/pty`);
+  console.log(`  Events WebSocket: ws://${HOST}:${PORT}/api/daemon/events`);
+  console.log(`  Session API: http://${HOST}:${PORT}/sessions`);
+  console.log(`  Reload schedules: POST http://${HOST}:${PORT}/reload-schedules`);
+  console.log(`  Health check: http://${HOST}:${PORT}/health`);
+  console.log(`  Trigger endpoint: POST http://${HOST}:${PORT}/trigger`);
   console.log(`  Absurd queue prefix: ${getAbsurdQueuePrefix()}`);
   console.log(`  Using claude: ${CLAUDE_PATH}`);
   console.log(`  Using tmux: ${TMUX_AVAILABLE ? TMUX_PATH : "disabled (fallback to direct)"}`);

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ArrowLeft,
   Bot,
   CheckCircle2,
   FileText,
@@ -19,12 +20,14 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { SchedulePicker } from "@/components/mission-control/schedule-picker";
 import { WebTerminal } from "@/components/terminal/web-terminal";
 import { useTreeStore } from "@/stores/tree-store";
 import { useAppStore } from "@/stores/app-store";
 import type { TreeNode } from "@/types";
 import type { ConversationDetail, ConversationMeta } from "@/types/conversations";
 import type { JobConfig } from "@/types/jobs";
+import { cronToHuman } from "@/lib/agents/cron-utils";
 
 type TriggerFilter = "all" | "manual" | "job" | "heartbeat";
 type StatusFilter = "all" | "running" | "failed";
@@ -777,9 +780,13 @@ function AgentStackSettingsCard({
 export function AgentsWorkspace({
   selectedAgentSlug,
   selectedScope = "all",
+  initialMode = "composer",
+  initialSettingsTarget = null,
 }: {
   selectedAgentSlug?: string | null;
   selectedScope?: "all" | "agent";
+  initialMode?: "composer" | "settings";
+  initialSettingsTarget?: string | null;
 }) {
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [conversations, setConversations] = useState<ConversationMeta[]>([]);
@@ -813,8 +820,19 @@ export function AgentsWorkspace({
   const [deletingAgent, setDeletingAgent] = useState(false);
   const [newAgentDraft, setNewAgentDraft] = useState<NewAgentDraft>(DEFAULT_NEW_AGENT);
   const treeNodes = useTreeStore((state) => state.nodes);
+  const selectedPath = useTreeStore((state) => state.selectedPath);
+  const selectedNode = useTreeStore((state) =>
+    state.selectedPath ? state.nodeByPath[state.selectedPath] ?? null : null
+  );
   const selectPage = useTreeStore((state) => state.selectPage);
+  const section = useAppStore((state) => state.section);
   const setSection = useAppStore((state) => state.setSection);
+  const agentSettingsReturnSection = useAppStore(
+    (state) => state.agentSettingsReturnSection
+  );
+  const setAgentSettingsReturnSection = useAppStore(
+    (state) => state.setAgentSettingsReturnSection
+  );
 
   const allPages = flattenTree(treeNodes);
   const settingsAgentSlug =
@@ -928,11 +946,22 @@ export function AgentsWorkspace({
     setActiveAgentSlug(selectedScope === "agent" ? selectedAgentSlug || null : null);
     setSelectedConversationId(null);
     setSelectedConversation(null);
-    setSettingsTarget(null);
     setHasLoadedConversations(false);
     setConversationsLoading(true);
+    if (initialMode === "settings") {
+      setSettingsTarget(
+        initialSettingsTarget ||
+          (selectedScope === "agent" ? selectedAgentSlug || null : "directory")
+      );
+      setActiveSettingsTab("definition");
+      setSelectedJobId(null);
+      setJobDraft(null);
+      setMode("settings");
+      return;
+    }
+    setSettingsTarget(null);
     setMode("composer");
-  }, [selectedAgentSlug, selectedScope]);
+  }, [initialMode, initialSettingsTarget, selectedAgentSlug, selectedScope]);
 
   useEffect(() => {
     if (mode === "settings" && settingsAgentSlug) {
@@ -999,6 +1028,11 @@ export function AgentsWorkspace({
   }
 
   function exitSettings() {
+    if (section.view === "settings") {
+      setSection(agentSettingsReturnSection || { type: "page" });
+      setAgentSettingsReturnSection(null);
+      return;
+    }
     setSettingsTarget(null);
     setSelectedJobId(null);
     setJobDraft(null);
@@ -1284,6 +1318,28 @@ export function AgentsWorkspace({
   const settingsAgent = settingsAgentSlug
     ? agents.find((agent) => agent.slug === settingsAgentSlug) || null
     : null;
+  const nextAgentSlug = slugify(newAgentDraft.slug || newAgentDraft.name);
+  const canCreateAgent =
+    Boolean(newAgentDraft.name.trim()) &&
+    Boolean(newAgentDraft.role.trim()) &&
+    Boolean(nextAgentSlug);
+  const settingsReturnLabel =
+    section.view === "settings"
+      ? agentSettingsReturnSection?.type === "page"
+        ? selectedNode?.frontmatter?.title ||
+          selectedNode?.name ||
+          selectedPath?.split("/").pop() ||
+          "page"
+        : agentSettingsReturnSection?.type === "jobs"
+          ? "jobs"
+          : agentSettingsReturnSection?.type === "settings"
+            ? "settings"
+            : agentSettingsReturnSection?.type === "agent"
+              ? agentSettingsReturnSection.slug || "agent"
+              : agentSettingsReturnSection?.type === "agents"
+                ? "agents"
+                : "workspace"
+      : null;
 
   return (
     <div className="flex flex-1 overflow-hidden">
@@ -1478,22 +1534,54 @@ export function AgentsWorkspace({
               <div className="flex items-start justify-between gap-3">
                 {settingsTarget === "directory" || !settingsTarget ? (
                   <div>
+                    {settingsReturnLabel ? (
+                      <button
+                        onClick={exitSettings}
+                        className="mb-2 flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                      >
+                        <ArrowLeft className="h-3.5 w-3.5" />
+                        Back to {settingsReturnLabel}
+                      </button>
+                    ) : null}
                     <h3 className="text-[15px] font-semibold">Agent settings</h3>
                     <p className="text-[11px] text-muted-foreground">
                       Big-picture management for your team. Add agents, remove agents, or open detailed settings.
                     </p>
                   </div>
                 ) : settingsTarget === "__new__" ? (
-                  <div>
-                    <h3 className="text-[15px] font-semibold">Create agent</h3>
-                    <p className="text-[11px] text-muted-foreground">
-                      Add a new agent to the team and define its default heartbeat and instructions.
-                    </p>
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">{newAgentDraft.emoji || "🤖"}</span>
+                    <div>
+                      {settingsReturnLabel ? (
+                        <button
+                          onClick={exitSettings}
+                          className="mb-2 flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                        >
+                          <ArrowLeft className="h-3.5 w-3.5" />
+                          Back to {settingsReturnLabel}
+                        </button>
+                      ) : null}
+                      <h3 className="text-[15px] font-semibold">
+                        {newAgentDraft.name.trim() || "New agent"}
+                      </h3>
+                      <p className="text-[11px] text-muted-foreground">
+                        Start with the definition, then continue into stack and jobs once the agent exists.
+                      </p>
+                    </div>
                   </div>
                 ) : (
                   <div className="flex items-center gap-3">
                     <span className="text-2xl">{settingsAgent?.emoji || "🤖"}</span>
                     <div>
+                      {settingsReturnLabel ? (
+                        <button
+                          onClick={exitSettings}
+                          className="mb-2 flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                        >
+                          <ArrowLeft className="h-3.5 w-3.5" />
+                          Back to {settingsReturnLabel}
+                        </button>
+                      ) : null}
                       <h3 className="text-[15px] font-semibold">
                         {settingsAgent?.name || "Agent settings"}
                       </h3>
@@ -1511,7 +1599,7 @@ export function AgentsWorkspace({
                     </Button>
                   ) : null}
                   <Button variant="outline" size="sm" className="h-8 text-xs" onClick={exitSettings}>
-                    Done
+                    {section.view === "settings" ? "Close" : "Done"}
                   </Button>
                 </div>
               </div>
@@ -1578,167 +1666,276 @@ export function AgentsWorkspace({
                     ))}
                   </div>
                 ) : settingsTarget === "__new__" ? (
-                  <div className="mx-auto w-full max-w-3xl space-y-6">
-                    <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <label className="space-y-1 text-[11px] text-muted-foreground">
-                          <span>Name</span>
-                          <input
-                            value={newAgentDraft.name}
-                            onChange={(event) =>
-                              setNewAgentDraft((current) => {
-                                const nextName = event.target.value;
-                                const currentDerivedSlug = slugify(current.name);
-                                return {
-                                  ...current,
-                                  name: nextName,
-                                  slug:
-                                    !current.slug || current.slug === currentDerivedSlug
-                                      ? slugify(nextName)
-                                      : current.slug,
-                                };
-                              })
-                            }
-                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
-                            placeholder="Editor"
-                          />
-                        </label>
-                        <label className="space-y-1 text-[11px] text-muted-foreground">
-                          <span>Slug</span>
-                          <input
-                            value={newAgentDraft.slug}
-                            onChange={(event) =>
-                              setNewAgentDraft({
-                                ...newAgentDraft,
-                                slug: slugify(event.target.value),
-                              })
-                            }
-                            className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground"
-                            placeholder="editor"
-                          />
-                        </label>
-                        <label className="space-y-1 text-[11px] text-muted-foreground">
-                          <span>Role</span>
-                          <input
-                            value={newAgentDraft.role}
-                            onChange={(event) =>
-                              setNewAgentDraft({ ...newAgentDraft, role: event.target.value })
-                            }
-                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
-                            placeholder="Product writing agent"
-                          />
-                        </label>
-                        <label className="space-y-1 text-[11px] text-muted-foreground">
-                          <span>Heartbeat</span>
-                          <input
-                            value={newAgentDraft.heartbeat}
-                            onChange={(event) =>
-                              setNewAgentDraft({
-                                ...newAgentDraft,
-                                heartbeat: event.target.value,
-                              })
-                            }
-                            className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground"
-                          />
-                        </label>
-                        <label className="space-y-1 text-[11px] text-muted-foreground">
-                          <span>Department</span>
-                          <input
-                            value={newAgentDraft.department}
-                            onChange={(event) =>
-                              setNewAgentDraft({
-                                ...newAgentDraft,
-                                department: event.target.value,
-                              })
-                            }
-                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
-                          />
-                        </label>
-                        <label className="space-y-1 text-[11px] text-muted-foreground">
-                          <span>Type</span>
-                          <input
-                            value={newAgentDraft.type}
-                            onChange={(event) =>
-                              setNewAgentDraft({ ...newAgentDraft, type: event.target.value })
-                            }
-                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
-                          />
-                        </label>
-                        <label className="col-span-2 space-y-1 text-[11px] text-muted-foreground">
-                          <span>Workspace</span>
-                          <input
-                            value={newAgentDraft.workspace}
-                            onChange={(event) =>
-                              setNewAgentDraft({
-                                ...newAgentDraft,
-                                workspace: event.target.value,
-                              })
-                            }
-                            className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground"
-                            placeholder="workspace"
-                          />
-                        </label>
-                        <div className="col-span-2 space-y-2 text-[11px] text-muted-foreground">
-                          <span>Avatar</span>
-                          <div className="flex flex-wrap gap-2">
-                            {AGENT_EMOJI_OPTIONS.map((emoji) => (
-                              <button
-                                key={emoji}
-                                onClick={() =>
-                                  setNewAgentDraft({
-                                    ...newAgentDraft,
-                                    emoji,
-                                  })
-                                }
-                                className={cn(
-                                  "rounded-lg border px-3 py-2 text-lg transition-colors",
-                                  newAgentDraft.emoji === emoji
-                                    ? "border-primary bg-primary/10"
-                                    : "border-border hover:bg-accent/40"
-                                )}
-                              >
-                                {emoji}
-                              </button>
-                            ))}
-                          </div>
+                  <>
+                    <div className="rounded-xl border border-border p-4">
+                      <div className="mb-3 flex items-center justify-between">
+                        <div>
+                          <h4 className="text-[13px] font-semibold">Agent definition</h4>
+                          <p className="text-[11px] text-muted-foreground">
+                            Create the agent first, then continue into the full stack and jobs configuration.
+                          </p>
                         </div>
-                        <label className="col-span-2 space-y-1 text-[11px] text-muted-foreground">
-                          <span>Instructions</span>
-                          <textarea
-                            value={newAgentDraft.body}
-                            onChange={(event) =>
-                              setNewAgentDraft({ ...newAgentDraft, body: event.target.value })
-                            }
-                            className="min-h-[220px] w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
-                            placeholder="Define how this agent should work inside Yantra and the KB."
-                          />
-                        </label>
-                      </div>
-                      <div className="mt-4 flex items-center justify-between">
-                        <label className="flex items-center gap-2 text-[12px] text-muted-foreground">
-                          <input
-                            type="checkbox"
-                            checked={newAgentDraft.active}
-                            onChange={(event) =>
-                              setNewAgentDraft({
-                                ...newAgentDraft,
-                                active: event.target.checked,
-                              })
-                            }
-                          />
-                          Start active
-                        </label>
                         <div className="flex gap-2">
-                          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={openAgentDirectory}>
-                            Cancel
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 text-xs"
+                            onClick={openAgentDirectory}
+                          >
+                            Directory
                           </Button>
-                          <Button size="sm" className="h-8 text-xs" onClick={createAgent} disabled={creatingAgent}>
+                          <Button
+                            size="sm"
+                            className="h-8 text-xs"
+                            onClick={createAgent}
+                            disabled={creatingAgent || !canCreateAgent}
+                          >
                             {creatingAgent ? "Creating..." : "Create agent"}
                           </Button>
                         </div>
                       </div>
+                      <div className="flex items-center gap-2 border-t border-border pt-3">
+                        <AgentSettingsTabButton
+                          active={activeSettingsTab === "definition"}
+                          onClick={() => setActiveSettingsTab("definition")}
+                        >
+                          Definition
+                        </AgentSettingsTabButton>
+                        <AgentSettingsTabButton
+                          active={activeSettingsTab === "stack"}
+                          onClick={() => setActiveSettingsTab("stack")}
+                        >
+                          Stack
+                        </AgentSettingsTabButton>
+                        <AgentSettingsTabButton
+                          active={activeSettingsTab === "jobs"}
+                          onClick={() => setActiveSettingsTab("jobs")}
+                        >
+                          Jobs
+                        </AgentSettingsTabButton>
+                      </div>
                     </div>
-                  </div>
+
+                    {activeSettingsTab === "definition" ? (
+                      <div className="rounded-xl border border-border p-5">
+                        <div className="mb-4">
+                          <h4 className="text-[13px] font-semibold">Definition</h4>
+                          <p className="text-[11px] text-muted-foreground">
+                            Identity, cadence, workspace, and base instructions for the new agent.
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <label className="space-y-1.5 text-[11px] text-muted-foreground">
+                            <span>Name</span>
+                            <input
+                              value={newAgentDraft.name}
+                              onChange={(event) =>
+                                setNewAgentDraft((current) => {
+                                  const nextName = event.target.value;
+                                  const currentDerivedSlug = slugify(current.name);
+                                  return {
+                                    ...current,
+                                    name: nextName,
+                                    slug:
+                                      !current.slug || current.slug === currentDerivedSlug
+                                        ? slugify(nextName)
+                                        : current.slug,
+                                  };
+                                })
+                              }
+                              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
+                              placeholder="Editor"
+                            />
+                          </label>
+                          <label className="space-y-1.5 text-[11px] text-muted-foreground">
+                            <span>Slug</span>
+                            <input
+                              value={newAgentDraft.slug}
+                              onChange={(event) =>
+                                setNewAgentDraft({
+                                  ...newAgentDraft,
+                                  slug: slugify(event.target.value),
+                                })
+                              }
+                              className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground"
+                              placeholder="editor"
+                            />
+                          </label>
+                          <label className="space-y-1.5 text-[11px] text-muted-foreground">
+                            <span>Role</span>
+                            <input
+                              value={newAgentDraft.role}
+                              onChange={(event) =>
+                                setNewAgentDraft({ ...newAgentDraft, role: event.target.value })
+                              }
+                              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
+                              placeholder="Product writing agent"
+                            />
+                          </label>
+                          <label className="space-y-1.5 text-[11px] text-muted-foreground">
+                            <span>Heartbeat</span>
+                            <input
+                              value={newAgentDraft.heartbeat}
+                              onChange={(event) =>
+                                setNewAgentDraft({
+                                  ...newAgentDraft,
+                                  heartbeat: event.target.value,
+                                })
+                              }
+                              className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground"
+                            />
+                          </label>
+                          <label className="space-y-1.5 text-[11px] text-muted-foreground">
+                            <span>Department</span>
+                            <input
+                              value={newAgentDraft.department}
+                              onChange={(event) =>
+                                setNewAgentDraft({
+                                  ...newAgentDraft,
+                                  department: event.target.value,
+                                })
+                              }
+                              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
+                            />
+                          </label>
+                          <label className="space-y-1.5 text-[11px] text-muted-foreground">
+                            <span>Type</span>
+                            <input
+                              value={newAgentDraft.type}
+                              onChange={(event) =>
+                                setNewAgentDraft({ ...newAgentDraft, type: event.target.value })
+                              }
+                              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
+                            />
+                          </label>
+                          <label className="space-y-1.5 text-[11px] text-muted-foreground">
+                            <span>Avatar</span>
+                            <div className="flex flex-wrap gap-2 pt-1">
+                              {AGENT_EMOJI_OPTIONS.map((emoji) => (
+                                <button
+                                  key={emoji}
+                                  type="button"
+                                  onClick={() =>
+                                    setNewAgentDraft({
+                                      ...newAgentDraft,
+                                      emoji,
+                                    })
+                                  }
+                                  className={cn(
+                                    "rounded-lg border px-3 py-2 text-lg transition-colors",
+                                    newAgentDraft.emoji === emoji
+                                      ? "border-primary bg-primary/10"
+                                      : "border-border hover:bg-accent/40"
+                                  )}
+                                >
+                                  {emoji}
+                                </button>
+                              ))}
+                            </div>
+                          </label>
+                          <label className="flex items-center gap-2 text-[12px] text-muted-foreground">
+                            <input
+                              type="checkbox"
+                              checked={newAgentDraft.active}
+                              onChange={(event) =>
+                                setNewAgentDraft({
+                                  ...newAgentDraft,
+                                  active: event.target.checked,
+                                })
+                              }
+                            />
+                            Start active
+                          </label>
+                          <label className="col-span-2 space-y-1.5 text-[11px] text-muted-foreground">
+                            <span>Workspace</span>
+                            <input
+                              value={newAgentDraft.workspace}
+                              onChange={(event) =>
+                                setNewAgentDraft({
+                                  ...newAgentDraft,
+                                  workspace: event.target.value,
+                                })
+                              }
+                              className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground"
+                              placeholder="workspace"
+                            />
+                          </label>
+                          <label className="col-span-2 space-y-1.5 text-[11px] text-muted-foreground">
+                            <span>Instructions</span>
+                            <textarea
+                              value={newAgentDraft.body}
+                              onChange={(event) =>
+                                setNewAgentDraft({ ...newAgentDraft, body: event.target.value })
+                              }
+                              className="min-h-[320px] w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
+                              placeholder="Define how this agent should work inside Yantra and the KB."
+                            />
+                          </label>
+                        </div>
+                        <div className="mt-4 rounded-xl border border-dashed border-border/70 bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">
+                          Use the same definition fields you already have for existing agents. Once the
+                          agent is created, this view automatically becomes the real settings screen with
+                          stack and job editors.
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {activeSettingsTab === "stack" ? (
+                      <div className="rounded-xl border border-dashed border-border p-5">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <h4 className="text-[13px] font-semibold">Stack</h4>
+                            <p className="text-[11px] text-muted-foreground">
+                              Create the agent first. As soon as it exists, this tab becomes the full stack
+                              editor used by existing agents.
+                            </p>
+                          </div>
+                          <Button
+                            size="sm"
+                            className="h-8 text-xs"
+                            onClick={createAgent}
+                            disabled={creatingAgent || !canCreateAgent}
+                          >
+                            {creatingAgent ? "Creating..." : "Create and continue"}
+                          </Button>
+                        </div>
+                        {!canCreateAgent ? (
+                          <p className="mt-4 text-[11px] text-muted-foreground">
+                            Fill in at least the name and role on the Definition tab before creating the
+                            agent.
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+
+                    {activeSettingsTab === "jobs" ? (
+                      <div className="rounded-xl border border-dashed border-border p-5">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <h4 className="text-[13px] font-semibold">Jobs</h4>
+                            <p className="text-[11px] text-muted-foreground">
+                              Jobs attach to a real agent. Create this one first, then schedule recurring
+                              prompts from the same jobs editor used everywhere else.
+                            </p>
+                          </div>
+                          <Button
+                            size="sm"
+                            className="h-8 text-xs"
+                            onClick={createAgent}
+                            disabled={creatingAgent || !canCreateAgent}
+                          >
+                            {creatingAgent ? "Creating..." : "Create and continue"}
+                          </Button>
+                        </div>
+                        {!canCreateAgent ? (
+                          <p className="mt-4 text-[11px] text-muted-foreground">
+                            Fill in at least the name and role on the Definition tab before creating the
+                            agent.
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </>
                 ) : settingsAgentSlug === "general" ? (
                   <div className="max-w-3xl space-y-4">
                     <div className="rounded-xl border border-border bg-card p-4 text-[13px] text-muted-foreground">
@@ -1924,7 +2121,7 @@ export function AgentsWorkspace({
                                       {job.enabled ? "On" : "Off"}
                                     </span>
                                   </div>
-                                  <p className="mt-1 truncate text-[11px] text-muted-foreground">{job.schedule}</p>
+                                  <p className="mt-1 truncate text-[11px] text-muted-foreground">{cronToHuman(job.schedule)}</p>
                                 </button>
                               ))
                             )}
@@ -1979,14 +2176,13 @@ export function AgentsWorkspace({
                                   className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
                                 />
                               </label>
-                              <label className="space-y-1 text-[11px] text-muted-foreground">
-                                <span>Schedule</span>
-                                <input
+                              <div className="space-y-1">
+                                <SchedulePicker
+                                  label="Schedule"
                                   value={jobDraft.schedule}
-                                  onChange={(event) => setJobDraft({ ...jobDraft, schedule: event.target.value })}
-                                  className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground"
+                                  onChange={(schedule) => setJobDraft({ ...jobDraft, schedule })}
                                 />
-                              </label>
+                              </div>
                               <label className="space-y-1 text-[11px] text-muted-foreground">
                                 <span>Timeout (seconds)</span>
                                 <input

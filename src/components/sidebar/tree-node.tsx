@@ -39,7 +39,7 @@ interface TreeNodeRowProps {
   rowId: string;
   isFocused: boolean;
   isSelected: boolean;
-  onOpen: () => void;
+  onOpen: (event?: React.MouseEvent<HTMLDivElement>) => void;
   onToggleExpand: () => void;
 }
 
@@ -163,6 +163,10 @@ export const TreeNodeRow = memo(function TreeNodeRow({
             data-tree-path={row.path}
             draggable
             onClick={onOpen}
+            onAuxClick={(event) => {
+              if (event.button !== 1) return;
+              onOpen(event);
+            }}
             onDragStart={handleDragStart}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
@@ -202,6 +206,14 @@ export const TreeNodeRow = memo(function TreeNodeRow({
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent>
+          {row.canOpen && (row.type === "file" || row.type === "text" || row.type === "directory") ? (
+            <ContextMenuItem onClick={() => void openPath(row.path, { source: "tree-click", openInOtherPane: true })}>
+              Open in Other Pane
+            </ContextMenuItem>
+          ) : null}
+          {row.canOpen && (row.type === "file" || row.type === "text" || row.type === "directory") ? (
+            <ContextMenuSeparator />
+          ) : null}
           {row.type === "directory" && (
             <ContextMenuItem onClick={() => setSubPageOpen(true)}>
               <FilePlus className="h-4 w-4 mr-2" />

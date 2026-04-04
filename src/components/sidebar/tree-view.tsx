@@ -24,6 +24,7 @@ export const TreeView = memo(function TreeView() {
   const focusLast = useTreeStore((s) => s.focusLast);
   const openPath = useTreeStore((s) => s.openPath);
   const toggleExpand = useTreeStore((s) => s.toggleExpand);
+  const setSubtreeExpanded = useTreeStore((s) => s.setSubtreeExpanded);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -122,13 +123,24 @@ export const TreeView = memo(function TreeView() {
         return;
       }
 
-      if (event.key === "Enter" || event.key === " ") {
+      if (event.key === " ") {
+        if (!currentRow.hasChildren) return;
+        event.preventDefault();
+        if (event.shiftKey) {
+          setSubtreeExpanded(currentRow.path, !currentRow.isExpanded);
+          return;
+        }
+        toggleExpand(currentRow.path);
+        return;
+      }
+
+      if (event.key === "Enter") {
         if (!currentRow.canOpen) return;
         event.preventDefault();
         void openPath(currentRow.path, { source: "tree-keyboard" });
       }
     },
-    [focusFirst, focusLast, focusRelative, openPath, scheduleFollowOpen, setFocusedPath, toggleExpand]
+    [focusFirst, focusLast, focusRelative, openPath, scheduleFollowOpen, setFocusedPath, setSubtreeExpanded, toggleExpand]
   );
 
   const handleFocus = useCallback(() => {
@@ -164,7 +176,7 @@ export const TreeView = memo(function TreeView() {
           rowId={`${KB_TREE_ROOT_ID}-row-${row.path}`}
           isFocused={focusedPath === row.path}
           isSelected={selectedPath === row.path}
-          onOpen={() => {
+          onOpen={(event) => {
             if (row.hasChildren) {
               toggleExpand(row.path);
             }
@@ -172,7 +184,11 @@ export const TreeView = memo(function TreeView() {
               setFocusedPath(row.path);
               return;
             }
-            void openPath(row.path, { source: "tree-click" });
+            const openInOtherPane = Boolean(event?.altKey || event?.metaKey || event?.ctrlKey || event?.button === 1);
+            void openPath(row.path, {
+              source: "tree-click",
+              openInOtherPane,
+            });
           }}
           onToggleExpand={() => toggleExpand(row.path)}
         />

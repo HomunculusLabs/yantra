@@ -5,6 +5,8 @@ export type SectionType = "page" | "agents" | "agent" | "jobs" | "settings";
 export interface SelectedSection {
   type: SectionType;
   slug?: string; // agent slug when type === "agent"
+  view?: "settings";
+  settingsTarget?: string | null;
 }
 
 interface TerminalTab {
@@ -15,12 +17,14 @@ interface TerminalTab {
 
 interface AppState {
   section: SelectedSection;
+  agentSettingsReturnSection: SelectedSection | null;
   terminalOpen: boolean;
   terminalTabs: TerminalTab[];
   activeTerminalTab: string | null;
   sidebarCollapsed: boolean;
   aiPanelCollapsed: boolean;
   setSection: (section: SelectedSection) => void;
+  setAgentSettingsReturnSection: (section: SelectedSection | null) => void;
   toggleTerminal: () => void;
   closeTerminal: () => void;
   addTerminalTab: (label?: string, prompt?: string) => void;
@@ -32,7 +36,8 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  section: { type: "agents" },
+  section: { type: "page" },
+  agentSettingsReturnSection: null,
   terminalOpen: false,
   terminalTabs: [],
   activeTerminalTab: null,
@@ -40,6 +45,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   aiPanelCollapsed: false,
 
   setSection: (section) => set({ section }),
+  setAgentSettingsReturnSection: (agentSettingsReturnSection) =>
+    set({ agentSettingsReturnSection }),
 
   toggleTerminal: () => {
     const { terminalOpen, terminalTabs } = get();
