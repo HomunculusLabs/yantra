@@ -24,6 +24,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { LauncherRegistryTab } from "@/components/settings/launcher-registry-tab";
 import { RuntimeSettingsTab } from "@/components/settings/runtime-settings-tab";
+import { StorageSettingsTab } from "@/components/settings/storage-settings-tab";
 import { useSettingsData } from "@/components/settings/use-settings-data";
 import { cn } from "@/lib/utils";
 import type { SettingsTab } from "@/types/settings";
@@ -46,6 +47,7 @@ export function SettingsPage({ onExit }: { onExit?: () => void } = {}) {
     desktopDaemonInfo,
     browserDaemonStatus,
     restartingDaemon,
+    restartingDaemonMode,
     daemonActionError,
     launcherValidationIssues,
     revealedKeys,
@@ -171,7 +173,8 @@ export function SettingsPage({ onExit }: { onExit?: () => void } = {}) {
               daemonStatus={browserDaemonStatus}
               canRestartDaemon={Boolean(desktopDaemonInfo?.managed)}
               restartingDaemon={restartingDaemon}
-                onRestartDaemon={restartDaemon}
+              restartingDaemonMode={restartingDaemonMode}
+              onRestartDaemon={restartDaemon}
               daemonActionError={daemonActionError}
             />
           ) : null}
@@ -190,71 +193,11 @@ export function SettingsPage({ onExit }: { onExit?: () => void } = {}) {
           ) : null}
 
           {tab === "storage" && (
-            <div className="space-y-4">
-              <div>
-                <h3 className="mb-2 text-[14px] font-semibold">Vault and runtime roots</h3>
-                <p className="text-xs text-muted-foreground">
-                  Yantra should read your Obsidian vault from the vault root and keep its runtime state under a separate runtime root.
-                </p>
-              </div>
-
-              {rootsLoading || !roots ? (
-                <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Loading storage settings...
-                </div>
-              ) : (
-                <>
-                  <div className="space-y-3 rounded-lg border border-border bg-card p-4">
-                    <label className="block space-y-1.5">
-                      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                        Vault root
-                      </span>
-                      <input
-                        value={roots.vaultRoot}
-                        onChange={(event) =>
-                          setRoots({ ...roots, vaultRoot: event.target.value })
-                        }
-                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
-                        spellCheck={false}
-                      />
-                      <p className="text-[11px] text-muted-foreground">
-                        Current status: {roots.checks?.vaultExists ? "found" : "missing"}
-                      </p>
-                    </label>
-
-                    <label className="block space-y-1.5">
-                      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                        Runtime root
-                      </span>
-                      <input
-                        value={roots.runtimeRoot}
-                        onChange={(event) =>
-                          setRoots({ ...roots, runtimeRoot: event.target.value })
-                        }
-                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
-                        spellCheck={false}
-                      />
-                      <p className="text-[11px] text-muted-foreground">
-                        Current status: {roots.checks?.runtimeExists ? "found" : "will be created"}
-                      </p>
-                    </label>
-                  </div>
-
-                  <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4">
-                    <p className="text-[12px] font-medium text-foreground">Restart required after save</p>
-                    <p className="mt-1 text-[11px] text-muted-foreground">
-                      The app server and daemon cache these roots at startup. Save the paths here, then restart Yantra so runtime summaries and launcher sessions pick up the new roots.
-                    </p>
-                    {roots.configPath ? (
-                      <p className="mt-2 text-[11px] font-mono text-muted-foreground">
-                        Config file: {roots.configPath}
-                      </p>
-                    ) : null}
-                  </div>
-                </>
-              )}
-            </div>
+            <StorageSettingsTab
+              roots={roots}
+              loading={rootsLoading}
+              onChange={(nextRoots) => setRoots(nextRoots)}
+            />
           )}
 
           {tab === "integrations" && config && (

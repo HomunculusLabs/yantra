@@ -65,6 +65,14 @@ export interface RuntimeSettingsSummary {
       scheduledHeartbeats: number;
       absurdWorkerReady: boolean;
       tmuxAvailable?: boolean;
+      restartPlan?: {
+        activeSessionCount: number;
+        directSessionCount: number;
+        tmuxSessionCount: number;
+        restoredTmuxSessionCount: number;
+        preservableTmuxSessionCount: number;
+        softSafe: boolean;
+      };
     };
     error?: string;
   };
@@ -113,9 +121,21 @@ export interface IntegrationConfig {
   };
 }
 
+export type StorageRouteKey = "agents" | "skills" | "extensions" | "mcp";
+
+export interface StorageRouteConfig {
+  path: string;
+  recursive: boolean;
+  resolvedPath?: string;
+  exists?: boolean;
+  indexedFileCount?: number;
+  sampleFiles?: string[];
+}
+
 export interface RootsConfig {
   vaultRoot: string;
   runtimeRoot: string;
+  storageRoutes: Record<StorageRouteKey, StorageRouteConfig>;
   effectiveRoots?: {
     vaultRoot: string;
     runtimeRoot: string;
@@ -144,6 +164,8 @@ export interface DesktopDaemonInfo {
   healthUrl?: string;
   managed?: boolean;
   ready?: boolean;
+  restarting?: boolean;
+  restartingMode?: "soft" | "force" | null;
 }
 
 export interface BrowserDaemonStatus {
@@ -151,9 +173,59 @@ export interface BrowserDaemonStatus {
   error?: string | null;
 }
 
+export type ThemeMode = "light" | "dark";
+
+export type ThemeVarKey =
+  | "--background"
+  | "--foreground"
+  | "--card"
+  | "--card-foreground"
+  | "--popover"
+  | "--popover-foreground"
+  | "--primary"
+  | "--primary-foreground"
+  | "--secondary"
+  | "--secondary-foreground"
+  | "--muted"
+  | "--muted-foreground"
+  | "--accent"
+  | "--accent-foreground"
+  | "--destructive"
+  | "--border"
+  | "--input"
+  | "--ring"
+  | "--sidebar"
+  | "--sidebar-foreground"
+  | "--sidebar-primary"
+  | "--sidebar-primary-foreground"
+  | "--sidebar-accent"
+  | "--sidebar-accent-foreground"
+  | "--sidebar-border"
+  | "--sidebar-ring";
+
+export interface EditableThemeDefinition {
+  name: string;
+  label: string;
+  type: ThemeMode;
+  bodyFontId: string | null;
+  headingFontId: string | null;
+  vars: Record<ThemeVarKey, string>;
+}
+
+export interface ThemesConfigResponse {
+  themes: EditableThemeDefinition[];
+  configPath: string;
+}
+
+export interface ThemeValidationIssue {
+  path: string;
+  message: string;
+}
+
 export type SettingsTab =
   | "runtime"
   | "launchers"
   | "integrations"
   | "notifications"
-  | "storage";
+  | "storage"
+  | "themes";

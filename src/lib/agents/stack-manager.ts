@@ -1,6 +1,10 @@
 import fs from "fs/promises";
 import path from "path";
-import { getYantraRoots } from "@/lib/config/yantra-roots";
+import {
+  getYantraRoots,
+  getYantraStorageRoutes,
+  resolveConfiguredVaultPath,
+} from "@/lib/config/yantra-roots";
 import { readPersona } from "@/lib/agents/persona-manager";
 import type {
   AgentStackConfig,
@@ -57,13 +61,27 @@ async function exists(absPath: string): Promise<boolean> {
   }
 }
 
+async function isDirectory(absPath: string): Promise<boolean> {
+  try {
+    const stats = await fs.stat(absPath);
+    return stats.isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 async function walkFiles(
-  rootRelative: string,
+  rootAbsolute: string,
+  source: string,
   matcher: (name: string) => boolean,
-  formatter?: (relativeFromRoot: string, absolutePath: string) => StackCatalogEntry
+  formatter?: (relativeFromRoot: string, absolutePath: string) => StackCatalogEntry,
+  options?: {
+    recursive?: boolean;
+    vaultRoot?: string;
+  }
 ): Promise<StackCatalogEntry[]> {
-  const { vaultRoot } = getYantraRoots();
-  const rootAbsolute = path.join(vaultRoot, rootRelative);
+  const vaultRoot = options?.vaultRoot || getYantraRoots().vaultRoot;
+  const recursive = options?.recursive ?? true;
   if (!(await exists(rootAbsolute))) return [];
 
   const found: StackCatalogEntry[] = [];
@@ -80,7 +98,9 @@ async function walkFiles(
       if (entry.name.startsWith(".") && entry.name !== ".obsidian") continue;
       const absolutePath = path.join(absDir, entry.name);
       if (entry.isDirectory()) {
-        await walk(absolutePath);
+        if (recursive) {
+          await walk(absolutePath);
+        }
         continue;
       }
       if (!matcher(entry.name)) continue;
@@ -91,7 +111,7 @@ async function walkFiles(
           : {
               label: relativeFromRoot.replace(/\/index\.[^.]+$/, ""),
               path: toPosix(path.relative(vaultRoot, absolutePath)),
-              source: rootRelative,
+              source,
             }
       );
     }
@@ -103,10 +123,42 @@ async function walkFiles(
 
 export async function listAgentStackCatalog(): Promise<StackCatalog> {
   const { vaultRoot } = getYantraRoots();
+  const storageRoutes = getYantraStorageRoutes(undefined, vaultRoot);
 
-  const extensions = [
+  const configuredExtensionsRoot = resolveConfiguredVaultPath(
+    storageRoutes.extensions.path,
+    vaultRoot
+  );
+  const configuredSkillsRoot = resolveConfiguredVaultPath(storageRoutes.skills.path, vaultRoot);
+  const [configuredExtensionsRootExists, configuredSkillsRootExists] = await Promise.all([
+    isDirectory(configuredExtensionsRoot),
+    isDirectory(configuredSkillsRoot),
+  ]);
+
+  const configuredExtensions = await walkFiles(
+    configuredExtensionsRoot,
+    storageRoutes.extensions.path,
+    (name) => /^index\.(ts|js|mjs|cjs)$/.test(name),
+    (relativeFromRoot, absolutePath) => {
+      const vaultRelative = toPosix(path.relative(vaultRoot, absolutePath));
+      const folderLabel =
+        toPosix(path.dirname(relativeFromRoot)).replace(/\/$/, "") || relativeFromRoot;
+      return {
+        label: folderLabel,
+        path: `./${vaultRelative}`,
+        source: storageRoutes.extensions.path,
+      };
+    },
+    {
+      recursive: storageRoutes.extensions.recursive,
+      vaultRoot,
+    }
+  );
+
+  const legacyExtensions = [
     ...(await walkFiles(
-      "60-69 Agents/64 - Extensions/64.30 - Runtime Files",
+      path.join(vaultRoot, "60-69 Agents/64 - Extensions/64.30 - Runtime Files"),
+      "64.30 - Runtime Files",
       (name) => /^index\.(ts|js|mjs|cjs)$/.test(name),
       (relativeFromRoot, absolutePath) => {
         const vaultRelative = toPosix(path.relative(vaultRoot, absolutePath));
@@ -117,9 +169,11 @@ export async function listAgentStackCatalog(): Promise<StackCatalog> {
           path: `./${vaultRelative}`,
           source: "64.30 - Runtime Files",
         };
-      }
+      },
+      { vaultRoot }
     )),
     ...(await walkFiles(
+      path.join(vaultRoot, ".pi/extensions"),
       ".pi/extensions",
       (name) => /^index\.(ts|js|mjs|cjs)$/.test(name),
       (relativeFromRoot, absolutePath) => {
@@ -131,12 +185,37 @@ export async function listAgentStackCatalog(): Promise<StackCatalog> {
           path: `./${vaultRelative}`,
           source: ".pi/extensions",
         };
-      }
+      },
+      { vaultRoot }
     )),
   ].sort((a, b) => a.label.localeCompare(b.label));
 
-  const skills = [
+  const extensions = configuredExtensionsRootExists
+    ? configuredExtensions
+    : legacyExtensions;
+
+  const configuredSkills = await walkFiles(
+    configuredSkillsRoot,
+    storageRoutes.skills.path,
+    (name) => name === "SKILL.md",
+    (relativeFromRoot, absolutePath) => {
+      const vaultRelative = toPosix(path.relative(vaultRoot, absolutePath));
+      const label = toPosix(path.dirname(relativeFromRoot));
+      return {
+        label,
+        path: vaultRelative,
+        source: storageRoutes.skills.path,
+      };
+    },
+    {
+      recursive: storageRoutes.skills.recursive,
+      vaultRoot,
+    }
+  );
+
+  const legacySkills = [
     ...(await walkFiles(
+      path.join(vaultRoot, ".pi/skills"),
       ".pi/skills",
       (name) => name === "SKILL.md",
       (relativeFromRoot, absolutePath) => {
@@ -147,27 +226,34 @@ export async function listAgentStackCatalog(): Promise<StackCatalog> {
           path: vaultRelative,
           source: ".pi/skills",
         };
-      }
+      },
+      { vaultRoot }
     )),
     ...(await walkFiles(
-      "60-69 Agents/62 - Skills/62.30 - Live Skills",
+      path.join(vaultRoot, "60-69 Agents/62 - Skills/62.30 - Live Skills"),
+      "62.30 - Live Skills",
       (name) => name.toLowerCase().endsWith(".md"),
       (relativeFromRoot, absolutePath) => ({
         label: relativeFromRoot.replace(/\.md$/i, ""),
         path: toPosix(path.relative(vaultRoot, absolutePath)),
         source: "62.30 - Live Skills",
-      })
+      }),
+      { vaultRoot }
     )),
   ].sort((a, b) => a.label.localeCompare(b.label));
 
+  const skills = configuredSkillsRootExists ? configuredSkills : legacySkills;
+
   const skillsets = await walkFiles(
-    "60-69 Agents/62 - Skills/62.40 - Skillsets",
+    path.join(vaultRoot, "60-69 Agents/62 - Skills/62.40 - Skillsets"),
+    "62.40 - Skillsets",
     (name) => name.toLowerCase().endsWith(".md"),
     (relativeFromRoot, absolutePath) => ({
       label: relativeFromRoot.replace(/\.md$/i, ""),
       path: toPosix(path.relative(vaultRoot, absolutePath)),
       source: "62.40 - Skillsets",
-    })
+    }),
+    { vaultRoot }
   );
 
   return { extensions, skills, skillsets };

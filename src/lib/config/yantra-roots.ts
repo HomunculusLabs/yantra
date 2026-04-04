@@ -3,6 +3,20 @@ import fsp from "fs/promises";
 import path from "path";
 import { getYantraAppPaths } from "@/lib/config/app-paths";
 
+export type StorageRouteKey = "agents" | "skills" | "extensions" | "mcp";
+
+export interface YantraStorageRouteConfig {
+  path: string;
+  recursive: boolean;
+}
+
+export interface YantraStorageRoutes {
+  agents: YantraStorageRouteConfig;
+  skills: YantraStorageRouteConfig;
+  extensions: YantraStorageRouteConfig;
+  mcp: YantraStorageRouteConfig;
+}
+
 export interface YantraRoots {
   vaultRoot: string;
   runtimeRoot: string;
@@ -16,9 +30,21 @@ export interface YantraRoots {
 export interface YantraRootsConfigFile {
   vaultRoot?: string;
   runtimeRoot?: string;
+  storageRoutes?: Partial<Record<StorageRouteKey, Partial<YantraStorageRouteConfig>>>;
 }
 
 let cachedRoots: YantraRoots | null = null;
+
+const DEFAULT_STORAGE_ROUTES: YantraStorageRoutes = {
+  agents: { path: ".agents", recursive: true },
+  skills: { path: ".agents/skills", recursive: true },
+  extensions: { path: ".agents/extensions", recursive: true },
+  mcp: { path: ".agents/mcp", recursive: true },
+};
+
+function toPosix(input: string): string {
+  return input.split(path.sep).join("/");
+}
 
 function normalizeRoot(input: string): string {
   return path.resolve(input);
@@ -51,22 +77,133 @@ export function readYantraRootsConfig(): YantraRootsConfigFile {
   try {
     const raw = fs.readFileSync(getYantraRootsConfigPath(), "utf-8");
     const parsed = JSON.parse(raw) as YantraRootsConfigFile;
+    const nextStorageRoutes: Partial<
+      Record<StorageRouteKey, Partial<YantraStorageRouteConfig>>
+    > = {};
+
+    for (const key of Object.keys(DEFAULT_STORAGE_ROUTES) as StorageRouteKey[]) {
+      const candidate = parsed.storageRoutes?.[key];
+      if (!candidate || typeof candidate !== "object") continue;
+
+      const normalized: Partial<YantraStorageRouteConfig> = {};
+      if (typeof candidate.path === "string" && candidate.path.trim()) {
+        normalized.path = candidate.path.trim();
+      }
+      if (typeof candidate.recursive === "boolean") {
+        normalized.recursive = candidate.recursive;
+      }
+      if (Object.keys(normalized).length > 0) {
+        nextStorageRoutes[key] = normalized;
+      }
+    }
+
     return {
       ...(parsed.vaultRoot?.trim() ? { vaultRoot: parsed.vaultRoot.trim() } : {}),
       ...(parsed.runtimeRoot?.trim() ? { runtimeRoot: parsed.runtimeRoot.trim() } : {}),
+      ...(Object.keys(nextStorageRoutes).length > 0
+        ? { storageRoutes: nextStorageRoutes }
+        : {}),
     };
   } catch {
     return {};
   }
 }
 
+function assertInsideRoot(absPath: string, root: string, label: string): string {
+  const normalizedRoot = path.resolve(root);
+  const normalizedPath = path.resolve(absPath);
+
+  if (
+    normalizedPath !== normalizedRoot &&
+    !normalizedPath.startsWith(`${normalizedRoot}${path.sep}`)
+  ) {
+    throw new Error(`Path escapes ${label} root`);
+  }
+
+  return normalizedPath;
+}
+
+function normalizeVaultScopedPath(
+  input: string | undefined,
+  vaultRoot: string,
+  fallback: string
+): string {
+  const value = input?.trim() || fallback;
+  if (path.isAbsolute(value)) {
+    const resolved = assertInsideRoot(value, vaultRoot, "vault");
+    return toPosix(path.relative(path.resolve(vaultRoot), resolved) || ".");
+  }
+
+  const cleaned = value.replace(/^\.\/+/, "") || ".";
+  const resolved = assertInsideRoot(path.join(vaultRoot, cleaned), vaultRoot, "vault");
+  return toPosix(path.relative(path.resolve(vaultRoot), resolved) || ".");
+}
+
+export function resolveConfiguredVaultPath(
+  relativeOrAbsolute: string,
+  vaultRoot = getYantraRoots().vaultRoot
+): string {
+  const cleaned = relativeOrAbsolute.trim();
+  const candidate = path.isAbsolute(cleaned)
+    ? cleaned
+    : path.join(vaultRoot, cleaned.replace(/^\.\/+/, ""));
+  return assertInsideRoot(candidate, vaultRoot, "vault");
+}
+
+export function getYantraStorageRoutes(
+  config: YantraRootsConfigFile = readYantraRootsConfig(),
+  vaultRoot = getYantraRoots().vaultRoot
+): YantraStorageRoutes {
+  return {
+    agents: {
+      path: normalizeVaultScopedPath(
+        config.storageRoutes?.agents?.path,
+        vaultRoot,
+        DEFAULT_STORAGE_ROUTES.agents.path
+      ),
+      recursive:
+        config.storageRoutes?.agents?.recursive ?? DEFAULT_STORAGE_ROUTES.agents.recursive,
+    },
+    skills: {
+      path: normalizeVaultScopedPath(
+        config.storageRoutes?.skills?.path,
+        vaultRoot,
+        DEFAULT_STORAGE_ROUTES.skills.path
+      ),
+      recursive:
+        config.storageRoutes?.skills?.recursive ?? DEFAULT_STORAGE_ROUTES.skills.recursive,
+    },
+    extensions: {
+      path: normalizeVaultScopedPath(
+        config.storageRoutes?.extensions?.path,
+        vaultRoot,
+        DEFAULT_STORAGE_ROUTES.extensions.path
+      ),
+      recursive:
+        config.storageRoutes?.extensions?.recursive ??
+        DEFAULT_STORAGE_ROUTES.extensions.recursive,
+    },
+    mcp: {
+      path: normalizeVaultScopedPath(
+        config.storageRoutes?.mcp?.path,
+        vaultRoot,
+        DEFAULT_STORAGE_ROUTES.mcp.path
+      ),
+      recursive: config.storageRoutes?.mcp?.recursive ?? DEFAULT_STORAGE_ROUTES.mcp.recursive,
+    },
+  };
+}
+
 export async function saveYantraRootsConfig(
   config: YantraRootsConfigFile
 ): Promise<YantraRootsConfigFile> {
   const configPath = getYantraRootsConfigPath();
+  const vaultRoot = normalizeRoot(config.vaultRoot?.trim() || defaultVaultRoot());
+  const runtimeRoot = normalizeRoot(config.runtimeRoot?.trim() || defaultRuntimeRoot());
   const next: YantraRootsConfigFile = {
-    vaultRoot: normalizeRoot(config.vaultRoot?.trim() || defaultVaultRoot()),
-    runtimeRoot: normalizeRoot(config.runtimeRoot?.trim() || defaultRuntimeRoot()),
+    vaultRoot,
+    runtimeRoot,
+    storageRoutes: getYantraStorageRoutes(config, vaultRoot),
   };
 
   await fsp.mkdir(path.dirname(configPath), { recursive: true });
@@ -104,20 +241,6 @@ export function getYantraRoots(): YantraRoots {
   };
 
   return cachedRoots;
-}
-
-function assertInsideRoot(absPath: string, root: string, label: string): string {
-  const normalizedRoot = path.resolve(root);
-  const normalizedPath = path.resolve(absPath);
-
-  if (
-    normalizedPath !== normalizedRoot &&
-    !normalizedPath.startsWith(`${normalizedRoot}${path.sep}`)
-  ) {
-    throw new Error(`Path escapes ${label} root`);
-  }
-
-  return normalizedPath;
 }
 
 export function ensureVaultRootExists(): string {

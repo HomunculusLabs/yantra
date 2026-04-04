@@ -348,6 +348,7 @@ export async function getRootsConfig(): Promise<RootsConfig> {
 export async function saveRootsConfig(payload: {
   vaultRoot: string;
   runtimeRoot: string;
+  storageRoutes: RootsConfig["storageRoutes"];
 }): Promise<RootsConfig> {
   return requestJson<RootsConfig>("/api/agents/config/roots", {
     method: "PUT",

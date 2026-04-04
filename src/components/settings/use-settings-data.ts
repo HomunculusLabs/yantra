@@ -47,13 +47,14 @@ type UseSettingsDataResult = {
   desktopDaemonInfo: DesktopDaemonInfo | null;
   browserDaemonStatus: BrowserDaemonStatus | null;
   restartingDaemon: boolean;
+  restartingDaemonMode: "soft" | "force" | null;
   daemonActionError: string | null;
   launcherValidationIssues: LauncherValidationIssue[];
   revealedKeys: Set<string>;
   refreshAll: () => Promise<void>;
   saveCurrentTab: (tab: SettingsTab) => Promise<void>;
   resetFeedback: () => void;
-  restartDaemon: () => Promise<void>;
+  restartDaemon: (mode: "soft" | "force") => Promise<void>;
   requestNotificationTest: () => Promise<NotificationTestResponse>;
   toggleReveal: (key: string) => void;
   updateMcp: (id: string, field: string, value: unknown) => void;
@@ -80,6 +81,7 @@ export function useSettingsData(): UseSettingsDataResult {
   const [desktopDaemonInfo, setDesktopDaemonInfo] = useState<DesktopDaemonInfo | null>(null);
   const [browserDaemonStatus, setBrowserDaemonStatus] = useState<BrowserDaemonStatus | null>(null);
   const [restartingDaemon, setRestartingDaemon] = useState(false);
+  const [restartingDaemonMode, setRestartingDaemonMode] = useState<"soft" | "force" | null>(null);
   const [daemonActionError, setDaemonActionError] = useState<string | null>(null);
   const [launcherValidationIssues, setLauncherValidationIssues] = useState<LauncherValidationIssue[]>([]);
   const [revealedKeys, setRevealedKeys] = useState<Set<string>>(new Set());
@@ -212,6 +214,7 @@ export function useSettingsData(): UseSettingsDataResult {
             await saveRootsConfig({
               vaultRoot: roots.vaultRoot,
               runtimeRoot: roots.runtimeRoot,
+              storageRoutes: roots.storageRoutes,
             })
           );
         }
@@ -257,23 +260,25 @@ export function useSettingsData(): UseSettingsDataResult {
     [clearSavedTimeout, config, launchersJson, loadLaunchers, loadRuntime, resetFeedback, roots]
   );
 
-  const restartDaemon = useCallback(async () => {
+  const restartDaemon = useCallback(async (mode: "soft" | "force") => {
     if (!window.yantraDesktop?.restartDaemon) {
       setDaemonActionError("Daemon restart is only available in the desktop app.");
       return;
     }
 
     setRestartingDaemon(true);
+    setRestartingDaemonMode(mode);
     setDaemonActionError(null);
     try {
-      await window.yantraDesktop.restartDaemon();
+      await window.yantraDesktop.restartDaemon(mode);
       await Promise.allSettled([loadRuntime(), loadDesktopDaemonInfo()]);
     } catch (error) {
       setDaemonActionError(
-        error instanceof Error ? error.message : "Failed to restart daemon"
+        error instanceof Error ? error.message : `Failed to ${mode} restart daemon`
       );
     } finally {
       setRestartingDaemon(false);
+      setRestartingDaemonMode(null);
     }
   }, [loadDesktopDaemonInfo, loadRuntime]);
 
@@ -384,6 +389,7 @@ export function useSettingsData(): UseSettingsDataResult {
     desktopDaemonInfo,
     browserDaemonStatus,
     restartingDaemon,
+    restartingDaemonMode,
     daemonActionError,
     launcherValidationIssues,
     revealedKeys,
