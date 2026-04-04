@@ -9,10 +9,11 @@ import { SlashCommands } from "./slash-commands";
 import { TextCodeEditor, getTextEditorLanguage } from "./text-code-editor";
 import { useEditorStore } from "@/stores/editor-store";
 import { useAIPanelStore } from "@/stores/ai-panel-store";
-import { markdownToHtml } from "@/lib/markdown/to-html";
+import { useTreeStore } from "@/stores/tree-store";
+import { renderMarkdown } from "@/lib/api/client";
 import { htmlToMarkdown } from "@/lib/markdown/to-markdown";
 import { Button } from "@/components/ui/button";
-import type { SaveStatus } from "@/types";
+import type { SaveStatus, TreeNode } from "@/types";
 
 async function uploadFile(pagePath: string, file: File): Promise<string | null> {
   const formData = new FormData();
@@ -28,6 +29,74 @@ async function uploadFile(pagePath: string, file: File): Promise<string | null> 
   } catch {
     return null;
   }
+}
+
+function normalizeWikiLinkTarget(value: string): string {
+  return value.trim().replace(/^\/+|\/+$/g, "");
+}
+
+function slugifyWikiLinkTarget(value: string): string {
+  return normalizeWikiLinkTarget(value)
+    .toLowerCase()
+    .replace(/\.[^.]+$/, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function basenameWithoutExtension(value: string): string {
+  const normalized = normalizeWikiLinkTarget(value);
+  const basename = normalized.split("/").pop() || normalized;
+  return basename.replace(/\.[^.]+$/, "");
+}
+
+function isMatchingPath(nodePath: string, target: string): boolean {
+  const normalizedNodePath = normalizeWikiLinkTarget(nodePath).toLowerCase();
+  const normalizedTarget = normalizeWikiLinkTarget(target).toLowerCase();
+
+  return (
+    normalizedNodePath === normalizedTarget ||
+    normalizedNodePath === `${normalizedTarget}.md` ||
+    normalizedNodePath.replace(/\.md$/i, "") === normalizedTarget
+  );
+}
+
+function isMatchingDisplayName(node: TreeNode, target: string): boolean {
+  const normalizedTarget = normalizeWikiLinkTarget(target).toLowerCase();
+  const title = (node.frontmatter?.title || "").trim().toLowerCase();
+  const name = basenameWithoutExtension(node.name).toLowerCase();
+  const pathName = basenameWithoutExtension(node.path).toLowerCase();
+
+  return title === normalizedTarget || name === normalizedTarget || pathName === normalizedTarget;
+}
+
+function isMatchingSlug(node: TreeNode, target: string): boolean {
+  const targetSlug = slugifyWikiLinkTarget(target);
+  if (!targetSlug) return false;
+
+  const candidates = [
+    node.frontmatter?.title || "",
+    node.name,
+    basenameWithoutExtension(node.path),
+    node.path,
+  ];
+
+  return candidates.some((candidate) => slugifyWikiLinkTarget(candidate) === targetSlug);
+}
+
+function resolveWikiLinkPath(target: string): string | null {
+  const normalizedTarget = normalizeWikiLinkTarget(target);
+  if (!normalizedTarget) return null;
+
+  const nodes = Object.values(useTreeStore.getState().nodeByPath);
+  const matchedPath =
+    nodes.find((node) => isMatchingPath(node.path, normalizedTarget))?.path ||
+    nodes.find((node) => isMatchingDisplayName(node, normalizedTarget))?.path ||
+    nodes.find((node) => isMatchingSlug(node, normalizedTarget))?.path;
+
+  if (matchedPath) return matchedPath;
+
+  const directPathFallback = normalizedTarget.replace(/\.md$/i, "");
+  return directPathFallback || null;
 }
 
 function SaveIndicator({ saveStatus, errorLabel = "Save failed" }: { saveStatus: SaveStatus; errorLabel?: string }) {
@@ -131,6 +200,34 @@ function RichPageEditor({
   saveStatus: SaveStatus;
   isRtl?: boolean;
 }) {
+  const handleWikiLinkOpen = useCallback((target: EventTarget | null) => {
+    const element =
+      target instanceof Element
+        ? target
+        : target instanceof Node
+          ? target.parentElement
+          : null;
+    if (!element) return false;
+
+    const link = element.closest('a[data-wiki-link="true"]');
+    if (!(link instanceof HTMLAnchorElement)) return false;
+
+    const rawTarget =
+      link.getAttribute("data-page-path") ||
+      link.getAttribute("data-page-name") ||
+      link.textContent ||
+      "";
+    const resolvedPath = resolveWikiLinkPath(rawTarget);
+
+    if (!resolvedPath) {
+      console.warn("Could not resolve wiki link target:", rawTarget);
+      return true;
+    }
+
+    void useTreeStore.getState().openPath(resolvedPath, { source: "search" });
+    return true;
+  }, []);
+
   const { open: openAI, clearMessages } = useAIPanelStore();
   const isLoadingRef = useRef(false);
   const appliedPreparedVersionRef = useRef(0);
@@ -191,7 +288,14 @@ function RichPageEditor({
         }
         return true;
       },
-    },
+      handleClick: (_view, _pos, event) => {
+        const handled = handleWikiLinkOpen(event.target);
+        if (!handled) return false;
+        event.preventDefault();
+        event.stopPropagation();
+        return true;
+      },
+      },
     immediatelyRender: false,
   });
 
@@ -222,7 +326,7 @@ function RichPageEditor({
     useEditorStore.getState().updateContent(sourceText);
     if (editor) {
       isLoadingRef.current = true;
-      const html = await markdownToHtml(sourceText, currentPath);
+      const html = await renderMarkdown(sourceText, currentPath);
       editor.commands.setContent(html);
       setTimeout(() => {
         isLoadingRef.current = false;
@@ -260,7 +364,21 @@ function RichPageEditor({
           />
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto relative" dir={isRtl ? "rtl" : undefined}>
+        <div
+          className="flex-1 overflow-y-auto relative"
+          dir={isRtl ? "rtl" : undefined}
+          onClickCapture={(event) => {
+            const handled = handleWikiLinkOpen(event.target);
+            if (!handled) return;
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onMouseDownCapture={(event) => {
+            if (!(event.target instanceof Element)) return;
+            if (!event.target.closest('a[data-wiki-link="true"]')) return;
+            event.preventDefault();
+          }}
+        >
           <EditorContent editor={editor} />
           <SlashCommands editor={editor} />
 
