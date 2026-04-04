@@ -1,5 +1,6 @@
 "use client";
 import { create } from "zustand";
+import { useAppStore } from "@/stores/app-store";
 
 export interface ChatMessage {
   id: string;
@@ -27,7 +28,12 @@ export interface AgentLiveSession {
   timestamp: number;
   status: "running" | "completed";
   reconnect?: boolean;
+  launchTransport?: "direct" | "tmux";
+  tmuxSessionName?: string | null;
+  tmuxAttachCommand?: string | null;
 }
+
+export type AIPanelMode = "editor" | "agents" | "tasks";
 
 const SESSION_STORAGE_KEY = "ai-panel-running-sessions";
 const AGENT_SESSION_STORAGE_KEY = "ai-panel-running-agent-sessions";
@@ -69,8 +75,15 @@ function loadRunningSessionsFromStorage(): EditorSession[] {
   }
 }
 
+function ensurePanelVisible() {
+  useAppStore.getState().setAiPanelCollapsed(false);
+}
+
 interface AIPanelState {
   isOpen: boolean;
+  mode: AIPanelMode;
+  activeAgentSlug: string | null;
+  selectedConversationId: string | null;
   messages: ChatMessage[];
   isLoading: boolean;
 
@@ -81,8 +94,13 @@ interface AIPanelState {
   agentSessions: AgentLiveSession[];
 
   open: () => void;
+  openEditorPanel: () => void;
+  openAgentPanel: (agentSlug?: string | null, conversationId?: string | null) => void;
+  openTasksPanel: () => void;
   close: () => void;
   toggle: () => void;
+  setActiveAgentSlug: (slug: string | null) => void;
+  setSelectedConversationId: (conversationId: string | null) => void;
   addMessage: (role: "user" | "assistant", content: string) => void;
   setLoading: (loading: boolean) => void;
   clearMessages: () => void;
@@ -99,6 +117,7 @@ interface AIPanelState {
 
   // Agent session management
   addAgentSession: (session: AgentLiveSession) => void;
+  updateAgentSession: (sessionId: string, patch: Partial<AgentLiveSession>) => void;
   markAgentSessionCompleted: (sessionId: string) => void;
   removeAgentSession: (sessionId: string) => void;
   getSessionsForAgent: (slug: string) => AgentLiveSession[];
@@ -107,14 +126,65 @@ interface AIPanelState {
 
 export const useAIPanelStore = create<AIPanelState>((set, get) => ({
   isOpen: false,
+  mode: "editor",
+  activeAgentSlug: null,
+  selectedConversationId: null,
   messages: [],
   isLoading: false,
   editorSessions: [],
   agentSessions: [],
 
-  open: () => set({ isOpen: true }),
+  open: () => {
+    ensurePanelVisible();
+    set({ isOpen: true, mode: "editor" });
+  },
+  openEditorPanel: () => {
+    ensurePanelVisible();
+    set({ isOpen: true, mode: "editor" });
+  },
+  openAgentPanel: (agentSlug = null, conversationId = null) =>
+    {
+      ensurePanelVisible();
+      set({
+        isOpen: true,
+        mode: "agents",
+        activeAgentSlug: agentSlug,
+        selectedConversationId: conversationId,
+      });
+    },
+  openTasksPanel: () => {
+    ensurePanelVisible();
+    set({ isOpen: true, mode: "tasks" });
+  },
   close: () => set({ isOpen: false }),
-  toggle: () => set((s) => ({ isOpen: !s.isOpen })),
+  toggle: () => {
+    const state = get();
+    if (state.isOpen) {
+      set({ isOpen: false });
+      return;
+    }
+    ensurePanelVisible();
+    set({ isOpen: true, mode: state.mode || "editor" });
+  },
+  setActiveAgentSlug: (activeAgentSlug) =>
+    {
+      ensurePanelVisible();
+      set({
+        isOpen: true,
+        mode: "agents",
+        activeAgentSlug,
+        selectedConversationId: null,
+      });
+    },
+  setSelectedConversationId: (selectedConversationId) =>
+    {
+      ensurePanelVisible();
+      set({
+        isOpen: true,
+        mode: "agents",
+        selectedConversationId,
+      });
+    },
 
   addMessage: (role, content) =>
     set((s) => ({
@@ -182,6 +252,15 @@ export const useAIPanelStore = create<AIPanelState>((set, get) => ({
   addAgentSession: (session) =>
     set((s) => {
       const next = [...s.agentSessions, session];
+      saveAgentSessionsToStorage(next);
+      return { agentSessions: next };
+    }),
+
+  updateAgentSession: (sessionId, patch) =>
+    set((s) => {
+      const next = s.agentSessions.map((as) =>
+        as.sessionId === sessionId ? { ...as, ...patch } : as
+      );
       saveAgentSessionsToStorage(next);
       return { agentSessions: next };
     }),

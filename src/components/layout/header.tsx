@@ -2,12 +2,15 @@
 
 import {
   Sparkles,
+  Bot,
   Copy,
   Download,
   Search,
   FileCode,
   Terminal,
   FileDown,
+  Columns2,
+  History,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,6 +25,7 @@ import { useAppStore } from "@/stores/app-store";
 import { useTreeStore } from "@/stores/tree-store";
 import { VersionHistory } from "@/components/editor/version-history";
 import { ThemePicker } from "@/components/layout/theme-picker";
+import { renderMarkdown } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 
 export function Header() {
@@ -32,11 +36,18 @@ export function Header() {
     pageLoadState,
     preparedHtml,
     pageKind,
+    isSplitView,
+    toggleSplitWithCurrentPage,
   } = useEditorStore();
   const selectedNode = useTreeStore((s) =>
     s.selectedPath ? s.nodeByPath[s.selectedPath] ?? null : null
   );
-  const { isOpen, toggle } = useAIPanelStore();
+  const isOpen = useAIPanelStore((s) => s.isOpen);
+  const mode = useAIPanelStore((s) => s.mode);
+  const closePanel = useAIPanelStore((s) => s.close);
+  const openEditorPanel = useAIPanelStore((s) => s.openEditorPanel);
+  const openAgentPanel = useAIPanelStore((s) => s.openAgentPanel);
+  const openTasksPanel = useAIPanelStore((s) => s.openTasksPanel);
   const { terminalOpen, toggleTerminal } = useAppStore();
 
   const isBusy = pageLoadState === "loading" || pageLoadState === "preparing";
@@ -62,8 +73,7 @@ export function Header() {
     const res = await fetch(`/api/pages/${currentPath}`);
     if (!res.ok) return;
     const data = await res.json();
-    const { markdownToHtml } = await import("@/lib/markdown/to-html");
-    const html = await markdownToHtml(data.content, currentPath);
+    const html = await renderMarkdown(data.content, currentPath);
     await navigator.clipboard.writeText(html);
   };
 
@@ -160,6 +170,19 @@ export function Header() {
         <Button
           variant="ghost"
           size="icon"
+          className={cn("h-8 w-8", currentPath && isSplitView && "text-primary")}
+          onClick={() => {
+            void toggleSplitWithCurrentPage();
+          }}
+          disabled={!currentPath}
+          title={isSplitView ? "Close split view" : "Open current file in a second pane"}
+        >
+          <Columns2 className="h-4 w-4" />
+        </Button>
+
+        <Button
+          variant="ghost"
+          size="icon"
           className={cn("h-8 w-8", terminalOpen && "text-primary")}
           onClick={toggleTerminal}
         >
@@ -169,8 +192,47 @@ export function Header() {
         <Button
           variant="ghost"
           size="icon"
-          className={cn("h-8 w-8", isOpen && "text-primary")}
-          onClick={toggle}
+          className={cn("h-8 w-8", isOpen && mode === "agents" && "text-primary")}
+          onClick={() => {
+            if (isOpen && mode === "agents") {
+              closePanel();
+              return;
+            }
+            openAgentPanel(null);
+          }}
+          title="Open agent sidebar"
+        >
+          <Bot className="h-4 w-4" />
+        </Button>
+
+        <Button
+          variant="ghost"
+          size="icon"
+          className={cn("h-8 w-8", isOpen && mode === "tasks" && "text-primary")}
+          onClick={() => {
+            if (isOpen && mode === "tasks") {
+              closePanel();
+              return;
+            }
+            openTasksPanel();
+          }}
+          title="Open recent tasks"
+        >
+          <History className="h-4 w-4" />
+        </Button>
+
+        <Button
+          variant="ghost"
+          size="icon"
+          className={cn("h-8 w-8", isOpen && mode === "editor" && "text-primary")}
+          onClick={() => {
+            if (isOpen && mode === "editor") {
+              closePanel();
+              return;
+            }
+            openEditorPanel();
+          }}
+          title="Open AI editor"
         >
           <Sparkles className="h-4 w-4" />
         </Button>

@@ -1,6 +1,10 @@
 import path from "path";
 import { Absurd, type JsonValue, type TaskResultSnapshot } from "absurd-sdk";
-import { startJobConversation, waitForConversationCompletion } from "@/lib/agents/conversation-runner";
+import {
+  resolveCompletionTimeoutSeconds,
+  startJobConversation,
+  waitForConversationCompletion,
+} from "@/lib/agents/conversation-runner";
 import { getYantraRoots } from "@/lib/config/yantra-roots";
 import type { JobTaskStatus } from "@/types/jobs";
 import {
@@ -11,6 +15,7 @@ import {
 } from "@/lib/storage/fs-operations";
 
 const DEFAULT_QUEUE_NAME = process.env.YANTRA_ABSURD_QUEUE?.trim() || "agent-jobs";
+export const RUN_AGENT_JOB_TASK_NAME = "run-agent-job";
 const DEFAULT_CLAIM_TIMEOUT_SECONDS = Number(process.env.YANTRA_ABSURD_CLAIM_TIMEOUT || 3600);
 const DEFAULT_CONCURRENCY = Number(process.env.YANTRA_ABSURD_WORKER_CONCURRENCY || 2);
 const DEFAULT_POLL_INTERVAL_SECONDS = Number(process.env.YANTRA_ABSURD_POLL_INTERVAL || 0.25);
@@ -189,7 +194,7 @@ function registerAbsurdTasks(): void {
 
   getAbsurdClient().registerTask<RunAgentJobParams>(
     {
-      name: "run-agent-job",
+      name: RUN_AGENT_JOB_TASK_NAME,
       queue: DEFAULT_QUEUE_NAME,
       defaultMaxAttempts: 3,
     },
@@ -228,7 +233,9 @@ function registerAbsurdTasks(): void {
       });
 
       const completion = await ctx.step("wait-for-conversation", async () => {
-        const result = await waitForConversationCompletion(run.conversationId);
+        const result = await waitForConversationCompletion(run.conversationId, {
+          timeoutSeconds: resolveCompletionTimeoutSeconds(job.timeout || 600),
+        });
         return {
           status: result.status,
           completedAt: result.meta.completedAt || null,
@@ -255,7 +262,7 @@ export async function spawnJobTask(input: SpawnJobTaskInput) {
   await ensureAbsurdQueue();
 
   const spawned = await getAbsurdClient().spawn(
-    "run-agent-job",
+    RUN_AGENT_JOB_TASK_NAME,
     {
       agentSlug: input.agentSlug,
       jobId: input.jobId,

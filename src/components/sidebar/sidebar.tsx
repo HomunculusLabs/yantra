@@ -1,32 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import {
-  PanelLeftClose,
-  PanelLeft,
-  Settings,
-  Users,
-  ChevronRight,
-  Bot,
-  Pencil,
-  Crown,
-  Megaphone,
-  Search,
-  ShieldCheck,
-  Code,
-  BarChart3,
-  Briefcase,
-  DollarSign,
-  Wrench,
-  Palette,
-  Smartphone,
-  Rocket,
-  Handshake,
-  PenTool,
-  UserCheck,
-  Scale,
-  type LucideIcon,
-} from "lucide-react";
+import { useEffect, useState } from "react";
+import { PanelLeftClose, PanelLeft, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -46,163 +21,6 @@ function useIsMobile() {
   }, []);
 
   return { isMobile, mounted };
-}
-
-interface AgentSummary {
-  name: string;
-  slug: string;
-  emoji: string;
-  active: boolean;
-  runningCount?: number;
-}
-
-const AGENT_ICONS: Record<string, LucideIcon> = {
-  general: Bot,
-  editor: Pencil,
-  ceo: Crown,
-  coo: Briefcase,
-  cfo: DollarSign,
-  cto: Wrench,
-  "content-marketer": Megaphone,
-  seo: Search,
-  "seo-specialist": Search,
-  qa: ShieldCheck,
-  "qa-agent": ShieldCheck,
-  sales: BarChart3,
-  "sales-agent": BarChart3,
-  "product-manager": Briefcase,
-  "ux-designer": Palette,
-  "data-analyst": BarChart3,
-  "social-media": Smartphone,
-  "growth-marketer": Rocket,
-  "customer-success": Handshake,
-  copywriter: PenTool,
-  devops: Code,
-  developer: Code,
-  "people-ops": UserCheck,
-  legal: Scale,
-  researcher: Search,
-};
-
-function getAgentIcon(slug: string): LucideIcon {
-  return AGENT_ICONS[slug] || Bot;
-}
-
-function TeamSection() {
-  const section = useAppStore((s) => s.section);
-  const setSection = useAppStore((s) => s.setSection);
-  const [agentsExpanded, setAgentsExpanded] = useState(true);
-  const [agents, setAgents] = useState<AgentSummary[]>([]);
-
-  const loadAgents = useCallback(async () => {
-    try {
-      const res = await fetch("/api/agents/personas");
-      if (!res.ok) return;
-      const data = await res.json();
-      setAgents(
-        (data.personas || []).map((agent: AgentSummary) => ({
-          name: agent.name,
-          slug: agent.slug,
-          emoji: agent.emoji,
-          active: agent.active,
-          runningCount: agent.runningCount || 0,
-        }))
-      );
-    } catch {
-      // ignore polling failures
-    }
-  }, []);
-
-  useEffect(() => {
-    const initialLoad = window.setTimeout(() => {
-      void loadAgents();
-    }, 0);
-    const interval = window.setInterval(() => {
-      void loadAgents();
-    }, 5000);
-    window.addEventListener("focus", loadAgents);
-    return () => {
-      window.clearTimeout(initialLoad);
-      window.clearInterval(interval);
-      window.removeEventListener("focus", loadAgents);
-    };
-  }, [loadAgents]);
-
-  return (
-    <div className="px-3 pt-2 pb-1">
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
-        Team
-      </p>
-      <button
-        onClick={() => {
-          setAgentsExpanded((current) => !current);
-          setSection({ type: "agents" });
-        }}
-        className={cn(
-          "flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-[12px] transition-colors",
-          section.type === "agents"
-            ? "bg-accent text-foreground font-medium"
-            : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
-        )}
-      >
-        <ChevronRight
-          className={cn(
-            "h-3 w-3 shrink-0 transition-transform",
-            agentsExpanded && "rotate-90"
-          )}
-        />
-        <Users className="h-3.5 w-3.5 shrink-0" />
-        Agents
-      </button>
-
-      {agentsExpanded && (
-        <div className="ml-3 mt-0.5 space-y-0.5">
-          <button
-            onClick={() => setSection({ type: "agent", slug: "general" })}
-            className={cn(
-              "flex items-center gap-2 w-full px-2 py-1 rounded-md text-[11px] transition-colors",
-              section.type === "agent" && section.slug === "general"
-                ? "bg-accent text-foreground font-medium"
-                : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
-            )}
-          >
-            <Bot className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate">General</span>
-          </button>
-
-          {[
-            ...agents.filter((agent) => agent.slug === "editor"),
-            ...agents.filter((agent) => agent.slug !== "editor"),
-          ].map((agent) => (
-            <button
-              key={agent.slug}
-              onClick={() => setSection({ type: "agent", slug: agent.slug })}
-              className={cn(
-                "flex items-center gap-2 w-full px-2 py-1 rounded-md text-[11px] transition-colors",
-                section.type === "agent" && section.slug === agent.slug
-                  ? "bg-accent text-foreground font-medium"
-                  : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
-              )}
-            >
-              {(() => {
-                const Icon = getAgentIcon(agent.slug);
-                return <Icon className="h-3.5 w-3.5 shrink-0" />;
-              })()}
-              <span className="truncate">{agent.name}</span>
-              <span
-                className={cn(
-                  "ml-auto w-1.5 h-1.5 rounded-full shrink-0",
-                  (agent.runningCount || 0) > 0
-                    ? "bg-green-500"
-                    : "bg-muted-foreground/30"
-                )}
-              />
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
 }
 
 export function Sidebar() {
@@ -257,9 +75,6 @@ export function Sidebar() {
         </div>
         <Separator />
 
-        <TeamSection />
-        <Separator />
-
         <div className="px-3 pt-2">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
             Knowledge Base
@@ -286,13 +101,14 @@ export function Sidebar() {
       </aside>
       {collapsed && (
         <Button
-          variant="ghost"
-          size="icon"
+          variant="outline"
+          size="icon-sm"
           className={cn(
-            "absolute top-3 z-10 h-7 w-7",
+            "absolute top-3 z-10 shadow-sm bg-background/90 backdrop-blur-sm",
             isMobile ? "left-3 z-50" : "left-2"
           )}
           onClick={() => setCollapsed(false)}
+          title="Open sidebar"
         >
           <PanelLeft className="h-4 w-4" />
         </Button>
