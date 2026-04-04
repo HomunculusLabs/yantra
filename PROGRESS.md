@@ -99,3 +99,9 @@
 [2026-04-04] Fixed agent chat panel loading regressions. Persona loading no longer blocks on a slow/unavailable daemon schedule reload, daemon client calls now time out instead of hanging indefinitely, and conversations still marked `running` are reconciled against live daemon sessions so orphaned unfinished chats show up with a terminal status instead of disappearing into a broken loading state.
 
 [2026-04-04] Changed Electron window lifecycle so closing the last window no longer quits Yantra. The app process now stays alive, the daemon child continues running in the background, and the UI can be reopened from the dock or by activating the app again; only explicit app quit tears down managed child services.
+
+[2026-04-04] Reduced Electron dev flicker while agent chats are running. Next's webpack watcher now ignores volatile Yantra runtime paths inside the repo (conversation transcripts, job history, agent memory/messages, runtime workspaces/sessions, and runtime DB files) so active chat output stops triggering renderer reloads.
+
+[2026-04-04] Fixed the flicker patch causing Next config startup failure. `next.config.ts` now resolves the effective runtime root with plain `fs`/`path` logic instead of importing app runtime modules, so Electron dev boot can load the config cleanly before the app code is available.
+
+[2026-04-04] Adjusted the flicker fix to use webpack-compatible glob strings for `watchOptions.ignored` instead of mixing regexes into Next's default ignore array. Confirmed `next dev --webpack` now boots successfully with the runtime watch exclusions enabled.
