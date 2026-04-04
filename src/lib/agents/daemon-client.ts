@@ -8,6 +8,13 @@ interface CreateDaemonSessionInput {
   timeoutSeconds?: number;
 }
 
+export interface DaemonSessionHandle {
+  sessionId: string;
+  launchTransport: "direct" | "tmux";
+  tmuxSessionName: string | null;
+  tmuxAttachCommand: string | null;
+}
+
 async function daemonFetch(path: string, init?: RequestInit): Promise<Response> {
   const token = await getOrCreateDaemonToken();
   const headers = new Headers(init?.headers);
@@ -21,7 +28,7 @@ async function daemonFetch(path: string, init?: RequestInit): Promise<Response> 
 
 export async function createDaemonSession(
   input: CreateDaemonSessionInput
-): Promise<void> {
+): Promise<DaemonSessionHandle> {
   const response = await daemonFetch("/sessions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -31,6 +38,8 @@ export async function createDaemonSession(
   if (!response.ok) {
     throw new Error(`Failed to create daemon session (${response.status})`);
   }
+
+  return response.json() as Promise<DaemonSessionHandle>;
 }
 
 export async function getDaemonSessionOutput(id: string): Promise<{
@@ -45,14 +54,32 @@ export async function getDaemonSessionOutput(id: string): Promise<{
 }
 
 export async function listDaemonSessions(): Promise<
-  { id: string; createdAt: string; connected: boolean; exited: boolean; exitCode: number | null }[]
+  {
+    id: string;
+    createdAt: string;
+    connected: boolean;
+    exited: boolean;
+    exitCode: number | null;
+    launchTransport: "direct" | "tmux";
+    tmuxSessionName: string | null;
+    tmuxAttachCommand: string | null;
+  }[]
 > {
   const response = await daemonFetch("/sessions");
   if (!response.ok) {
     throw new Error(`Failed to list daemon sessions (${response.status})`);
   }
   return response.json() as Promise<
-    { id: string; createdAt: string; connected: boolean; exited: boolean; exitCode: number | null }[]
+    {
+      id: string;
+      createdAt: string;
+      connected: boolean;
+      exited: boolean;
+      exitCode: number | null;
+      launchTransport: "direct" | "tmux";
+      tmuxSessionName: string | null;
+      tmuxAttachCommand: string | null;
+    }[]
   >;
 }
 

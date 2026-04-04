@@ -20,10 +20,16 @@ const DEFAULT_LAUNCHER_ID = "claude-code";
 const PI_AGENT_STACK_LAUNCHER_ID = "pi-agent-stack";
 
 function defaultLauncherRegistry(): LauncherRegistryConfig {
+  const defaultTransport =
+    process.env.YANTRA_DEFAULT_LAUNCHER_TRANSPORT?.trim() === "direct"
+      ? "direct"
+      : "tmux";
+
   return {
     version: 1,
     defaultLauncherId:
       process.env.YANTRA_DEFAULT_LAUNCHER_ID?.trim() || DEFAULT_LAUNCHER_ID,
+    defaultTransport,
     launchers: {
       [DEFAULT_LAUNCHER_ID]: {
         id: DEFAULT_LAUNCHER_ID,
@@ -264,5 +270,6 @@ export async function resolveLaunchSpec(input: {
       resolvedCwd
     ),
     promptDelivery,
+    transport: launcher.transport || registry.defaultTransport || "direct",
   };
 }

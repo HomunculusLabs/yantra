@@ -1,3 +1,4 @@
+import "./load-env";
 /**
  * Yantra Daemon — unified background server
  *
@@ -18,7 +19,7 @@ import fs from "fs";
 import cron from "node-cron";
 import yaml from "js-yaml";
 import chokidar from "chokidar";
-import { execSync } from "child_process";
+import { execFileSync, execSync } from "child_process";
 import matter from "gray-matter";
 import { getDb, closeDb } from "./db";
 import {
@@ -57,22 +58,20 @@ console.log("Database ready.");
 
 // ----- Claude Binary Resolution -----
 
-function resolveClaudePath(): string {
-  const candidates = [
-    path.join(process.env.HOME || "", ".local", "bin", "claude"),
-    "/usr/local/bin/claude",
-    "/opt/homebrew/bin/claude",
-  ];
-
+function resolveBinaryPath(
+  binary: string,
+  candidates: string[],
+  fallbackLabel = binary
+): string {
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) {
-      console.log(`Found claude at: ${candidate}`);
+      console.log(`Found ${binary} at: ${candidate}`);
       return candidate;
     }
   }
 
   try {
-    const resolved = execSync("which claude", {
+    const resolved = execSync(`which ${binary}`, {
       encoding: "utf8",
       env: {
         ...process.env,
@@ -80,21 +79,47 @@ function resolveClaudePath(): string {
       },
     }).trim();
     if (resolved) {
-      console.log(`Resolved claude via which: ${resolved}`);
+      console.log(`Resolved ${binary} via which: ${resolved}`);
       return resolved;
     }
   } catch {}
 
-  console.warn("Could not resolve claude path, using 'claude' directly");
-  return "claude";
+  console.warn(`Could not resolve ${binary} path, using '${fallbackLabel}' directly`);
+  return fallbackLabel;
 }
 
-const CLAUDE_PATH = resolveClaudePath();
+const CLAUDE_PATH = resolveBinaryPath("claude", [
+  path.join(process.env.HOME || "", ".local", "bin", "claude"),
+  "/usr/local/bin/claude",
+  "/opt/homebrew/bin/claude",
+]);
+
+const TMUX_PATH = resolveBinaryPath("tmux", [
+  "/usr/bin/tmux",
+  "/bin/tmux",
+  "/usr/local/bin/tmux",
+  "/opt/homebrew/bin/tmux",
+]);
 
 const enrichedPath = [
   `${process.env.HOME}/.local/bin`,
   process.env.PATH,
 ].join(":");
+
+const TMUX_AVAILABLE = (() => {
+  try {
+    execFileSync(TMUX_PATH, ["-V"], {
+      stdio: "ignore",
+      env: {
+        ...process.env,
+        PATH: enrichedPath,
+      },
+    });
+    return true;
+  } catch {
+    return false;
+  }
+})();
 
 // ===== PTY Terminal Server =====
 
@@ -106,6 +131,10 @@ interface PtySession {
   output: string[];
   exited: boolean;
   exitCode: number | null;
+  launchTransport: ResolvedLaunchSpec["transport"];
+  tmuxSessionName?: string;
+  tmuxAttachCommand?: string;
+  terminate: () => void;
   timeoutHandle?: NodeJS.Timeout;
   initialPrompt?: string;
   initialPromptSent?: boolean;
@@ -127,6 +156,52 @@ function resolveSessionCwd(input?: string): string {
   }
 
   return DATA_DIR;
+}
+
+function buildTmuxSessionName(sessionId: string): string {
+  const sanitized = sessionId
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+
+  return `yantra-${sanitized || Date.now()}`;
+}
+
+function buildTmuxAttachCommand(sessionName: string): string {
+  return `${TMUX_PATH} attach -t ${sessionName}`;
+}
+
+function killTmuxSession(sessionName: string): void {
+  try {
+    execFileSync(TMUX_PATH, ["kill-session", "-t", sessionName], {
+      stdio: "ignore",
+      env: {
+        ...process.env,
+        PATH: enrichedPath,
+      },
+    });
+  } catch {
+    // Ignore missing/already-exited sessions.
+  }
+}
+
+function buildTmuxSpawnArgs(launch: ResolvedLaunchSpec, sessionName: string): string[] {
+  const args = ["new-session", "-A", "-s", sessionName, "-c", launch.cwd];
+  const tmuxEnv = {
+    ...(launch.env || {}),
+    PATH: enrichedPath,
+    LANG: "en_US.UTF-8",
+  };
+
+  for (const [key, value] of Object.entries(tmuxEnv)) {
+    if (process.env[key] !== value) {
+      args.push("-e", `${key}=${value}`);
+    }
+  }
+
+  args.push(launch.command, ...launch.args);
+  return args;
 }
 
 function applyCors(req: http.IncomingMessage, res: http.ServerResponse): void {
@@ -333,22 +408,41 @@ function createDetachedSession(input: {
   timeoutSeconds?: number;
   onData?: (chunk: string) => void;
 }): PtySession {
-  const launch = input.launch || {
-    command: CLAUDE_PATH,
-    args: input.args ? input.args : ["--dangerously-skip-permissions"],
-    cwd: resolveSessionCwd(input.cwd),
-    env: {},
-    promptDelivery: input.args
-      ? { method: "none" as const }
-      : {
-          method: "pty_write" as const,
-          when: "ready" as const,
-          readyPattern: "(?:^|\\n)[❯>]\\s*$",
-          submit: true,
-        },
-  };
+  const launch = input.launch
+    ? {
+        ...input.launch,
+        transport: input.launch.transport || "direct",
+      }
+    : {
+        command: CLAUDE_PATH,
+        args: input.args ? input.args : ["--dangerously-skip-permissions"],
+        cwd: resolveSessionCwd(input.cwd),
+        env: {},
+        promptDelivery: input.args
+          ? { method: "none" as const }
+          : {
+              method: "pty_write" as const,
+              when: "ready" as const,
+              readyPattern: "(?:^|\\n)[❯>]\\s*$",
+              submit: true,
+            },
+        transport: "direct" as const,
+      };
 
-  const term = pty.spawn(launch.command, launch.args, {
+  const shouldUseTmux = launch.transport === "tmux" && TMUX_AVAILABLE;
+  if (launch.transport === "tmux" && !TMUX_AVAILABLE) {
+    console.warn(
+      `tmux requested for session ${input.sessionId}, but tmux is unavailable. Falling back to direct launch.`
+    );
+  }
+
+  const tmuxSessionName = shouldUseTmux ? buildTmuxSessionName(input.sessionId) : undefined;
+  const spawnCommand = tmuxSessionName ? TMUX_PATH : launch.command;
+  const spawnArgs = tmuxSessionName
+    ? buildTmuxSpawnArgs(launch, tmuxSessionName)
+    : launch.args;
+
+  const term = pty.spawn(spawnCommand, spawnArgs, {
     name: "xterm-256color",
     cols: 120,
     rows: 30,
@@ -373,6 +467,18 @@ function createDetachedSession(input: {
     output: [],
     exited: false,
     exitCode: null,
+    launchTransport: shouldUseTmux ? "tmux" : "direct",
+    tmuxSessionName,
+    tmuxAttachCommand: tmuxSessionName ? buildTmuxAttachCommand(tmuxSessionName) : undefined,
+    terminate: () => {
+      if (tmuxSessionName) {
+        killTmuxSession(tmuxSessionName);
+        return;
+      }
+      try {
+        term.kill();
+      } catch {}
+    },
     initialPrompt:
       promptDelivery.method === "pty_write" ? input.prompt?.trim() || undefined : undefined,
     initialPromptSent: promptDelivery.method !== "pty_write",
@@ -386,6 +492,12 @@ function createDetachedSession(input: {
       promptDelivery.method === "pty_write" ? promptDelivery.submit !== false : false,
   };
   sessions.set(input.sessionId, session);
+
+  if (tmuxSessionName) {
+    console.log(
+      `Session ${input.sessionId} is running in tmux session ${tmuxSessionName} (${session.tmuxAttachCommand})`
+    );
+  }
 
   term.onData((data: string) => {
     session.output.push(data);
@@ -431,9 +543,7 @@ function createDetachedSession(input: {
   if (input.timeoutSeconds && input.timeoutSeconds > 0) {
     session.timeoutHandle = setTimeout(() => {
       console.warn(`Session ${input.sessionId} timed out after ${input.timeoutSeconds}s`);
-      try {
-        term.kill();
-      } catch {}
+      session.terminate();
     }, input.timeoutSeconds * 1000);
   }
 
@@ -688,9 +798,7 @@ async function shutdown(signal: string): Promise<void> {
     task.stop();
   }
   for (const [, session] of sessions) {
-    try {
-      session.pty.kill();
-    } catch {}
+    session.terminate();
   }
 
   await Promise.allSettled([
@@ -796,13 +904,23 @@ const server = http.createServer(async (req, res) => {
         const sessionId = id || `session-${Date.now()}`;
 
         if (sessions.has(sessionId)) {
+          const existing = sessions.get(sessionId)!;
           res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ sessionId, existing: true }));
+          res.end(
+            JSON.stringify({
+              sessionId,
+              existing: true,
+              launchTransport: existing.launchTransport,
+              tmuxSessionName: existing.tmuxSessionName || null,
+              tmuxAttachCommand: existing.tmuxAttachCommand || null,
+            })
+          );
           return;
         }
 
+        let session: PtySession;
         try {
-          createDetachedSession({
+          session = createDetachedSession({
             sessionId,
             args,
             prompt,
@@ -820,7 +938,14 @@ const server = http.createServer(async (req, res) => {
         console.log(`Session ${sessionId} started via HTTP (agent mode)`);
 
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ sessionId }));
+        res.end(
+          JSON.stringify({
+            sessionId,
+            launchTransport: session.launchTransport,
+            tmuxSessionName: session.tmuxSessionName || null,
+            tmuxAttachCommand: session.tmuxAttachCommand || null,
+          })
+        );
       } catch {
         res.writeHead(400, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "Invalid JSON" }));
@@ -837,6 +962,9 @@ const server = http.createServer(async (req, res) => {
       connected: s.ws !== null,
       exited: s.exited,
       exitCode: s.exitCode,
+      launchTransport: s.launchTransport,
+      tmuxSessionName: s.tmuxSessionName || null,
+      tmuxAttachCommand: s.tmuxAttachCommand || null,
     }));
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify(activeSessions));
@@ -973,6 +1101,7 @@ server.listen(PORT, () => {
   console.log(`  Trigger endpoint: POST http://localhost:${PORT}/trigger`);
   console.log(`  Absurd queue: ${getAbsurdQueueName()}`);
   console.log(`  Using claude: ${CLAUDE_PATH}`);
+  console.log(`  Using tmux: ${TMUX_AVAILABLE ? TMUX_PATH : "disabled (fallback to direct)"}`);
   console.log(`  Working directory: ${DATA_DIR}`);
 
   bootAbsurdWorker();

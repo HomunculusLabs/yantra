@@ -74,6 +74,8 @@
 
 [2026-04-03] Added CronPicker component with 15 human-readable presets (Every hour, Weekdays at 9am, etc.) plus Custom input. Used in: agent heartbeat field (Definition tab), add-job form (Jobs tab), and inline job schedule editor. Cron values show both the expression and human label.
 
+[2026-04-03] Added tmux-backed agent launching. Launcher resolution now defaults daemon-managed agent runs to tmux when available, the daemon exposes tmux session metadata/attach commands for active sessions, and legacy direct agent runs also prefer tmux with a safe direct fallback when tmux is unavailable.
+
 [2026-04-03] Added job description/prompt field — jobs now have a body that serves as the prompt sent to the agent. Visible as a preview on the job card, editable in the expanded edit form. Add-job form also has a prompt textarea. Persona instructions now render as formatted markdown (prose) using a /api/ai/render-md endpoint, with click-to-edit switching to raw markdown textarea. Added @tailwindcss/typography for prose styling.
 
 [2026-04-03] Replaced emoji with Lucide icons for agents in the sidebar. Each agent slug maps to a specific icon: General=Bot, Editor=Pencil, CEO=Crown, Content Marketer=Megaphone, SEO=Search, QA=ShieldCheck, Sales=BarChart3, Developer=Code. Unknown agents fall back to Bot icon.
@@ -83,3 +85,5 @@
 [2026-04-03] Added light yantra icon as sidebar logo (public/logo-light.png) next to 'Yantra' text. Updated favicon to match.
 
 [2026-04-03] Fixed scheduled plays never executing: added cron registration for plays with schedule triggers in play-manager.ts. Plays with schedule triggers now get registered with node-cron on app startup (via /api/agents/personas init) and re-registered when plays are created/updated. Added "schedule" case to trigger-engine.ts. Rewrote README.md with updated problem/solution framing, feature matrix, comparison table, and stronger onboarding copy.
+
+[2026-04-03] Added dataview-style markdown rendering for fenced ```dataview``` blocks. Markdown preview now renders those queries server-side against vault notes, preserves the original query block during editor round-trips, and the Getting Started page includes a live example.

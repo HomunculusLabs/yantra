@@ -1,3 +1,5 @@
+export type CliLauncherTransport = "direct" | "tmux";
+
 export interface CliLauncherPromptPtyWrite {
   method: "pty_write";
   when: "immediate" | "ready";
@@ -28,6 +30,7 @@ export interface CliLauncherDefinition {
   env?: Record<string, string>;
   requiredVars?: string[];
   promptDelivery?: CliLauncherPromptDelivery;
+  transport?: CliLauncherTransport;
   healthcheck?: {
     command?: string;
     args?: string[];
@@ -37,6 +40,7 @@ export interface CliLauncherDefinition {
 export interface LauncherRegistryConfig {
   version: 1;
   defaultLauncherId: string;
+  defaultTransport?: CliLauncherTransport;
   launchers: Record<string, CliLauncherDefinition>;
 }
 
@@ -61,4 +65,5 @@ export interface ResolvedLaunchSpec {
   cwd: string;
   env: Record<string, string>;
   promptDelivery: CliLauncherPromptDelivery;
+  transport: CliLauncherTransport;
 }

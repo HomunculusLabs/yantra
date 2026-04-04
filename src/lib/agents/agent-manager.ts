@@ -1,7 +1,28 @@
-import { spawn, type ChildProcess } from "child_process";
+import { spawn, spawnSync, type ChildProcess } from "child_process";
 import path from "path";
 
 const DATA_DIR = path.join(process.cwd(), "data");
+const TMUX_BIN = process.env.YANTRA_TMUX_BIN?.trim() || "tmux";
+const CLAUDE_BIN = process.env.YANTRA_DEFAULT_CLI_COMMAND?.trim() || "claude";
+const TMUX_AVAILABLE =
+  spawnSync(TMUX_BIN, ["-V"], { stdio: "ignore", env: { ...process.env } }).status === 0;
+
+function buildTmuxSessionName(sessionId: string): string {
+  const sanitized = sessionId
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+
+  return `yantra-${sanitized || Date.now()}`;
+}
+
+function killTmuxSession(sessionName: string): void {
+  spawnSync(TMUX_BIN, ["kill-session", "-t", sessionName], {
+    stdio: "ignore",
+    env: { ...process.env },
+  });
+}
 
 export interface AgentSession {
   id: string;
@@ -12,6 +33,9 @@ export interface AgentSession {
   completedAt?: string;
   output: string;
   process?: ChildProcess;
+  launchTransport: "direct" | "tmux";
+  tmuxSessionName?: string;
+  tmuxAttachCommand?: string;
 }
 
 // In-memory session store
@@ -68,6 +92,8 @@ export async function runAgent(
   workdir?: string
 ): Promise<string> {
   const id = `agent-${Date.now()}`;
+  const cwd = workdir ? path.join(DATA_DIR, workdir) : DATA_DIR;
+  const tmuxSessionName = TMUX_AVAILABLE ? buildTmuxSessionName(id) : undefined;
 
   const session: AgentSession = {
     id,
@@ -76,14 +102,43 @@ export async function runAgent(
     status: "running",
     startedAt: new Date().toISOString(),
     output: "",
+    launchTransport: tmuxSessionName ? "tmux" : "direct",
+    tmuxSessionName,
+    tmuxAttachCommand: tmuxSessionName ? `${TMUX_BIN} attach -t ${tmuxSessionName}` : undefined,
   };
 
-  const cwd = workdir ? path.join(DATA_DIR, workdir) : DATA_DIR;
-  const proc = spawn("claude", ["--dangerously-skip-permissions", "-p", prompt, "--output-format", "text"], {
-    cwd,
-    env: { ...process.env },
-    stdio: ["pipe", "pipe", "pipe"],
-  });
+  const proc = tmuxSessionName
+    ? spawn(
+        TMUX_BIN,
+        [
+          "new-session",
+          "-A",
+          "-s",
+          tmuxSessionName,
+          "-c",
+          cwd,
+          CLAUDE_BIN,
+          "--dangerously-skip-permissions",
+          "-p",
+          prompt,
+          "--output-format",
+          "text",
+        ],
+        {
+          cwd,
+          env: { ...process.env },
+          stdio: ["pipe", "pipe", "pipe"],
+        }
+      )
+    : spawn(
+        CLAUDE_BIN,
+        ["--dangerously-skip-permissions", "-p", prompt, "--output-format", "text"],
+        {
+          cwd,
+          env: { ...process.env },
+          stdio: ["pipe", "pipe", "pipe"],
+        }
+      );
 
   session.process = proc;
   sessions.set(id, session);
@@ -101,15 +156,15 @@ export async function runAgent(
     session.completedAt = new Date().toISOString();
     delete session.process;
 
-    // Auto-summarize on completion if linked to a task
     if (code === 0 && taskId) {
       autoSummarize(session).catch(() => {});
     }
   });
 
-  proc.on("error", () => {
+  proc.on("error", (error) => {
     session.status = "failed";
     session.completedAt = new Date().toISOString();
+    session.output += `\n${error.message}\n`;
     delete session.process;
   });
 
@@ -118,7 +173,6 @@ export async function runAgent(
 
 async function autoSummarize(session: AgentSession): Promise<void> {
   try {
-    // Get recent git diff
     const diffProc = spawn("git", ["diff", "HEAD~1", "--stat"], {
       cwd: DATA_DIR,
       stdio: ["pipe", "pipe", "pipe"],
@@ -140,7 +194,15 @@ export function stopAgent(id: string): boolean {
   const session = sessions.get(id);
   if (!session || !session.process) return false;
 
-  session.process.kill();
+  if (session.tmuxSessionName) {
+    killTmuxSession(session.tmuxSessionName);
+  }
+  try {
+    session.process.kill();
+  } catch {
+    // ignore
+  }
+
   session.status = "failed";
   session.completedAt = new Date().toISOString();
   delete session.process;
