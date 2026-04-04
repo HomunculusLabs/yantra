@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, shell } from "electron";
+import { app, BrowserWindow, dialog, Menu, shell, type MenuItemConstructorOptions } from "electron";
 import { spawn, type ChildProcess } from "child_process";
 import { getDesktopRuntimeSpec, type DesktopRuntimeSpec, type DesktopChildSpec } from "./runtime";
 import { seedDesktopState } from "./seed";
@@ -17,6 +17,7 @@ const managedServices: Record<"web" | "daemon", ManagedService> = {
 };
 
 let mainWindow: BrowserWindow | null = null;
+let currentRuntime: DesktopRuntimeSpec | null = null;
 let quitting = false;
 
 async function waitForHealth(
@@ -196,11 +197,102 @@ function createWindow(runtime: DesktopRuntimeSpec): void {
   });
 }
 
+function restoreOrCreateWindow(): void {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    mainWindow.show();
+    mainWindow.focus();
+    return;
+  }
+
+  if (currentRuntime) {
+    createWindow(currentRuntime);
+  }
+}
+
+function installMenus(): void {
+  const template: MenuItemConstructorOptions[] = [
+    {
+      label: "Yantra",
+      submenu: [
+        {
+          label: "Open Yantra",
+          accelerator: "CmdOrCtrl+Shift+Y",
+          click: () => restoreOrCreateWindow(),
+        },
+        { type: "separator" },
+        { role: "hide" },
+        { role: "hideOthers" },
+        { role: "unhide" },
+        { type: "separator" },
+        {
+          label: "Quit Yantra",
+          accelerator: "CmdOrCtrl+Q",
+          click: () => app.quit(),
+        },
+      ],
+    },
+    {
+      label: "Window",
+      submenu: [
+        {
+          label: "Open Yantra",
+          click: () => restoreOrCreateWindow(),
+        },
+        { role: "minimize" },
+        { role: "zoom" },
+        ...(process.platform === "darwin"
+          ? ([{ type: "separator" }, { role: "front" }] as MenuItemConstructorOptions[])
+          : []),
+      ],
+    },
+  ];
+
+  if (process.platform !== "darwin") {
+    template.unshift({
+      label: "File",
+      submenu: [
+        {
+          label: "Open Yantra",
+          accelerator: "CmdOrCtrl+Shift+Y",
+          click: () => restoreOrCreateWindow(),
+        },
+        { type: "separator" },
+        {
+          label: "Quit Yantra",
+          accelerator: "CmdOrCtrl+Q",
+          click: () => app.quit(),
+        },
+      ],
+    });
+  }
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+
+  if (process.platform === "darwin" && app.dock) {
+    app.dock.setMenu(
+      Menu.buildFromTemplate([
+        {
+          label: "Open Yantra",
+          click: () => restoreOrCreateWindow(),
+        },
+        {
+          label: "Quit Yantra",
+          click: () => app.quit(),
+        },
+      ])
+    );
+  }
+}
+
 async function boot(): Promise<void> {
   const runtime = getDesktopRuntimeSpec({
     isPackaged: app.isPackaged,
     userDataPath: app.getPath("userData"),
   });
+  currentRuntime = runtime;
 
   process.chdir(runtime.mode === "packaged" ? runtime.configRoot : runtime.web.cwd);
   console.log(`[yantra:desktop] mode=${runtime.mode}`);
@@ -225,13 +317,11 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 app.on("second-instance", () => {
-  if (mainWindow) {
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
-  }
+  restoreOrCreateWindow();
 });
 
 app.whenReady().then(() => {
+  installMenus();
   void boot().catch((error) => {
     dialog.showErrorBox(
       "Yantra failed to launch",
@@ -241,8 +331,13 @@ app.whenReady().then(() => {
   });
 });
 
+app.on("activate", () => {
+  restoreOrCreateWindow();
+});
+
 app.on("window-all-closed", () => {
-  app.quit();
+  // Keep the Electron process alive so the daemon continues running.
+  // Users can reopen the UI from the dock; explicit app quit still stops children.
 });
 
 app.on("before-quit", () => {
