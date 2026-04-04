@@ -27,7 +27,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAppStore } from "@/stores/app-store";
 import { useTreeStore } from "@/stores/tree-store";
 import { WebTerminal } from "@/components/terminal/web-terminal";
+import { AgentAvatar } from "@/components/agents/agent-avatar";
 import { cn } from "@/lib/utils";
+import type { AgentStackPayload, StackCatalogEntry } from "@/types/agent-stack";
 
 type TabId = "definition" | "jobs" | "sessions";
 
@@ -70,32 +72,6 @@ interface AgentRelatedFile {
   description?: string;
   exists: boolean;
   creatable?: boolean;
-}
-
-interface StackCatalogEntry {
-  label: string;
-  path: string;
-  source: string;
-}
-
-interface AgentStackPayload {
-  stackPath: string | null;
-  stack: {
-    paths?: {
-      primary?: string;
-      secondary?: string;
-      tertiary?: string;
-    };
-    contextFiles?: string[];
-    skills?: string[];
-    skillsets?: string[];
-    extraExtensions?: string[];
-  } | null;
-  catalog: {
-    extensions: StackCatalogEntry[];
-    skills: StackCatalogEntry[];
-    skillsets: StackCatalogEntry[];
-  };
 }
 
 interface HeartbeatRecord {
@@ -1703,7 +1679,7 @@ export function AgentDetail({ slug }: { slug: string }) {
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <span className="text-xl">{persona.emoji}</span>
+          <AgentAvatar name={persona.name} slug={persona.slug} size="md" />
           <div>
             <h2 className="text-[15px] font-semibold tracking-[-0.02em]">
               {persona.name}

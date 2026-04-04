@@ -1,59 +1,61 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
   Bot,
-  CheckCircle2,
-  FileText,
   Loader2,
   Pause,
   Play,
   Plus,
-  RefreshCw,
-  Send,
   Settings,
   Trash2,
-  XCircle,
   Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { SchedulePicker } from "@/components/mission-control/schedule-picker";
+import { AgentAvatar } from "@/components/agents/agent-avatar";
+import { AgentJobsEditor } from "@/components/agents/agent-jobs-editor";
+import { AgentsConversationList } from "@/components/agents/agents-conversation-list";
+import { AgentsWorkspaceComposer } from "@/components/agents/agents-workspace-composer";
 import { WebTerminal } from "@/components/terminal/web-terminal";
+import { useAgentsWorkspaceData } from "@/components/agents/use-agents-workspace-data";
+import {
+  collectContextOptions,
+  flattenTree,
+  slugify,
+  togglePath,
+  TRIGGER_LABELS,
+  type StatusFilter,
+  type TriggerFilter,
+} from "@/components/agents/agents-workspace.helpers";
+import {
+  createAgentJob,
+  createAgentPersona,
+  createManualConversation,
+  deleteAgentJob,
+  deleteAgentPersona,
+  getAgentStack,
+  runAgentJob,
+  runAgentPersona,
+  saveAgentJob,
+  saveAgentPersona,
+  saveAgentStack,
+  toggleAgentPersona,
+} from "@/lib/api/agents-client";
+import { replacePastedTextNotice } from "@/lib/agents/transcript-format";
 import { useTreeStore } from "@/stores/tree-store";
 import { useAppStore } from "@/stores/app-store";
-import type { TreeNode } from "@/types";
-import type { ConversationDetail, ConversationMeta } from "@/types/conversations";
+import type { CreateAgentPersonaRequest } from "@/types/agent-api";
+import type { AgentStackPayload, StackCatalogEntry } from "@/types/agent-stack";
 import type { JobConfig } from "@/types/jobs";
-import { cronToHuman } from "@/lib/agents/cron-utils";
 
-type TriggerFilter = "all" | "manual" | "job" | "heartbeat";
-type StatusFilter = "all" | "running" | "failed";
 type MainPanelMode = "composer" | "conversation" | "settings";
 type NonSettingsMode = Exclude<MainPanelMode, "settings">;
 type SettingsTarget = "directory" | "__new__" | string | null;
 type AgentSettingsTab = "definition" | "stack" | "jobs";
 type StackEditorTab = "context" | "extensions" | "skills";
-
-interface AgentSummary {
-  name: string;
-  slug: string;
-  emoji: string;
-  role: string;
-  active: boolean;
-  heartbeat?: string;
-  runningCount?: number;
-  department?: string;
-  type?: string;
-  workspace?: string;
-  body?: string;
-}
-
-interface PersonaResponse {
-  persona: AgentSummary;
-}
 
 interface NewAgentDraft {
   name: string;
@@ -68,81 +70,10 @@ interface NewAgentDraft {
   active: boolean;
 }
 
-interface StackCatalogEntry {
-  label: string;
-  path: string;
-  source: string;
-}
-
-interface AgentStackPayload {
-  stackPath: string | null;
-  stack: {
-    paths?: {
-      primary?: string;
-      secondary?: string;
-      tertiary?: string;
-    };
-    contextFiles?: string[];
-    skills?: string[];
-    skillsets?: string[];
-    extraExtensions?: string[];
-  } | null;
-  catalog: {
-    extensions: StackCatalogEntry[];
-    skills: StackCatalogEntry[];
-    skillsets: StackCatalogEntry[];
-  };
-}
-
-const GENERAL_AGENT: AgentSummary = {
-  name: "General",
-  slug: "general",
-  emoji: "🤖",
-  role: "Manual Yantra assistant",
-  active: true,
-  runningCount: 0,
-  department: "general",
-  type: "specialist",
-  workspace: "/",
-  body: "",
-};
-
-const TRIGGER_LABELS: Record<ConversationMeta["trigger"], string> = {
-  manual: "Manual",
-  job: "Job",
-  heartbeat: "Heartbeat",
-};
-
-const TRIGGER_STYLES: Record<ConversationMeta["trigger"], string> = {
-  manual: "bg-blue-500/10 text-blue-500",
-  job: "bg-amber-500/10 text-amber-500",
-  heartbeat: "bg-emerald-500/10 text-emerald-500",
-};
-
-function replacePastedTextNotice(output: string, displayPrompt?: string): string {
-  if (!displayPrompt) return output;
-  return output.replace(/\[Pasted text #\d+(?: \+\d+ lines)?\]/g, displayPrompt);
-}
-
-const AGENT_EMOJI_OPTIONS = [
-  "🤖",
-  "👑",
-  "📝",
-  "📣",
-  "📊",
-  "🎨",
-  "🚀",
-  "🧠",
-  "⚡",
-  "🔧",
-  "💼",
-  "🔍",
-];
-
 const DEFAULT_NEW_AGENT: NewAgentDraft = {
   name: "",
   slug: "",
-  emoji: "🤖",
+  emoji: "",
   role: "",
   heartbeat: "0 */4 * * *",
   department: "general",
@@ -152,102 +83,6 @@ const DEFAULT_NEW_AGENT: NewAgentDraft = {
   active: true,
 };
 
-function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-}
-
-function flattenTree(nodes: TreeNode[]): { path: string; title: string }[] {
-  const pages: { path: string; title: string }[] = [];
-
-  for (const node of nodes) {
-    if (node.type !== "website") {
-      pages.push({
-        path: node.path,
-        title: node.frontmatter?.title || node.name,
-      });
-    }
-    if (node.children) {
-      pages.push(...flattenTree(node.children));
-    }
-  }
-
-  return pages;
-}
-
-function collectContextOptions(nodes: TreeNode[]): { path: string; title: string }[] {
-  const pages: { path: string; title: string }[] = [];
-
-  function walk(list: TreeNode[]) {
-    for (const node of list) {
-      if ((node.type === "file" || node.type === "text") && !node.path.startsWith("@runtime")) {
-        pages.push({
-          path: node.path,
-          title: node.frontmatter?.title || node.name,
-        });
-      }
-      if (node.children) {
-        walk(node.children);
-      }
-    }
-  }
-
-  walk(nodes);
-  return pages;
-}
-
-function formatRelative(iso: string): string {
-  const delta = Date.now() - new Date(iso).getTime();
-  const minutes = Math.floor(delta / 60000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
-
-function triggerFromFilter(filter: TriggerFilter): ConversationMeta["trigger"] | undefined {
-  if (filter === "all") return undefined;
-  return filter;
-}
-
-function statusFromFilter(filter: StatusFilter): ConversationMeta["status"] | undefined {
-  if (filter === "all") return undefined;
-  return filter;
-}
-
-function makePageContextLabel(path: string, pages: { path: string; title: string }[]): string {
-  return pages.find((page) => page.path === path)?.title || path;
-}
-
-function TriggerChip({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "rounded-full px-2.5 py-1 text-[11px] transition-colors",
-        active
-          ? "bg-primary text-primary-foreground"
-          : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
 function AgentSettingsTabButton({
   active,
   onClick,
@@ -255,7 +90,7 @@ function AgentSettingsTabButton({
 }: {
   active: boolean;
   onClick: () => void;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <button
@@ -334,12 +169,6 @@ function PathAutosuggestInput({
       ) : null}
     </div>
   );
-}
-
-function togglePath(paths: string[], path: string): string[] {
-  return paths.includes(path)
-    ? paths.filter((entry) => entry !== path)
-    : [...paths, path];
 }
 
 function StackOptionChecklist({
@@ -441,12 +270,7 @@ function AgentStackSettingsCard({
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`/api/agents/personas/${slug}/stack`);
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || "Failed to load stack");
-      }
-      setPayload(data);
+      setPayload(await getAgentStack(slug));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load stack");
       setPayload(null);
@@ -509,15 +333,7 @@ function AgentStackSettingsCard({
     setSaving(true);
     setError("");
     try {
-      const res = await fetch(`/api/agents/personas/${slug}/stack`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stack: payload.stack }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || "Failed to save stack");
-      }
+      await saveAgentStack(slug, payload.stack);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save stack");
@@ -788,21 +604,13 @@ export function AgentsWorkspace({
   initialMode?: "composer" | "settings";
   initialSettingsTarget?: string | null;
 }) {
-  const [agents, setAgents] = useState<AgentSummary[]>([]);
-  const [conversations, setConversations] = useState<ConversationMeta[]>([]);
-  const [conversationsLoading, setConversationsLoading] = useState(true);
-  const [hasLoadedConversations, setHasLoadedConversations] = useState(false);
   const [mode, setMode] = useState<MainPanelMode>("composer");
   const [previousMode, setPreviousMode] = useState<NonSettingsMode>("composer");
   const [activeAgentSlug, setActiveAgentSlug] = useState<string | null>(
     selectedScope === "agent" ? selectedAgentSlug || null : null
   );
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
-  const [selectedConversation, setSelectedConversation] = useState<ConversationDetail | null>(null);
   const [settingsTarget, setSettingsTarget] = useState<SettingsTarget>(null);
-  const [settingsPersona, setSettingsPersona] = useState<AgentSummary | null>(null);
-  const [settingsBody, setSettingsBody] = useState("");
-  const [settingsJobs, setSettingsJobs] = useState<JobConfig[]>([]);
   const [activeSettingsTab, setActiveSettingsTab] = useState<AgentSettingsTab>("definition");
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [jobDraft, setJobDraft] = useState<JobConfig | null>(null);
@@ -811,10 +619,6 @@ export function AgentsWorkspace({
   const [composerInput, setComposerInput] = useState("");
   const [mentionedPaths, setMentionedPaths] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
-  const [showMentions, setShowMentions] = useState(false);
-  const [mentionQuery, setMentionQuery] = useState("");
-  const [mentionIndex, setMentionIndex] = useState(0);
-  const [mentionStartPos, setMentionStartPos] = useState(0);
   const [savingSettings, setSavingSettings] = useState(false);
   const [creatingAgent, setCreatingAgent] = useState(false);
   const [deletingAgent, setDeletingAgent] = useState(false);
@@ -834,120 +638,36 @@ export function AgentsWorkspace({
     (state) => state.setAgentSettingsReturnSection
   );
 
-  const allPages = flattenTree(treeNodes);
   const settingsAgentSlug =
     settingsTarget && settingsTarget !== "directory" && settingsTarget !== "__new__"
       ? settingsTarget
       : null;
-  const filteredMentions = allPages.filter(
-    (page) =>
-      page.title.toLowerCase().includes(mentionQuery.toLowerCase()) ||
-      page.path.toLowerCase().includes(mentionQuery.toLowerCase())
-  );
-
-  async function refreshAgents() {
-    const response = await fetch("/api/agents/personas");
-    if (!response.ok) return;
-    const data = await response.json();
-    const personas = (data.personas || []) as AgentSummary[];
-    const generalRunning =
-      conversations.filter(
-        (conversation) =>
-          conversation.agentSlug === "general" && conversation.status === "running"
-      ).length || 0;
-
-    const sorted = [
-      { ...GENERAL_AGENT, runningCount: generalRunning },
-      ...personas.sort((a, b) => {
-        if (a.slug === "editor") return -1;
-        if (b.slug === "editor") return 1;
-        return a.name.localeCompare(b.name);
-      }),
-    ];
-    setAgents(sorted);
-  }
-
-  async function refreshConversations() {
-    if (!hasLoadedConversations) {
-      setConversationsLoading(true);
-    }
-    const params = new URLSearchParams();
-    if (activeAgentSlug) params.set("agent", activeAgentSlug);
-    const trigger = triggerFromFilter(triggerFilter);
-    const status = statusFromFilter(statusFilter);
-    if (trigger) params.set("trigger", trigger);
-    if (status) params.set("status", status);
-    params.set("limit", "200");
-
-    const response = await fetch(`/api/agents/conversations?${params.toString()}`);
-    if (response.ok) {
-      const data = await response.json();
-      setConversations((data.conversations || []) as ConversationMeta[]);
-    }
-    setConversationsLoading(false);
-    setHasLoadedConversations(true);
-  }
-
-  async function refreshSettings(agentSlug: string) {
-    if (agentSlug === "general") {
-      setSettingsPersona(GENERAL_AGENT);
-      setSettingsBody("");
-      setSettingsJobs([]);
-      setSelectedJobId(null);
-      setJobDraft(null);
-      return;
-    }
-
-    const [personaResponse, jobsResponse] = await Promise.all([
-      fetch(`/api/agents/personas/${agentSlug}`),
-      fetch(`/api/agents/${agentSlug}/jobs`),
-    ]);
-
-    if (personaResponse.ok) {
-      const data = (await personaResponse.json()) as PersonaResponse;
-      setSettingsPersona(data.persona);
-      setSettingsBody(data.persona.body || "");
-    }
-
-    if (jobsResponse.ok) {
-      const data = await jobsResponse.json();
-      setSettingsJobs((data.jobs || []) as JobConfig[]);
-    } else {
-      setSettingsJobs([]);
-    }
-    setSelectedJobId(null);
-    setJobDraft(null);
-  }
-
-  async function refreshSelectedConversation(conversationId: string) {
-    const response = await fetch(`/api/agents/conversations/${conversationId}`);
-    if (!response.ok) return;
-    const detail = (await response.json()) as ConversationDetail;
-    setSelectedConversation(detail);
-  }
-
-  useEffect(() => {
-    void refreshConversations();
-  }, [activeAgentSlug, triggerFilter, statusFilter]);
-
-  useEffect(() => {
-    void refreshAgents();
-  }, [conversations]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      void refreshConversations();
-      void refreshAgents();
-    }, 3000);
-    return () => clearInterval(interval);
-  }, [activeAgentSlug, triggerFilter, statusFilter, conversations]);
+  const allPages = useMemo(() => flattenTree(treeNodes), [treeNodes]);
+  const {
+    agents,
+    conversations,
+    conversationsLoading,
+    hasLoadedConversations,
+    selectedConversation,
+    settingsPersona,
+    setSettingsPersona,
+    settingsBody,
+    setSettingsBody,
+    settingsJobs,
+    refreshAgents,
+    refreshConversations,
+    refreshSettings,
+  } = useAgentsWorkspaceData({
+    activeAgentSlug,
+    triggerFilter,
+    statusFilter,
+    selectedConversationId,
+    settingsAgentSlug,
+  });
 
   useEffect(() => {
     setActiveAgentSlug(selectedScope === "agent" ? selectedAgentSlug || null : null);
     setSelectedConversationId(null);
-    setSelectedConversation(null);
-    setHasLoadedConversations(false);
-    setConversationsLoading(true);
     if (initialMode === "settings") {
       setSettingsTarget(
         initialSettingsTarget ||
@@ -964,26 +684,13 @@ export function AgentsWorkspace({
   }, [initialMode, initialSettingsTarget, selectedAgentSlug, selectedScope]);
 
   useEffect(() => {
-    if (mode === "settings" && settingsAgentSlug) {
-      void refreshSettings(settingsAgentSlug);
-    }
-  }, [mode, settingsAgentSlug]);
-
-  useEffect(() => {
-    if (!selectedConversationId) {
-      setSelectedConversation(null);
-      return;
-    }
-    const current = conversations.find((conversation) => conversation.id === selectedConversationId);
-    if (current && current.status !== "running") {
-      void refreshSelectedConversation(selectedConversationId);
-    }
-  }, [selectedConversationId, conversations]);
+    setSelectedJobId(null);
+    setJobDraft(null);
+  }, [settingsAgentSlug]);
 
   function selectAgent(agentSlug: string | null, nextMode: MainPanelMode = "composer") {
     setActiveAgentSlug(agentSlug);
     setSelectedConversationId(null);
-    setSelectedConversation(null);
     setSettingsTarget(null);
     setMode(nextMode);
     if (agentSlug) {
@@ -1039,62 +746,18 @@ export function AgentsWorkspace({
     setMode(selectedConversationId && previousMode === "conversation" ? "conversation" : "composer");
   }
 
-  function handleComposerInput(value: string, cursorPosition: number) {
-    setComposerInput(value);
-    const textBefore = value.slice(0, cursorPosition);
-    const atIndex = textBefore.lastIndexOf("@");
-    if (atIndex === -1) {
-      setShowMentions(false);
-      return;
-    }
-
-    const charBefore = atIndex > 0 ? textBefore[atIndex - 1] : " ";
-    if (charBefore !== " " && charBefore !== "\n" && atIndex !== 0) {
-      setShowMentions(false);
-      return;
-    }
-
-    const query = textBefore.slice(atIndex + 1);
-    if (query.includes(" ") || query.includes("\n")) {
-      setShowMentions(false);
-      return;
-    }
-
-    setMentionStartPos(atIndex);
-    setMentionQuery(query);
-    setMentionIndex(0);
-    setShowMentions(true);
-  }
-
-  function insertMention(path: string, title: string) {
-    const before = composerInput.slice(0, mentionStartPos);
-    const after = composerInput.slice(mentionStartPos + mentionQuery.length + 1);
-    setComposerInput(`${before}@${title} ${after}`);
-    setMentionedPaths((current) =>
-      current.includes(path) ? current : [...current, path]
-    );
-    setShowMentions(false);
-  }
-
   async function submitConversation() {
     if (!composerInput.trim()) return;
     if (!activeAgentSlug) return;
 
     setSubmitting(true);
     try {
-      const response = await fetch("/api/agents/conversations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          agentSlug: activeAgentSlug,
-          userMessage: composerInput.trim(),
-          mentionedPaths,
-        }),
-      });
-
-      if (!response.ok) return;
-      const data = await response.json();
-      const conversation = data.conversation as ConversationMeta;
+      const conversation = await createManualConversation({
+        agentSlug: activeAgentSlug,
+        userMessage: composerInput.trim(),
+        mentionedPaths,
+      }).catch(() => null);
+      if (!conversation) return;
       setComposerInput("");
       setMentionedPaths([]);
       setSelectedConversationId(conversation.id);
@@ -1109,18 +772,15 @@ export function AgentsWorkspace({
     if (!settingsAgentSlug || settingsAgentSlug === "general" || !settingsPersona) return;
     setSavingSettings(true);
     try {
-      await fetch(`/api/agents/personas/${settingsAgentSlug}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          role: settingsPersona.role,
-          department: settingsPersona.department,
-          type: settingsPersona.type,
-          heartbeat: settingsPersona.heartbeat,
-          workspace: settingsPersona.workspace,
-          body: settingsBody,
-        }),
-      });
+      const result = await saveAgentPersona(settingsAgentSlug, {
+        role: settingsPersona.role,
+        department: settingsPersona.department,
+        type: settingsPersona.type,
+        heartbeat: settingsPersona.heartbeat,
+        workspace: settingsPersona.workspace,
+        body: settingsBody,
+      }).catch(() => null);
+      if (result === null) return;
       await refreshAgents();
       await refreshSettings(settingsAgentSlug);
     } finally {
@@ -1130,29 +790,20 @@ export function AgentsWorkspace({
 
   async function toggleAgentActive() {
     if (!settingsAgentSlug || settingsAgentSlug === "general") return;
-    await fetch(`/api/agents/personas/${settingsAgentSlug}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "toggle" }),
-    });
+    const result = await toggleAgentPersona(settingsAgentSlug).catch(() => null);
+    if (!result) return;
     await refreshAgents();
     await refreshSettings(settingsAgentSlug);
   }
 
   async function runHeartbeatNow() {
     if (!settingsAgentSlug || settingsAgentSlug === "general") return;
-    const response = await fetch(`/api/agents/personas/${settingsAgentSlug}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "run" }),
-    });
-    if (!response.ok) return;
-    const data = await response.json();
-    if (data.sessionId) {
+    const data = await runAgentPersona(settingsAgentSlug).catch(() => null);
+    if (data?.sessionId) {
       setActiveAgentSlug(settingsAgentSlug);
       setSection({ type: "agent", slug: settingsAgentSlug });
       setSettingsTarget(null);
-      setSelectedConversationId(data.sessionId as string);
+      setSelectedConversationId(data.sessionId);
       setMode("conversation");
       await refreshConversations();
     }
@@ -1186,34 +837,28 @@ export function AgentsWorkspace({
   async function saveJob() {
     if (!settingsAgentSlug || !jobDraft) return;
     const isNew = selectedJobId === "__new__";
-    const endpoint = isNew
-      ? `/api/agents/${settingsAgentSlug}/jobs`
-      : `/api/agents/${settingsAgentSlug}/jobs/${selectedJobId}`;
-    const method = isNew ? "POST" : "PUT";
-    const body = isNew
-      ? jobDraft
-      : {
-          name: jobDraft.name,
-          schedule: jobDraft.schedule,
-          prompt: jobDraft.prompt,
-          timeout: jobDraft.timeout,
-          enabled: jobDraft.enabled,
-        };
-
-    const response = await fetch(endpoint, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!response.ok) return;
+    if (isNew) {
+      const created = await createAgentJob(settingsAgentSlug, jobDraft).catch(() => null);
+      if (!created) return;
+    } else if (selectedJobId) {
+      const saved = await saveAgentJob(settingsAgentSlug, selectedJobId, {
+        name: jobDraft.name,
+        schedule: jobDraft.schedule,
+        prompt: jobDraft.prompt,
+        timeout: jobDraft.timeout,
+        enabled: jobDraft.enabled,
+      }).catch(() => null);
+      if (!saved) return;
+    }
+    setSelectedJobId(null);
+    setJobDraft(null);
     await refreshSettings(settingsAgentSlug);
   }
 
   async function deleteJob(jobId: string) {
     if (!settingsAgentSlug) return;
-    await fetch(`/api/agents/${settingsAgentSlug}/jobs/${jobId}`, {
-      method: "DELETE",
-    });
+    const deleted = await deleteAgentJob(settingsAgentSlug, jobId).catch(() => null);
+    if (deleted === null) return;
     setSelectedJobId(null);
     setJobDraft(null);
     await refreshSettings(settingsAgentSlug);
@@ -1221,18 +866,12 @@ export function AgentsWorkspace({
 
   async function runJob(jobId: string) {
     if (!settingsAgentSlug) return;
-    const response = await fetch(`/api/agents/${settingsAgentSlug}/jobs/${jobId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "run" }),
-    });
-    if (!response.ok) return;
-    const data = await response.json();
-    if (data.run?.id) {
+    const run = await runAgentJob(settingsAgentSlug, jobId).catch(() => null);
+    if (run?.id) {
       setActiveAgentSlug(settingsAgentSlug);
       setSection({ type: "agent", slug: settingsAgentSlug });
       setSettingsTarget(null);
-      setSelectedConversationId(data.run.id as string);
+      setSelectedConversationId(run.id);
       setMode("conversation");
       await refreshConversations();
     }
@@ -1244,35 +883,31 @@ export function AgentsWorkspace({
 
     setCreatingAgent(true);
     try {
-      const response = await fetch("/api/agents/personas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          slug,
-          name: newAgentDraft.name.trim(),
-          role: newAgentDraft.role.trim(),
-          emoji: newAgentDraft.emoji,
-          department: newAgentDraft.department,
-          type: newAgentDraft.type,
-          heartbeat: newAgentDraft.heartbeat,
-          workspace: newAgentDraft.workspace || "workspace",
-          provider: "claude-code",
-          budget: 100,
-          active: newAgentDraft.active,
-          workdir: "/data",
-          focus: [],
-          tags: [newAgentDraft.department],
-          channels:
-            newAgentDraft.department === "general"
-              ? ["general"]
-              : [newAgentDraft.department, "general"],
-          body:
-            newAgentDraft.body.trim() ||
-            `You are ${newAgentDraft.name.trim()}. ${newAgentDraft.role.trim()}`,
-        }),
-      });
-
-      if (!response.ok) return;
+      const payload: CreateAgentPersonaRequest = {
+        slug,
+        name: newAgentDraft.name.trim(),
+        role: newAgentDraft.role.trim(),
+        emoji: newAgentDraft.emoji,
+        department: newAgentDraft.department,
+        type: newAgentDraft.type,
+        heartbeat: newAgentDraft.heartbeat,
+        workspace: newAgentDraft.workspace || "workspace",
+        provider: "claude-code",
+        budget: 100,
+        active: newAgentDraft.active,
+        workdir: "/data",
+        focus: [],
+        tags: [newAgentDraft.department],
+        channels:
+          newAgentDraft.department === "general"
+            ? ["general"]
+            : [newAgentDraft.department, "general"],
+        body:
+          newAgentDraft.body.trim() ||
+          `You are ${newAgentDraft.name.trim()}. ${newAgentDraft.role.trim()}`,
+      };
+      const result = await createAgentPersona(payload).catch(() => null);
+      if (result === null) return;
       await refreshAgents();
       setSettingsTarget(slug);
       setNewAgentDraft(DEFAULT_NEW_AGENT);
@@ -1286,20 +921,14 @@ export function AgentsWorkspace({
     if (!settingsAgentSlug || settingsAgentSlug === "general") return;
     setDeletingAgent(true);
     try {
-      const response = await fetch(`/api/agents/personas/${settingsAgentSlug}`, {
-        method: "DELETE",
-      });
-      if (!response.ok) return;
+      const result = await deleteAgentPersona(settingsAgentSlug).catch(() => null);
+      if (result === null) return;
       if (activeAgentSlug === settingsAgentSlug) {
         setActiveAgentSlug(null);
         setSection({ type: "agents" });
       }
       setSelectedConversationId(null);
-      setSelectedConversation(null);
       setSettingsTarget("directory");
-      setSettingsPersona(null);
-      setSettingsBody("");
-      setSettingsJobs([]);
       setSelectedJobId(null);
       setJobDraft(null);
       await refreshAgents();
@@ -1343,133 +972,37 @@ export function AgentsWorkspace({
 
   return (
     <div className="flex flex-1 overflow-hidden">
-      <div className="w-[340px] min-w-[340px] border-r border-border bg-background">
-        <div className="border-b border-border px-4 py-3">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h3 className="text-[14px] font-semibold">
-                {activeAgent ? activeAgent.name : "All agents"}
-              </h3>
-              <p className="text-[11px] text-muted-foreground">
-                {activeAgent
-                  ? `Recent runs for ${activeAgent.name}`
-                  : "Recent runs across your whole team"}
-              </p>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => {
-                void refreshAgents();
-                void refreshConversations();
-              }}
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {(["all", "manual", "job", "heartbeat"] as TriggerFilter[]).map((filter) => (
-              <TriggerChip
-                key={filter}
-                active={triggerFilter === filter}
-                onClick={() => setTriggerFilter(filter)}
-              >
-                {filter === "all" ? "All" : filter === "job" ? "Jobs" : filter === "heartbeat" ? "Heartbeat" : "Manual"}
-              </TriggerChip>
-            ))}
-          </div>
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {(["all", "running", "failed"] as StatusFilter[]).map((filter) => (
-              <TriggerChip
-                key={filter}
-                active={statusFilter === filter}
-                onClick={() => setStatusFilter(filter)}
-              >
-                {filter === "all" ? "Any status" : filter[0].toUpperCase() + filter.slice(1)}
-              </TriggerChip>
-            ))}
-          </div>
-        </div>
-        <ScrollArea className="h-[calc(100vh-115px)]">
-          <div className="space-y-1 p-2">
-            {conversationsLoading && conversations.length > 0 ? (
-              <div className="flex items-center gap-2 px-3 py-6 text-[12px] text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Loading conversations...
-              </div>
-            ) : !hasLoadedConversations && conversations.length === 0 ? (
-              <div className="px-3 py-8" />
-            ) : conversations.length === 0 ? (
-              <div className="animate-in fade-in duration-300 px-3 py-8 text-[12px] text-muted-foreground">
-                No conversations yet.
-              </div>
-            ) : (
-              conversations.map((conversation) => {
-                const agent = agents.find((entry) => entry.slug === conversation.agentSlug);
-                return (
-                  <button
-                    key={conversation.id}
-                    onClick={() => {
-                      setSelectedConversationId(conversation.id);
-                      setMode("conversation");
-                    }}
-                    className={cn(
-                      "w-full rounded-xl border px-3 py-3 text-left transition-colors",
-                      selectedConversationId === conversation.id
-                        ? "border-primary/30 bg-primary/5"
-                        : "border-border hover:bg-accent/40"
-                    )}
-                  >
-                    <div className="flex items-start gap-2">
-                      <div className="mt-0.5 shrink-0">
-                        {conversation.status === "running" ? (
-                          <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                        ) : conversation.status === "failed" ? (
-                          <XCircle className="h-4 w-4 text-destructive" />
-                        ) : (
-                          <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="truncate text-[12px] font-medium text-foreground">
-                            {conversation.title}
-                          </p>
-                          <span
-                            className={cn(
-                              "rounded-full px-1.5 py-0.5 text-[10px]",
-                              TRIGGER_STYLES[conversation.trigger]
-                            )}
-                          >
-                            {TRIGGER_LABELS[conversation.trigger]}
-                          </span>
-                        </div>
-                        <p className="mt-1 text-[11px] text-muted-foreground">
-                          {agent?.name || conversation.agentSlug} · {formatRelative(conversation.startedAt)}
-                        </p>
-                        {conversation.summary ? (
-                          <p className="mt-1 line-clamp-2 text-[11px] text-muted-foreground/80">
-                            {conversation.summary}
-                          </p>
-                        ) : null}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </ScrollArea>
-      </div>
+      <AgentsConversationList
+        activeAgent={activeAgent}
+        agents={agents}
+        conversations={conversations}
+        conversationsLoading={conversationsLoading}
+        hasLoadedConversations={hasLoadedConversations}
+        selectedConversationId={selectedConversationId}
+        triggerFilter={triggerFilter}
+        statusFilter={statusFilter}
+        onTriggerFilterChange={setTriggerFilter}
+        onStatusFilterChange={setStatusFilter}
+        onRefresh={() => {
+          void refreshAgents();
+          void refreshConversations();
+        }}
+        onSelectConversation={(conversationId) => {
+          setSelectedConversationId(conversationId);
+          setMode("conversation");
+        }}
+      />
 
       <div className="flex-1 overflow-hidden">
         {mode === "conversation" && selectedConversationMeta ? (
           <div className="flex h-full flex-col">
             <div className="border-b border-border px-5 py-4">
               <div className="flex items-center gap-2">
-                <span className="text-lg">
-                  {agents.find((agent) => agent.slug === selectedConversationMeta.agentSlug)?.emoji || "🤖"}
-                </span>
+                <AgentAvatar
+                  name={agents.find((agent) => agent.slug === selectedConversationMeta.agentSlug)?.name}
+                  slug={selectedConversationMeta.agentSlug}
+                  size="md"
+                />
                 <div className="min-w-0">
                   <h3 className="truncate text-[15px] font-semibold">{selectedConversationMeta.title}</h3>
                   <p className="text-[11px] text-muted-foreground">
@@ -1550,7 +1083,7 @@ export function AgentsWorkspace({
                   </div>
                 ) : settingsTarget === "__new__" ? (
                   <div className="flex items-center gap-3">
-                    <span className="text-2xl">{newAgentDraft.emoji || "🤖"}</span>
+                    <AgentAvatar name={newAgentDraft.name || "New agent"} slug={newAgentDraft.slug || "agent"} size="lg" />
                     <div>
                       {settingsReturnLabel ? (
                         <button
@@ -1571,7 +1104,7 @@ export function AgentsWorkspace({
                   </div>
                 ) : (
                   <div className="flex items-center gap-3">
-                    <span className="text-2xl">{settingsAgent?.emoji || "🤖"}</span>
+                    <AgentAvatar name={settingsAgent?.name || "Agent settings"} slug={settingsAgent?.slug} size="lg" />
                     <div>
                       {settingsReturnLabel ? (
                         <button
@@ -1614,7 +1147,7 @@ export function AgentsWorkspace({
                         className="rounded-2xl border border-border bg-card p-4 shadow-sm"
                       >
                         <div className="flex items-start gap-3">
-                          <span className="text-2xl">{agent.emoji}</span>
+                          <AgentAvatar name={agent.name} slug={agent.slug} size="lg" />
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
                               <h4 className="truncate text-[14px] font-semibold">{agent.name}</h4>
@@ -1810,27 +1343,9 @@ export function AgentsWorkspace({
                           </label>
                           <label className="space-y-1.5 text-[11px] text-muted-foreground">
                             <span>Avatar</span>
-                            <div className="flex flex-wrap gap-2 pt-1">
-                              {AGENT_EMOJI_OPTIONS.map((emoji) => (
-                                <button
-                                  key={emoji}
-                                  type="button"
-                                  onClick={() =>
-                                    setNewAgentDraft({
-                                      ...newAgentDraft,
-                                      emoji,
-                                    })
-                                  }
-                                  className={cn(
-                                    "rounded-lg border px-3 py-2 text-lg transition-colors",
-                                    newAgentDraft.emoji === emoji
-                                      ? "border-primary bg-primary/10"
-                                      : "border-border hover:bg-accent/40"
-                                  )}
-                                >
-                                  {emoji}
-                                </button>
-                              ))}
+                            <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/20 px-3 py-2">
+                              <AgentAvatar name={newAgentDraft.name || "New agent"} slug={newAgentDraft.slug || "agent"} size="md" />
+                              <span>Avatars are generated from agent names.</span>
                             </div>
                           </label>
                           <label className="flex items-center gap-2 text-[12px] text-muted-foreground">
@@ -2080,139 +1595,17 @@ export function AgentsWorkspace({
                     ) : null}
 
                     {activeSettingsTab === "jobs" ? (
-                      <div className="grid grid-cols-[320px_minmax(0,1fr)] gap-4">
-                        <div className="rounded-xl border border-border">
-                          <div className="flex items-center justify-between border-b border-border px-4 py-3">
-                            <div>
-                              <h4 className="text-[13px] font-semibold">Jobs</h4>
-                              <p className="text-[11px] text-muted-foreground">Recurring jobs and scheduled prompts for this agent</p>
-                            </div>
-                            <Button size="sm" className="h-8 gap-1 text-xs" onClick={startNewJobDraft}>
-                              <Plus className="h-3.5 w-3.5" />
-                              Add job
-                            </Button>
-                          </div>
-                          <div className="space-y-1 p-2">
-                            {settingsJobs.length === 0 ? (
-                              <div className="px-2 py-6 text-[12px] text-muted-foreground">No jobs yet.</div>
-                            ) : (
-                              settingsJobs.map((job) => (
-                                <button
-                                  key={job.id}
-                                  onClick={() => openJob(job.id)}
-                                  className={cn(
-                                    "w-full rounded-lg border px-3 py-3 text-left transition-colors",
-                                    selectedJobId === job.id
-                                      ? "border-primary/30 bg-primary/5"
-                                      : "border-border hover:bg-accent/40"
-                                  )}
-                                >
-                                  <div className="flex items-center gap-2">
-                                    <FileText className="h-4 w-4 text-muted-foreground" />
-                                    <span className="truncate text-[12px] font-medium">{job.name}</span>
-                                    <span
-                                      className={cn(
-                                        "ml-auto rounded-full px-1.5 py-0.5 text-[10px]",
-                                        job.enabled
-                                          ? "bg-emerald-500/10 text-emerald-500"
-                                          : "bg-muted text-muted-foreground"
-                                      )}
-                                    >
-                                      {job.enabled ? "On" : "Off"}
-                                    </span>
-                                  </div>
-                                  <p className="mt-1 truncate text-[11px] text-muted-foreground">{cronToHuman(job.schedule)}</p>
-                                </button>
-                              ))
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="rounded-xl border border-border p-4">
-                          {jobDraft ? (
-                            <div className="space-y-3">
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <h4 className="text-[13px] font-semibold">
-                                    {selectedJobId === "__new__" ? "New job" : "Job settings"}
-                                  </h4>
-                                  <p className="text-[11px] text-muted-foreground">
-                                    Prompts relevant to the agent that run on a schedule
-                                  </p>
-                                </div>
-                                <div className="flex gap-2">
-                                  {selectedJobId && selectedJobId !== "__new__" ? (
-                                    <>
-                                      <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="h-8 gap-1 text-xs"
-                                        onClick={() => runJob(selectedJobId)}
-                                      >
-                                        <Play className="h-3.5 w-3.5" />
-                                        Run
-                                      </Button>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-8 gap-1 text-xs text-destructive"
-                                        onClick={() => deleteJob(selectedJobId)}
-                                      >
-                                        <Trash2 className="h-3.5 w-3.5" />
-                                        Delete
-                                      </Button>
-                                    </>
-                                  ) : null}
-                                  <Button size="sm" className="h-8 text-xs" onClick={saveJob}>
-                                    Save job
-                                  </Button>
-                                </div>
-                              </div>
-                              <label className="space-y-1 text-[11px] text-muted-foreground">
-                                <span>Name</span>
-                                <input
-                                  value={jobDraft.name}
-                                  onChange={(event) => setJobDraft({ ...jobDraft, name: event.target.value })}
-                                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
-                                />
-                              </label>
-                              <div className="space-y-1">
-                                <SchedulePicker
-                                  label="Schedule"
-                                  value={jobDraft.schedule}
-                                  onChange={(schedule) => setJobDraft({ ...jobDraft, schedule })}
-                                />
-                              </div>
-                              <label className="space-y-1 text-[11px] text-muted-foreground">
-                                <span>Timeout (seconds)</span>
-                                <input
-                                  type="number"
-                                  value={jobDraft.timeout || 600}
-                                  onChange={(event) =>
-                                    setJobDraft({
-                                      ...jobDraft,
-                                      timeout: parseInt(event.target.value || "600", 10),
-                                    })
-                                  }
-                                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
-                                />
-                              </label>
-                              <label className="space-y-1 text-[11px] text-muted-foreground">
-                                <span>Prompt</span>
-                                <textarea
-                                  value={jobDraft.prompt}
-                                  onChange={(event) => setJobDraft({ ...jobDraft, prompt: event.target.value })}
-                                  className="min-h-[220px] w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
-                                />
-                              </label>
-                            </div>
-                          ) : (
-                            <div className="flex h-full min-h-[280px] items-center justify-center text-[12px] text-muted-foreground">
-                              Select a job to edit its settings, or create a new one.
-                            </div>
-                          )}
-                        </div>
-                      </div>
+                      <AgentJobsEditor
+                        jobs={settingsJobs}
+                        selectedJobId={selectedJobId}
+                        jobDraft={jobDraft}
+                        onStartNewJobDraft={startNewJobDraft}
+                        onOpenJob={openJob}
+                        onRunJob={runJob}
+                        onDeleteJob={deleteJob}
+                        onSaveJob={saveJob}
+                        onJobDraftChange={(job) => setJobDraft(job)}
+                      />
                     ) : null}
                   </>
                 ) : (
@@ -2265,94 +1658,16 @@ export function AgentsWorkspace({
                   </p>
                 </div>
               ) : (
-                <div className="mx-auto w-full max-w-3xl">
-                  <div className="relative rounded-2xl border border-border bg-card p-4 shadow-sm">
-                    <textarea
-                      value={composerInput}
-                      onChange={(event) =>
-                        handleComposerInput(
-                          event.target.value,
-                          event.target.selectionStart || event.target.value.length
-                        )
-                      }
-                      onKeyDown={(event) => {
-                        if (showMentions && filteredMentions.length > 0) {
-                          if (event.key === "ArrowDown") {
-                            event.preventDefault();
-                            setMentionIndex((current) => (current + 1) % filteredMentions.length);
-                          } else if (event.key === "ArrowUp") {
-                            event.preventDefault();
-                            setMentionIndex((current) =>
-                              current === 0 ? filteredMentions.length - 1 : current - 1
-                            );
-                          } else if (event.key === "Enter" && !event.shiftKey) {
-                            event.preventDefault();
-                            const page = filteredMentions[mentionIndex];
-                            if (page) insertMention(page.path, page.title);
-                          } else if (event.key === "Escape") {
-                            setShowMentions(false);
-                          }
-                          return;
-                        }
-
-                        if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                          event.preventDefault();
-                          void submitConversation();
-                        }
-                      }}
-                      placeholder={`Ask ${agents.find((agent) => agent.slug === activeAgentSlug)?.name || activeAgentSlug} to work on something...`}
-                      className="min-h-[180px] w-full resize-none bg-transparent text-[14px] outline-none"
-                    />
-
-                    {mentionedPaths.length > 0 ? (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {mentionedPaths.map((path) => (
-                          <button
-                            key={path}
-                            onClick={() =>
-                              setMentionedPaths((current) => current.filter((entry) => entry !== path))
-                            }
-                            className="rounded-full bg-muted px-2.5 py-1 text-[11px] text-muted-foreground hover:text-foreground"
-                          >
-                            @{makePageContextLabel(path, allPages)}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-
-                    {showMentions && filteredMentions.length > 0 ? (
-                      <div className="absolute left-4 right-4 top-[calc(100%-12px)] z-10 rounded-xl border border-border bg-popover p-1 shadow-lg">
-                        {filteredMentions.slice(0, 6).map((page, index) => (
-                          <button
-                            key={page.path}
-                            onClick={() => insertMention(page.path, page.title)}
-                            className={cn(
-                              "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[12px]",
-                              index === mentionIndex
-                                ? "bg-accent text-foreground"
-                                : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-                            )}
-                          >
-                            <span className="truncate">{page.title}</span>
-                            <span className="ml-3 truncate text-[11px] text-muted-foreground">
-                              {page.path}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-
-                    <div className="mt-4 flex items-center justify-between">
-                      <p className="text-[11px] text-muted-foreground">
-                        Tip: type <span className="font-mono">@</span> to mention KB files. Press Cmd/Ctrl + Enter to send.
-                      </p>
-                      <Button className="gap-2" onClick={() => void submitConversation()} disabled={submitting}>
-                        {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                        Start conversation
-                      </Button>
-                    </div>
-                  </div>
-                </div>
+                <AgentsWorkspaceComposer
+                  agentName={activeAgent?.name || activeAgentSlug}
+                  allPages={allPages}
+                  value={composerInput}
+                  mentionedPaths={mentionedPaths}
+                  submitting={submitting}
+                  onValueChange={setComposerInput}
+                  onMentionedPathsChange={setMentionedPaths}
+                  onSubmit={submitConversation}
+                />
               )}
             </div>
           </div>

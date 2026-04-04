@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { replacePastedTextNotice } from "@/lib/agents/transcript-format";
 
 interface WebTerminalProps {
   sessionId?: string;
@@ -14,11 +15,6 @@ interface DaemonAuthPayload {
   token: string;
   ptyWebSocketUrl: string;
   eventsWebSocketUrl?: string;
-}
-
-function replacePastedTextNotice(output: string, displayPrompt?: string) {
-  if (!displayPrompt) return output;
-  return output.replace(/\[Pasted text #\d+(?: \+\d+ lines)?\]/g, displayPrompt);
 }
 
 function getTerminalTheme(isDark: boolean) {
