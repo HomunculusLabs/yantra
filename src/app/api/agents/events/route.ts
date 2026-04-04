@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
+import fs from "fs/promises";
 import { listPersonas } from "@/lib/agents/persona-manager";
 import { getGoalState } from "@/lib/agents/goal-manager";
-import { getMessages } from "@/lib/agents/slack-manager";
-import { getRespondingAgents } from "@/app/api/agents/slack/route";
-import fs from "fs/promises";
-import path from "path";
+import {
+  buildRespondingAgentPayload,
+  detectSlackActivity,
+} from "@/lib/agents/slack-monitor";
 import { DATA_DIR } from "@/lib/storage/path-utils";
 import { getYantraRoots } from "@/lib/config/yantra-roots";
 import { getRunningConversationCounts } from "@/lib/agents/conversation-store";
@@ -22,7 +23,9 @@ async function getDataDirVersion(): Promise<string> {
       const agentStat = await fs.stat(agentsDir);
       const agentEntries = await fs.readdir(agentsDir);
       agentsSig = `${agentStat.mtimeMs}-${agentEntries.length}`;
-    } catch { /* ignore if .agents doesn't exist yet */ }
+    } catch {
+      /* ignore if .agents doesn't exist yet */
+    }
 
     return `${stat.mtimeMs}-${entries.length}-${agentsSig}`;
   } catch {
@@ -50,7 +53,7 @@ export async function GET() {
       };
 
       // Track last known state for diffing
-      let lastSlackCounts: Record<string, number> = {};
+      let lastSlackCursor: Record<string, string | null> = {};
       let lastDataVersion = await getDataDirVersion();
 
       const tick = async () => {
@@ -99,37 +102,11 @@ export async function GET() {
 
           // New Slack messages (check for new messages per channel)
           const channels = ["general", "marketing", "engineering", "operations", "alerts"];
-          const newSlackCounts: Record<string, number> = {};
-          for (const ch of channels) {
-            try {
-              const msgs = await getMessages(ch, 1);
-              newSlackCounts[ch] = msgs.length > 0 ? msgs.length : 0;
-            } catch {
-              newSlackCounts[ch] = 0;
-            }
+          const slackActivity = await detectSlackActivity(channels, lastSlackCursor);
+          lastSlackCursor = slackActivity.nextCursor;
+          for (const event of slackActivity.events) {
+            send("slack_activity", event);
           }
-
-          // Detect if any channel has new messages
-          for (const ch of channels) {
-            if (lastSlackCounts[ch] !== undefined && newSlackCounts[ch] > lastSlackCounts[ch]) {
-              // Include latest message content for @human detection
-              try {
-                const latestMsgs = await getMessages(ch, 1);
-                const latest = latestMsgs[latestMsgs.length - 1];
-                const hasHumanMention = latest?.content?.includes("@human") || latest?.mentions?.includes("human");
-                send("slack_activity", {
-                  channel: ch,
-                  hasHumanMention,
-                  agentName: latest?.displayName || latest?.agent,
-                  agentEmoji: latest?.emoji,
-                  preview: latest?.content?.slice(0, 120),
-                });
-              } catch {
-                send("slack_activity", { channel: ch });
-              }
-            }
-          }
-          lastSlackCounts = newSlackCounts;
 
           // Pulse metrics summary
           const allGoals = personas.flatMap((p) => p.goals || []);
@@ -139,18 +116,7 @@ export async function GET() {
           }).length;
 
           // Responding agents (typing indicator for Slack)
-          const responding = getRespondingAgents();
-          const respondingList = [...responding.entries()].map(([slug, info]) => {
-            const p = personas.find((a) => a.slug === slug);
-            return {
-              slug,
-              channel: info.channel,
-              emoji: p?.emoji || "",
-              name: p?.name || slug,
-            };
-          });
-          // Always send — empty array clears the typing indicator
-          send("agent_responding", respondingList);
+          send("agent_responding", buildRespondingAgentPayload(personas));
 
           send("pulse", {
             totalAgents: personas.length,
@@ -182,7 +148,11 @@ export async function GET() {
       const cleanup = () => {
         closed = true;
         clearInterval(interval);
-        try { controller.close(); } catch { /* already closed */ }
+        try {
+          controller.close();
+        } catch {
+          /* already closed */
+        }
       };
 
       // Auto-close after 5 minutes to prevent zombie connections

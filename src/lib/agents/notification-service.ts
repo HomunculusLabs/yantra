@@ -1,36 +1,4 @@
-import path from "path";
-import fs from "fs/promises";
-import { getYantraRoots } from "@/lib/config/yantra-roots";
-
-const CONFIG_FILE = path.join(
-  getYantraRoots().runtimeConfigRoot,
-  "integrations.json"
-);
-
-interface NotificationConfig {
-  notifications: {
-    browser_push: boolean;
-    telegram: { enabled: boolean; bot_token: string; chat_id: string };
-    slack_webhook: { enabled: boolean; url: string };
-    email: { enabled: boolean; frequency: string; to: string };
-    nextcloud_talk?: {
-      enabled: boolean;
-      server_url: string;
-      username: string;
-      app_password: string;
-      default_room_token: string;
-    };
-  };
-}
-
-async function loadConfig(): Promise<NotificationConfig | null> {
-  try {
-    const raw = await fs.readFile(CONFIG_FILE, "utf-8");
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
+import { loadIntegrationConfig } from "@/lib/agents/integrations-manager";
 
 /**
  * Send a notification to configured channels.
@@ -43,8 +11,7 @@ export async function sendNotification(opts: {
   channel?: string;
   severity?: "info" | "warning" | "critical";
 }): Promise<{ sent: string[] }> {
-  const config = await loadConfig();
-  if (!config) return { sent: [] };
+  const config = await loadIntegrationConfig();
 
   const sent: string[] = [];
   const { title, message, agentName } = opts;
@@ -57,11 +24,9 @@ export async function sendNotification(opts: {
     const { bot_token, chat_id } = config.notifications.telegram;
     if (bot_token && chat_id) {
       try {
-        const text = [
-          `*${title}*`,
-          agentName || "",
-          message,
-        ].filter(Boolean).join("\n");
+        const text = [`*${title}*`, agentName || "", message]
+          .filter(Boolean)
+          .join("\n");
 
         const res = await fetch(`https://api.telegram.org/bot${bot_token}/sendMessage`, {
           method: "POST",
@@ -74,7 +39,9 @@ export async function sendNotification(opts: {
           }),
         });
         if (res.ok) sent.push("telegram");
-      } catch { /* ignore telegram errors */ }
+      } catch {
+        /* ignore telegram errors */
+      }
     }
   }
 
@@ -83,11 +50,9 @@ export async function sendNotification(opts: {
     const { url } = config.notifications.slack_webhook;
     if (url) {
       try {
-        const text = [
-          `*${title}*`,
-          agentName || "",
-          message,
-        ].filter(Boolean).join("\n");
+        const text = [`*${title}*`, agentName || "", message]
+          .filter(Boolean)
+          .join("\n");
 
         const res = await fetch(url, {
           method: "POST",
@@ -95,7 +60,9 @@ export async function sendNotification(opts: {
           body: JSON.stringify({ text }),
         });
         if (res.ok) sent.push("slack_webhook");
-      } catch { /* ignore slack errors */ }
+      } catch {
+        /* ignore slack errors */
+      }
     }
   }
 
@@ -114,11 +81,7 @@ export async function sendNotification(opts: {
       roomToken
     ) {
       try {
-        const text = [
-          title,
-          agentName || "",
-          message,
-        ].filter(Boolean).join("\n");
+        const text = [title, agentName || "", message].filter(Boolean).join("\n");
 
         const base = nextcloud.server_url.replace(/\/+$/, "");
         const res = await fetch(

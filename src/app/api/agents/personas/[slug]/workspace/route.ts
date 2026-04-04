@@ -1,34 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import path from "path";
-import fs from "fs/promises";
-import { getYantraRoots } from "@/lib/config/yantra-roots";
 import { readPersona } from "@/lib/agents/persona-manager";
+import { listPersonaWorkspaceFiles } from "@/lib/agents/workspace-manager";
 
 type RouteParams = { params: Promise<{ slug: string }> };
-
-async function scanDir(dir: string, basePath: string): Promise<Array<{ path: string; name: string; modified: string }>> {
-  const results: Array<{ path: string; name: string; modified: string }> = [];
-  try {
-    const entries = await fs.readdir(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.name.startsWith(".")) continue;
-      const fullPath = path.join(dir, entry.name);
-      const relPath = path.relative(getYantraRoots().runtimeRoot, fullPath);
-      if (entry.isDirectory()) {
-        const sub = await scanDir(fullPath, basePath);
-        results.push(...sub);
-      } else {
-        const stat = await fs.stat(fullPath);
-        results.push({
-          path: relPath,
-          name: entry.name,
-          modified: stat.mtime.toISOString(),
-        });
-      }
-    }
-  } catch { /* dir doesn't exist */ }
-  return results;
-}
 
 export async function GET(_req: NextRequest, { params }: RouteParams) {
   const { slug } = await params;
@@ -37,30 +11,5 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const allFiles: Array<{ path: string; name: string; modified: string }> = [];
-
-  // 1. Scan agent's private workspace
-  const roots = getYantraRoots();
-  const workspaceDir = path.join(roots.runtimeAgentsRoot, slug, "workspace");
-  const workspaceFiles = await scanDir(workspaceDir, workspaceDir);
-  allFiles.push(...workspaceFiles);
-
-  // 2. Scan agent's output_dir (KB department folder) if configured
-  const outputDir = (persona as unknown as Record<string, unknown>).output_dir as string | undefined;
-  if (outputDir) {
-    const resolvedDir = path.resolve(roots.vaultRoot, outputDir.replace(/^\/data\//, ""));
-    // Safety: must be under vault root
-    if (resolvedDir.startsWith(roots.vaultRoot)) {
-      const outputFiles = await scanDir(resolvedDir, resolvedDir);
-      allFiles.push(...outputFiles);
-    }
-  }
-
-  // Sort by modified date, newest first
-  allFiles.sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime());
-
-  return NextResponse.json({
-    files: allFiles,
-    outputDir: outputDir || null,
-  });
+  return NextResponse.json(await listPersonaWorkspaceFiles(persona));
 }

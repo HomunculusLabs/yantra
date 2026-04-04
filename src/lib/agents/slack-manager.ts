@@ -73,6 +73,13 @@ export async function getMessages(
   return limit > 0 ? messages.slice(-limit) : messages;
 }
 
+export async function getLatestMessage(
+  channel: string
+): Promise<SlackMessage | null> {
+  const messages = await getMessages(channel, 1);
+  return messages[messages.length - 1] ?? null;
+}
+
 // ---------------------------------------------------------------------------
 // Read recent messages across ALL channels
 // ---------------------------------------------------------------------------
