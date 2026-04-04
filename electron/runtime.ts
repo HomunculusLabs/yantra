@@ -50,8 +50,6 @@ function sharedDesktopEnv(input: {
     YANTRA_MIGRATIONS_DIR: input.migrationsDir,
     YANTRA_DEFAULT_VAULT_ROOT: input.defaultVaultRoot,
     YANTRA_DEFAULT_RUNTIME_ROOT: input.defaultRuntimeRoot,
-    YANTRA_VAULT_ROOT: input.defaultVaultRoot,
-    YANTRA_RUNTIME_ROOT: input.defaultRuntimeRoot,
     YANTRA_DAEMON_HOST: "127.0.0.1",
     YANTRA_DAEMON_URL: "http://127.0.0.1:3001",
     YANTRA_DAEMON_PUBLIC_ORIGIN: "http://127.0.0.1:3001",

@@ -95,3 +95,5 @@
 [2026-04-04] Converted Yantra to a Bun-first Electron desktop workflow. Added Electron runtime/main/seed files, desktop staging + verification scripts, exact-pinned Bun package policy with supply-chain checks, centralized app path/DB bootstrap logic, server/daemon health endpoint improvements, and removed the legacy terminal-server entrypoint.
 
 [2026-04-04] Fixed Electron/Desktop dev startup failing to resolve Tailwind from a parent workspace root. Investigation showed Next 16 Turbopack dev was selecting `/Users/t3rpz/projects` because the parent directory also contains lockfiles/package metadata, so the web bootstrap now keeps the env sanitized and forces `next dev --webpack`, which restored `GET /` and Electron renderer startup.
+
+[2026-04-04] Fixed agent chat panel loading regressions. Persona loading no longer blocks on a slow/unavailable daemon schedule reload, daemon client calls now time out instead of hanging indefinitely, and conversations still marked `running` are reconciled against live daemon sessions so orphaned unfinished chats show up with a terminal status instead of disappearing into a broken loading state.

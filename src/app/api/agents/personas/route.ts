@@ -9,13 +9,17 @@ import {
 import { reloadDaemonSchedules } from "@/lib/agents/daemon-client";
 import { getRunningConversationCounts } from "@/lib/agents/conversation-store";
 
-// Initialize heartbeats on first request
+// Initialize heartbeats on first request without blocking the UI on daemon health.
 let initialized = false;
+
+function kickDaemonScheduleReload(): void {
+  void reloadDaemonSchedules({ timeoutMs: 1500 }).catch(() => {});
+}
 
 export async function GET() {
   if (!initialized) {
-    await reloadDaemonSchedules().catch(() => {});
     initialized = true;
+    kickDaemonScheduleReload();
   }
 
   const personas = await listPersonas();
@@ -47,7 +51,7 @@ export async function POST(req: NextRequest) {
   const wsDir = path.join(getYantraRoots().runtimeAgentsRoot, slug, "workspace");
   await ensureDirectory(wsDir);
 
-  await reloadDaemonSchedules().catch(() => {});
+  kickDaemonScheduleReload();
 
   return NextResponse.json({ ok: true }, { status: 201 });
 }
