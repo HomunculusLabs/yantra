@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, Pencil, Save } from "lucide-react";
+import { AgentLaunchCommandCard } from "@/components/agents/agent-launch-command-card";
 import { Button } from "@/components/ui/button";
 import { useAppStore } from "@/stores/app-store";
 import { useTreeStore } from "@/stores/tree-store";
@@ -142,6 +143,7 @@ function LauncherConfigCard({
   onSave: (value: AgentLaunchConfig | null) => void;
 }) {
   const [launcherId, setLauncherId] = useState(value?.launcherId || "");
+  const [directCommand, setDirectCommand] = useState(value?.directCommand || "");
   const [cwd, setCwd] = useState(value?.cwd || "");
   const [varsJson, setVarsJson] = useState(
     JSON.stringify(value?.vars || {}, null, 2)
@@ -150,6 +152,7 @@ function LauncherConfigCard({
 
   useEffect(() => {
     setLauncherId(value?.launcherId || "");
+    setDirectCommand(value?.directCommand || "");
     setCwd(value?.cwd || "");
     setVarsJson(JSON.stringify(value?.vars || {}, null, 2));
     setError("");
@@ -163,16 +166,15 @@ function LauncherConfigCard({
       }
       if (
         !launcherId.trim() &&
+        !directCommand.trim() &&
         !cwd.trim() &&
         Object.keys(parsedVars || {}).length === 0
       ) {
         onSave(null);
       } else {
-        if (!launcherId.trim()) {
-          throw new Error("Launcher ID is required when launcher config is set");
-        }
         onSave({
-          launcherId: launcherId.trim(),
+          launcherId: launcherId.trim() || undefined,
+          directCommand: directCommand.trim() || undefined,
           cwd: cwd.trim() || undefined,
           vars: Object.keys(parsedVars || {}).length > 0 ? parsedVars : undefined,
         });
@@ -191,7 +193,8 @@ function LauncherConfigCard({
             Launcher
           </p>
           <p className="mt-1 text-[11px] text-muted-foreground/70">
-            Set the agent’s CLI launcher and variables. Use vars.stackFile for
+            Set the agent’s launcher selection, or override it with a direct CLI
+            command for power-user workflows. Use vars.stackFile for
             pi-agent-stack.
           </p>
         </div>
@@ -221,7 +224,7 @@ function LauncherConfigCard({
           <input
             value={launcherId}
             onChange={(event) => setLauncherId(event.target.value)}
-            placeholder="claude-code or pi-agent-stack"
+            placeholder="Optional — falls back to registry default"
             className="w-full rounded border border-border bg-background px-2 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-primary/50"
           />
         </div>
@@ -236,6 +239,23 @@ function LauncherConfigCard({
             className="w-full rounded border border-border bg-background px-2 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-primary/50"
           />
         </div>
+      </div>
+
+      <div>
+        <p className="mb-1.5 text-[10px] text-muted-foreground">
+          Direct CLI Command
+        </p>
+        <input
+          value={directCommand}
+          onChange={(event) => setDirectCommand(event.target.value)}
+          placeholder='Optional — e.g. claude --dangerously-skip-permissions'
+          className="w-full rounded border border-border bg-background px-2 py-1.5 font-mono text-[12px] focus:outline-none focus:ring-1 focus:ring-primary/50"
+          spellCheck={false}
+        />
+        <p className="mt-1 text-[10px] text-muted-foreground/70">
+          When set, this overrides the launcher command for this agent while
+          keeping the selected launcher’s transport and prompt-delivery behavior.
+        </p>
       </div>
 
       <div>
@@ -678,6 +698,13 @@ export function DefinitionTab({
         onSave={(value) => {
           void savePersonaPatch({ launcher: value });
         }}
+      />
+
+      <AgentLaunchCommandCard
+        slug={slug}
+        title="Effective CLI"
+        description="This is the current saved launch command Yantra resolves for this agent. Preview updates after you save launcher changes."
+        className="bg-muted/20"
       />
 
       <StackConfigCard

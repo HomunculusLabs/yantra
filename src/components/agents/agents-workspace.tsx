@@ -12,6 +12,7 @@ import {
   Trash2,
   Zap,
 } from "lucide-react";
+import { AgentLaunchCommandCard } from "@/components/agents/agent-launch-command-card";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -593,6 +594,7 @@ function AgentStackSettingsCard({
   );
 }
 
+
 export function AgentsWorkspace({
   selectedAgentSlug,
   selectedScope = "all",
@@ -610,6 +612,7 @@ export function AgentsWorkspace({
     selectedScope === "agent" ? selectedAgentSlug || null : null
   );
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const [showCompletedTranscript, setShowCompletedTranscript] = useState(false);
   const [settingsTarget, setSettingsTarget] = useState<SettingsTarget>(null);
   const [activeSettingsTab, setActiveSettingsTab] = useState<AgentSettingsTab>("definition");
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
@@ -687,6 +690,10 @@ export function AgentsWorkspace({
     setSelectedJobId(null);
     setJobDraft(null);
   }, [settingsAgentSlug]);
+
+  useEffect(() => {
+    setShowCompletedTranscript(false);
+  }, [selectedConversationId]);
 
   function selectAgent(agentSlug: string | null, nextMode: MainPanelMode = "composer") {
     setActiveAgentSlug(agentSlug);
@@ -1047,12 +1054,78 @@ export function AgentsWorkspace({
                 />
               ) : selectedConversation ? (
                 <ScrollArea className="h-full bg-card/70">
-                  <pre className="min-h-full whitespace-pre-wrap p-5 font-mono text-[12px] leading-relaxed text-foreground/85">
-                    {replacePastedTextNotice(
-                      selectedConversation.transcript || "No transcript captured.",
-                      selectedConversationMeta.title
-                    )}
-                  </pre>
+                  <div className="space-y-4 p-5">
+                    <div className="rounded-xl border border-border bg-background/80 p-4 shadow-sm">
+                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                        Summary
+                      </p>
+                      <p className="mt-2 text-[13px] leading-relaxed text-foreground">
+                        {selectedConversation.meta.summary || "No summary captured for this run."}
+                      </p>
+                      {selectedConversation.meta.contextSummary ? (
+                        <div className="mt-4 border-t border-border/70 pt-4">
+                          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                            Context
+                          </p>
+                          <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">
+                            {selectedConversation.meta.contextSummary}
+                          </p>
+                        </div>
+                      ) : null}
+                      {selectedConversation.artifacts.length > 0 ? (
+                        <div className="mt-4 border-t border-border/70 pt-4">
+                          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                            Artifacts
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {selectedConversation.artifacts.map((artifact) => (
+                              <button
+                                key={artifact.path}
+                                onClick={() => {
+                                  selectPage(artifact.path);
+                                  setSection({ type: "page" });
+                                }}
+                                className="rounded-full bg-muted px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground"
+                              >
+                                {artifact.label || artifact.path}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="rounded-xl border border-border bg-background/70 shadow-sm">
+                      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                        <div>
+                          <p className="text-[12px] font-medium text-foreground">Transcript</p>
+                          <p className="text-[11px] text-muted-foreground">
+                            Raw session output, cleaned up but still verbose.
+                          </p>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs"
+                          onClick={() => setShowCompletedTranscript((current) => !current)}
+                        >
+                          {showCompletedTranscript ? "Hide transcript" : "Show transcript"}
+                        </Button>
+                      </div>
+                      {showCompletedTranscript ? (
+                        <pre className="min-h-full whitespace-pre-wrap p-4 font-mono text-[12px] leading-relaxed text-foreground/85">
+                          {replacePastedTextNotice(
+                            selectedConversation.transcript || "No transcript captured.",
+                            selectedConversationMeta.title
+                          )}
+                        </pre>
+                      ) : (
+                        <div className="px-4 py-6 text-[12px] text-muted-foreground">
+                          Hidden by default to keep completed conversation history readable.
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </ScrollArea>
               ) : (
                 <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -1528,6 +1601,11 @@ export function AgentsWorkspace({
                           </p>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
+                          <AgentLaunchCommandCard
+                            slug={settingsPersona.slug}
+                            className="col-span-2 bg-background/40"
+                            showSource={false}
+                          />
                           <label className="space-y-1.5 text-[11px] text-muted-foreground">
                             <span>Role</span>
                             <input

@@ -24,6 +24,7 @@ export type CliLauncherPromptDelivery =
 export interface CliLauncherDefinition {
   id: string;
   label: string;
+  description?: string;
   command: string;
   args: string[];
   cwdBase?: "vault" | "runtime";
@@ -45,7 +46,8 @@ export interface LauncherRegistryConfig {
 }
 
 export interface AgentLaunchConfig {
-  launcherId: string;
+  launcherId?: string;
+  directCommand?: string;
   cwd?: string;
   vars?: Record<string, string>;
   env?: Record<string, string>;
@@ -66,4 +68,16 @@ export interface ResolvedLaunchSpec {
   env: Record<string, string>;
   promptDelivery: CliLauncherPromptDelivery;
   transport: CliLauncherTransport;
+}
+
+export interface ResolvedLaunchPreview {
+  launcherId: string;
+  source: string;
+  command: string;
+  args: string[];
+  commandLine: string;
+  cwd: string;
+  transport: CliLauncherTransport;
+  promptMethod: CliLauncherPromptDelivery["method"];
+  usesDirectCommand: boolean;
 }

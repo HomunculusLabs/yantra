@@ -1,5 +1,5 @@
 import type { GoalMetric } from "./agents";
-import type { AgentLaunchConfig } from "./launchers";
+import type { AgentLaunchConfig, ResolvedLaunchPreview } from "./launchers";
 
 export interface AgentSummary {
   name: string;
@@ -157,6 +157,8 @@ export interface CreateDaemonSessionResponse {
   tmuxSessionName?: string | null;
   tmuxAttachCommand?: string | null;
 }
+
+export interface AgentLaunchPreviewResponse extends ResolvedLaunchPreview {}
 
 export interface CreateAgentPersonaRequest {
   slug: string;

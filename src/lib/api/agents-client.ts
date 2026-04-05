@@ -1,6 +1,7 @@
 import type {
   AgentDetailResponse,
   AgentExportBundle,
+  AgentLaunchPreviewResponse,
   AgentRelatedFile,
   AgentSessionOutputResponse,
   AgentSummary,
@@ -18,10 +19,14 @@ import type { AgentTask, SlackMessage } from "@/types/agents";
 import type {
   BrowserDaemonStatus,
   IntegrationConfig,
+  KeybindingValidationIssue,
+  KeybindingsConfigResponse,
   LauncherValidationIssue,
   NotificationTestResponse,
   RootsConfig,
   RuntimeSettingsSummary,
+  ThemeValidationIssue,
+  ThemesConfigResponse,
 } from "@/types/settings";
 import type {
   ConversationDetail,
@@ -224,6 +229,14 @@ export async function getAgentRelatedFiles(
   return data.files || [];
 }
 
+export async function getAgentLaunchPreview(
+  slug: string
+): Promise<AgentLaunchPreviewResponse> {
+  return requestJson<AgentLaunchPreviewResponse>(
+    `/api/agents/personas/${slug}/launch-preview`
+  );
+}
+
 export async function listSlackMessages(params?: {
   channel?: string;
   limit?: number;
@@ -345,6 +358,20 @@ export async function getRootsConfig(): Promise<RootsConfig> {
   return requestJson<RootsConfig>("/api/agents/config/roots");
 }
 
+export async function getKeybindingsConfig(): Promise<KeybindingsConfigResponse> {
+  return requestJson<KeybindingsConfigResponse>("/api/agents/config/keybindings");
+}
+
+export async function saveKeybindingsConfig(
+  payload: KeybindingsConfigResponse | Pick<KeybindingsConfigResponse, "version" | "bindings">
+): Promise<KeybindingsConfigResponse> {
+  return requestJson<KeybindingsConfigResponse>("/api/agents/config/keybindings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function saveRootsConfig(payload: {
   vaultRoot: string;
   runtimeRoot: string;
@@ -369,6 +396,20 @@ export async function saveLauncherRegistry(payload: unknown): Promise<void> {
   });
 }
 
+export async function getThemesConfig(): Promise<ThemesConfigResponse> {
+  return requestJson<ThemesConfigResponse>("/api/agents/config/themes");
+}
+
+export async function saveThemesConfig(
+  payload: Pick<ThemesConfigResponse, "themes"> | ThemesConfigResponse
+): Promise<ThemesConfigResponse> {
+  return requestJson<ThemesConfigResponse>("/api/agents/config/themes", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
 export function getLauncherValidationIssues(
   error: unknown
 ): LauncherValidationIssue[] {
@@ -385,6 +426,44 @@ export function getLauncherValidationIssues(
               "message" in detail
           )
       ) as LauncherValidationIssue[])
+    : [];
+}
+
+export function getKeybindingValidationIssues(
+  error: unknown
+): KeybindingValidationIssue[] {
+  if (!isRequestJsonError(error)) return [];
+  const payload = error.payload;
+  if (!payload || typeof payload !== "object" || !("details" in payload)) return [];
+  return Array.isArray(payload.details)
+    ? (payload.details.filter(
+        (detail): detail is KeybindingValidationIssue =>
+          Boolean(
+            detail &&
+              typeof detail === "object" &&
+              "path" in detail &&
+              "message" in detail
+          )
+      ) as KeybindingValidationIssue[])
+    : [];
+}
+
+export function getThemeValidationIssues(
+  error: unknown
+): ThemeValidationIssue[] {
+  if (!isRequestJsonError(error)) return [];
+  const payload = error.payload;
+  if (!payload || typeof payload !== "object" || !("details" in payload)) return [];
+  return Array.isArray(payload.details)
+    ? (payload.details.filter(
+        (detail): detail is ThemeValidationIssue =>
+          Boolean(
+            detail &&
+              typeof detail === "object" &&
+              "path" in detail &&
+              "message" in detail
+          )
+      ) as ThemeValidationIssue[])
     : [];
 }
 
