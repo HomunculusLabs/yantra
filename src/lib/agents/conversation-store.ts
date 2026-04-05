@@ -16,6 +16,10 @@ import {
   readFileContent,
   writeFileContent,
 } from "../storage/fs-operations";
+import {
+  sanitizeTranscriptForDisplay,
+  sanitizeTranscriptInline,
+} from "./transcript-format";
 
 export const CONVERSATIONS_DIR = path.join(
   getYantraRoots().runtimeAgentsRoot,
@@ -79,7 +83,7 @@ function artifactsPathFs(id: string): string {
 }
 
 function makeSummaryFromOutput(output: string): string | undefined {
-  const lines = output
+  const lines = sanitizeTranscriptForDisplay(output)
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean)
@@ -88,7 +92,7 @@ function makeSummaryFromOutput(output: string): string | undefined {
 }
 
 function normalizeArtifactPath(rawPath: string): string | null {
-  const trimmed = rawPath.trim();
+  const trimmed = sanitizeTranscriptInline(rawPath);
   if (!trimmed) return null;
 
   if (trimmed.startsWith("/data/")) {
@@ -109,7 +113,8 @@ function normalizeArtifactPath(rawPath: string): string | null {
 }
 
 export function parseYantraBlock(output: string): ParsedYantraBlock {
-  const match = output.match(/```(?:yantra|cabinet)\s*([\s\S]*?)```/i);
+  const cleanedOutput = sanitizeTranscriptForDisplay(output);
+  const match = cleanedOutput.match(/```(?:yantra|cabinet)\s*([\s\S]*?)```/i);
   if (!match) {
     return { artifactPaths: [] };
   }
@@ -222,7 +227,18 @@ export async function readConversationMeta(
   if (!(await fileExists(filePath))) return null;
   try {
     const raw = await readFileContent(filePath);
-    return JSON.parse(raw) as ConversationMeta;
+    const meta = JSON.parse(raw) as ConversationMeta;
+    return {
+      ...meta,
+      title: sanitizeTranscriptInline(meta.title || "") || meta.title,
+      summary: meta.summary ? sanitizeTranscriptInline(meta.summary) : undefined,
+      contextSummary: meta.contextSummary
+        ? sanitizeTranscriptInline(meta.contextSummary)
+        : undefined,
+      artifactPaths: (meta.artifactPaths || [])
+        .map((artifactPath) => sanitizeTranscriptInline(artifactPath))
+        .filter(Boolean),
+    };
   } catch {
     return null;
   }
@@ -260,7 +276,9 @@ export async function finalizeConversation(
   const meta = await readConversationMeta(id);
   if (!meta) return null;
 
-  const output = input.output ?? (await readConversationTranscript(id));
+  const output = sanitizeTranscriptForDisplay(
+    input.output ?? (await readConversationTranscript(id))
+  );
   const parsed = parseYantraBlock(output);
   const artifacts = parsed.artifactPaths.map((artifactPath) => ({
     path: artifactPath,
@@ -269,12 +287,17 @@ export async function finalizeConversation(
   meta.status = input.status;
   meta.completedAt = new Date().toISOString();
   meta.exitCode = input.exitCode ?? null;
-  meta.summary = parsed.summary || makeSummaryFromOutput(output);
-  meta.contextSummary = parsed.contextSummary;
+  meta.summary = sanitizeTranscriptInline(
+    parsed.summary || makeSummaryFromOutput(output) || ""
+  ) || undefined;
+  meta.contextSummary = parsed.contextSummary
+    ? sanitizeTranscriptInline(parsed.contextSummary)
+    : undefined;
   meta.artifactPaths = artifacts.map((artifact) => artifact.path);
 
   await Promise.all([
     writeConversationMeta(meta),
+    writeFileContent(transcriptPathFs(id), output),
     replaceConversationArtifacts(id, artifacts),
   ]);
 
@@ -284,7 +307,7 @@ export async function finalizeConversation(
 export async function readConversationTranscript(id: string): Promise<string> {
   const filePath = transcriptPathFs(id);
   if (!(await fileExists(filePath))) return "";
-  return readFileContent(filePath);
+  return sanitizeTranscriptForDisplay(await readFileContent(filePath));
 }
 
 export async function readConversationDetail(
@@ -316,7 +339,13 @@ export async function readConversationDetail(
   }
 
   try {
-    artifacts = JSON.parse(artifactsRaw) as ConversationArtifact[];
+    artifacts = (JSON.parse(artifactsRaw) as ConversationArtifact[])
+      .map((artifact) => ({
+        ...artifact,
+        path: sanitizeTranscriptInline(artifact.path),
+        label: artifact.label ? sanitizeTranscriptInline(artifact.label) : undefined,
+      }))
+      .filter((artifact) => Boolean(artifact.path));
   } catch {
     artifacts = [];
   }
