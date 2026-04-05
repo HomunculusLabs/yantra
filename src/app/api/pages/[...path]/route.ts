@@ -1,8 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readPage, writePage, createPage, deletePage, movePage, renamePage } from "@/lib/storage/page-io";
+import { readPage, writePage, createPage } from "@/lib/storage/page-io";
+import { deleteNode, moveNode, renameNode } from "@/lib/storage/node-io";
 import { autoCommit } from "@/lib/git/git-service";
 
 type RouteParams = { params: Promise<{ path: string[] }> };
+
+function mutationStatusFromMessage(message: string) {
+  if (message.includes("not found")) return 404;
+  if (message.includes("already exists")) return 409;
+  if (
+    message.includes("Cannot modify") ||
+    message.includes("Cannot move") ||
+    message.includes("Target is not a directory")
+  ) {
+    return 400;
+  }
+  return 500;
+}
 
 export async function GET(_req: NextRequest, { params }: RouteParams) {
   try {
@@ -53,14 +67,16 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     const virtualPath = segments.join("/");
     const body = await req.json();
     if (body.rename) {
-      const newPath = await renamePage(virtualPath, body.rename);
+      const newPath = await renameNode(virtualPath, body.rename);
+      autoCommit(newPath, "Update");
       return NextResponse.json({ ok: true, newPath });
     }
-    const newPath = await movePage(virtualPath, body.toParent || "");
+    const newPath = await moveNode(virtualPath, body.toParent || "");
+    autoCommit(newPath, "Update");
     return NextResponse.json({ ok: true, newPath });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: mutationStatusFromMessage(message) });
   }
 }
 
@@ -68,11 +84,11 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
   try {
     const { path: segments } = await params;
     const virtualPath = segments.join("/");
-    await deletePage(virtualPath);
+    await deleteNode(virtualPath);
     autoCommit(virtualPath, "Delete");
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: mutationStatusFromMessage(message) });
   }
 }

@@ -1,13 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { PanelLeftClose, PanelLeft, Settings } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { PanelLeftClose, PanelLeft, Settings, EyeOff, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { TreeView } from "./tree-view";
 import { NewPageDialog } from "./new-page-dialog";
 import { useAppStore } from "@/stores/app-store";
+import { useTreeStore } from "@/stores/tree-store";
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false);
@@ -29,6 +38,19 @@ export function Sidebar() {
   const setCollapsed = useAppStore((s) => s.setSidebarCollapsed);
   const section = useAppStore((s) => s.section);
   const setSection = useAppStore((s) => s.setSection);
+  const nodeByPath = useTreeStore((s) => s.nodeByPath);
+  const hiddenFolderPaths = useTreeStore((s) => s.hiddenFolderPaths);
+  const unhideFolder = useTreeStore((s) => s.unhideFolder);
+  const clearHiddenFolders = useTreeStore((s) => s.clearHiddenFolders);
+
+  const hiddenFolderItems = useMemo(
+    () =>
+      [...hiddenFolderPaths].map((path) => ({
+        path,
+        title: nodeByPath[path]?.frontmatter?.title || nodeByPath[path]?.name || path.split("/").pop() || path,
+      })),
+    [hiddenFolderPaths, nodeByPath]
+  );
 
   useEffect(() => {
     if (mounted && isMobile) setCollapsed(true);
@@ -75,10 +97,48 @@ export function Sidebar() {
         </div>
         <Separator />
 
-        <div className="px-3 pt-2">
+        <div className="px-3 pt-2 flex items-center justify-between gap-2">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
             Knowledge Base
           </p>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              className={cn(
+                "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors",
+                "hover:bg-accent hover:text-accent-foreground"
+              )}
+              title="Hidden folders"
+            >
+              {hiddenFolderItems.length > 0 ? (
+                <EyeOff className="h-3.5 w-3.5" />
+              ) : (
+                <Eye className="h-3.5 w-3.5 text-muted-foreground" />
+              )}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-72">
+              <DropdownMenuLabel>Hidden folders</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {hiddenFolderItems.length === 0 ? (
+                <DropdownMenuItem disabled>No hidden folders</DropdownMenuItem>
+              ) : (
+                hiddenFolderItems.map((item) => (
+                  <DropdownMenuItem key={item.path} onClick={() => unhideFolder(item.path)}>
+                    <Eye className="h-4 w-4 mr-2" />
+                    <span className="truncate">{item.title}</span>
+                  </DropdownMenuItem>
+                ))
+              )}
+              {hiddenFolderItems.length > 0 ? (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={clearHiddenFolders}>
+                    <Eye className="h-4 w-4 mr-2" />
+                    Unhide All
+                  </DropdownMenuItem>
+                </>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
         <TreeView />
 

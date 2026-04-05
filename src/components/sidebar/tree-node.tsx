@@ -1,6 +1,7 @@
 "use client";
 
 import { memo, useCallback, useState } from "react";
+import { toast } from "sonner";
 import {
   ChevronRight,
   FileText,
@@ -14,6 +15,8 @@ import {
   GitBranch,
   FileType,
   Table,
+  Copy,
+  EyeOff,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { VisibleTreeRow } from "@/types";
@@ -33,6 +36,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { fetchAbsolutePath } from "@/lib/api/client";
 
 interface TreeNodeRowProps {
   row: VisibleTreeRow;
@@ -72,14 +76,18 @@ export const TreeNodeRow = memo(function TreeNodeRow({
   const setDragOver = useTreeStore((s) => s.setDragOver);
   const createPage = useTreeStore((s) => s.createPage);
   const renamePage = useTreeStore((s) => s.renamePage);
+  const hideFolder = useTreeStore((s) => s.hideFolder);
   const openPath = useTreeStore((s) => s.openPath);
   const isDragOver = useTreeStore((s) => s.dragOverPath === row.path);
+  const isRecentlyChanged = useTreeStore((s) => s.recentlyChangedPath === row.path);
+
 
   const [subPageOpen, setSubPageOpen] = useState(false);
   const [subPageTitle, setSubPageTitle] = useState("");
   const [creating, setCreating] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameTitle, setRenameTitle] = useState(row.title);
+  const [dragging, setDragging] = useState(false);
 
   const handleDelete = useCallback(() => {
     if (confirm(`Delete "${row.title}"?`)) {
@@ -102,13 +110,34 @@ export const TreeNodeRow = memo(function TreeNodeRow({
     }
   }, [createPage, openPath, row.path, row.type, subPageTitle]);
 
+  const handleCopyPath = useCallback(async () => {
+    try {
+      const absolutePath = await fetchAbsolutePath(row.path);
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(absolutePath);
+        toast.success("Path copied");
+        return;
+      }
+      window.prompt("Copy path:", absolutePath);
+    } catch (error) {
+      console.error("Failed to copy path:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to copy path");
+    }
+  }, [row.path]);
+
   const handleDragStart = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
+      setDragging(true);
       event.dataTransfer.setData("text/plain", row.path);
       event.dataTransfer.effectAllowed = "move";
     },
     [row.path]
   );
+
+  const handleDragEnd = useCallback(() => {
+    setDragging(false);
+    setDragOver(null);
+  }, [setDragOver]);
 
   const handleDragOver = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
@@ -168,15 +197,19 @@ export const TreeNodeRow = memo(function TreeNodeRow({
               onOpen(event);
             }}
             onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
             className={cn(
-              "flex items-center gap-1.5 py-1.5 pr-2 text-[13px] rounded-md transition-colors cursor-pointer",
+              "flex items-center gap-1.5 py-1.5 pr-2 text-[13px] rounded-md transition-all cursor-pointer",
               "hover:bg-accent/50",
               isSelected && "bg-accent text-accent-foreground font-medium",
               isFocused && "ring-1 ring-primary/40 ring-inset",
-              isDragOver && "bg-primary/10 ring-1 ring-primary/30 ring-inset"
+              isDragOver && "bg-primary/10 ring-1 ring-primary/30 ring-inset",
+              isRecentlyChanged && "animate-in fade-in-0 ring-1 ring-primary/20 ring-inset",
+              isRecentlyChanged && !isSelected && !isDragOver && "bg-primary/10",
+              dragging && "opacity-50 scale-[0.99]"
             )}
             style={{ paddingLeft: `${row.depth * 16 + 8}px` }}
           >
@@ -211,13 +244,21 @@ export const TreeNodeRow = memo(function TreeNodeRow({
               Open in Other Pane
             </ContextMenuItem>
           ) : null}
-          {row.canOpen && (row.type === "file" || row.type === "text" || row.type === "directory") ? (
-            <ContextMenuSeparator />
-          ) : null}
+          <ContextMenuItem onClick={() => void handleCopyPath()}>
+            <Copy className="h-4 w-4 mr-2" />
+            Copy Path
+          </ContextMenuItem>
+          <ContextMenuSeparator />
           {row.type === "directory" && (
             <ContextMenuItem onClick={() => setSubPageOpen(true)}>
               <FilePlus className="h-4 w-4 mr-2" />
-              Add Sub Page
+              New Note
+            </ContextMenuItem>
+          )}
+          {row.type === "directory" && (
+            <ContextMenuItem onClick={() => hideFolder(row.path)}>
+              <EyeOff className="h-4 w-4 mr-2" />
+              Hide Folder
             </ContextMenuItem>
           )}
           <ContextMenuItem
@@ -241,7 +282,7 @@ export const TreeNodeRow = memo(function TreeNodeRow({
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
-              Add Sub Page to &ldquo;{row.title}&rdquo;
+              New Note in &ldquo;{row.title}&rdquo;
             </DialogTitle>
           </DialogHeader>
           <form

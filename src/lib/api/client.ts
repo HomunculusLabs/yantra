@@ -14,6 +14,13 @@ export async function fetchTree(): Promise<TreeNode[]> {
   return res.json();
 }
 
+export async function fetchAbsolutePath(path: string): Promise<string> {
+  const res = await fetch(`/api/tree/path/${encodePath(path)}`);
+  if (!res.ok) throw new Error(`Failed to resolve path: ${path}`);
+  const data = await res.json();
+  return data.absolutePath;
+}
+
 export async function fetchPage(
   path: string,
   options?: { signal?: AbortSignal }

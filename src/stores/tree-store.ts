@@ -7,6 +7,7 @@ import {
   movePageApi,
   renamePageApi,
 } from "@/lib/api/client";
+import { toast } from "sonner";
 import { useEditorStore } from "@/stores/editor-store";
 import { useAppStore } from "@/stores/app-store";
 
@@ -16,6 +17,7 @@ interface OpenPathOptions {
   source?: OpenPathSource;
   pane?: "primary" | "secondary";
   openInOtherPane?: boolean;
+  openMode?: "tab" | "preview";
 }
 
 interface TreeState {
@@ -27,8 +29,10 @@ interface TreeState {
   selectedPath: string | null;
   focusedPath: string | null;
   expandedPaths: Set<string>;
+  hiddenFolderPaths: Set<string>;
   loading: boolean;
   dragOverPath: string | null;
+  recentlyChangedPath: string | null;
 
   loadTree: () => Promise<void>;
   selectPage: (path: string | null) => void;
@@ -46,8 +50,13 @@ interface TreeState {
   deletePage: (path: string) => Promise<void>;
   movePage: (fromPath: string, toParentPath: string) => Promise<void>;
   renamePage: (path: string, newName: string) => Promise<void>;
+  hideFolder: (path: string) => void;
+  unhideFolder: (path: string) => void;
+  clearHiddenFolders: () => void;
   setDragOver: (path: string | null) => void;
 }
+
+let recentChangeTimer: ReturnType<typeof setTimeout> | null = null;
 
 function loadExpandedPaths(): Set<string> {
   if (typeof window === "undefined") return new Set();
@@ -62,6 +71,21 @@ function loadExpandedPaths(): Set<string> {
 function saveExpandedPaths(paths: Set<string>) {
   if (typeof window === "undefined") return;
   localStorage.setItem("kb-expanded-paths", JSON.stringify([...paths]));
+}
+
+function loadHiddenFolderPaths(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const stored = localStorage.getItem("kb-hidden-folders");
+    return stored ? new Set(JSON.parse(stored)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function saveHiddenFolderPaths(paths: Set<string>) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem("kb-hidden-folders", JSON.stringify([...paths]));
 }
 
 function collectTreeIndexes(
@@ -82,11 +106,15 @@ function collectTreeIndexes(
 function buildVisibleRows(
   nodes: TreeNode[],
   expandedPaths: Set<string>,
+  hiddenFolderPaths: Set<string>,
   rows: VisibleTreeRow[],
   depth = 0,
   parentPath: string | null = null
 ) {
   for (const node of nodes) {
+    if (node.type === "directory" && hiddenFolderPaths.has(node.path)) {
+      continue;
+    }
     const hasChildren = Boolean(node.children?.length);
     const isExpanded = hasChildren && expandedPaths.has(node.path);
     rows.push({
@@ -102,7 +130,7 @@ function buildVisibleRows(
     });
 
     if (hasChildren && isExpanded) {
-      buildVisibleRows(node.children || [], expandedPaths, rows, depth + 1, node.path);
+      buildVisibleRows(node.children || [], expandedPaths, hiddenFolderPaths, rows, depth + 1, node.path);
     }
   }
 }
@@ -130,6 +158,176 @@ function rebasePathValue(
   return currentPath;
 }
 
+function rebaseExpandedPaths(
+  expandedPaths: Set<string>,
+  fromPath: string,
+  toPath: string
+) {
+  const next = new Set<string>();
+  for (const value of expandedPaths) {
+    next.add(rebasePathValue(value, fromPath, toPath) ?? value);
+  }
+  return next;
+}
+
+function pruneExpandedPaths(expandedPaths: Set<string>, removedPath: string) {
+  const next = new Set<string>();
+  for (const value of expandedPaths) {
+    if (value === removedPath || value.startsWith(`${removedPath}/`)) continue;
+    next.add(value);
+  }
+  return next;
+}
+
+function compareTreeNodes(a: TreeNode, b: TreeNode) {
+  const orderA = a.frontmatter?.order ?? 999;
+  const orderB = b.frontmatter?.order ?? 999;
+  if (orderA !== orderB) return orderA - orderB;
+  const nameA = a.frontmatter?.title || a.name;
+  const nameB = b.frontmatter?.title || b.name;
+  return nameA.localeCompare(nameB);
+}
+
+function sortTreeNodes(nodes: TreeNode[]) {
+  return [...nodes].sort(compareTreeNodes);
+}
+
+function virtualBasename(virtualPath: string) {
+  return virtualPath.split("/").filter(Boolean).pop() || virtualPath;
+}
+
+function deriveNodeTitle(type: TreeNodeType, leafName: string) {
+  if (type === "file") return leafName.replace(/\.md$/i, "");
+  if (type === "pdf") return leafName.replace(/\.pdf$/i, "");
+  if (type === "csv") return leafName.replace(/\.csv$/i, "");
+  return leafName;
+}
+
+function cloneTreeNode(node: TreeNode): TreeNode {
+  return {
+    ...node,
+    frontmatter: node.frontmatter ? { ...node.frontmatter } : undefined,
+    children: node.children?.map(cloneTreeNode),
+  };
+}
+
+function rebaseTreeNodePaths(node: TreeNode, fromPath: string, toPath: string): TreeNode {
+  const nextPath =
+    node.path === fromPath
+      ? toPath
+      : node.path.startsWith(`${fromPath}/`)
+        ? `${toPath}${node.path.slice(fromPath.length)}`
+        : node.path;
+
+  return {
+    ...node,
+    path: nextPath,
+    children: node.children?.map((child) => rebaseTreeNodePaths(child, fromPath, toPath)),
+  };
+}
+
+function updateTreeNodeForPath(node: TreeNode, nextPath: string): TreeNode {
+  const leafName = virtualBasename(nextPath);
+  const title = deriveNodeTitle(node.type, leafName);
+  return {
+    ...node,
+    name: leafName,
+    path: nextPath,
+    frontmatter: {
+      ...(node.frontmatter ?? {}),
+      title,
+    },
+  };
+}
+
+type TreeMutationResult = {
+  nodes: TreeNode[];
+  changed: boolean;
+  removedNode: TreeNode | null;
+};
+
+type TreeInsertResult = {
+  nodes: TreeNode[];
+  inserted: boolean;
+};
+
+function removeTreeNode(nodes: TreeNode[], targetPath: string): TreeMutationResult {
+  let changed = false;
+  let removedNode: TreeNode | null = null;
+  const nextNodes: TreeNode[] = [];
+
+  for (const node of nodes) {
+    if (node.path === targetPath) {
+      removedNode = cloneTreeNode(node);
+      changed = true;
+      continue;
+    }
+
+    if (node.children?.length) {
+      const childResult = removeTreeNode(node.children, targetPath);
+      if (childResult.changed) {
+        changed = true;
+        removedNode = childResult.removedNode;
+        nextNodes.push({
+          ...node,
+          children: childResult.nodes,
+        });
+        continue;
+      }
+    }
+
+    nextNodes.push(node);
+  }
+
+  return {
+    nodes: changed ? nextNodes : nodes,
+    changed,
+    removedNode,
+  };
+}
+
+function insertTreeNode(
+  nodes: TreeNode[],
+  parentPath: string,
+  nodeToInsert: TreeNode
+): TreeInsertResult {
+  if (!parentPath) {
+    return {
+      nodes: sortTreeNodes([...nodes, nodeToInsert]),
+      inserted: true,
+    };
+  }
+
+  let inserted = false;
+  const nextNodes: TreeNode[] = nodes.map((node) => {
+    if (node.path === parentPath) {
+      inserted = true;
+      return {
+        ...node,
+        children: sortTreeNodes([...(node.children ?? []), nodeToInsert]),
+      };
+    }
+
+    if (node.children?.length) {
+      const childResult: TreeInsertResult = insertTreeNode(node.children, parentPath, nodeToInsert);
+      if (childResult.inserted) {
+        inserted = true;
+        return {
+          ...node,
+          children: childResult.nodes,
+        };
+      }
+    }
+
+    return node;
+  });
+
+  return {
+    nodes: inserted ? nextNodes : nodes,
+    inserted,
+  };
+}
+
 export const useTreeStore = create<TreeState>((set, get) => {
   const buildDerivedState = (
     nodes: TreeNode[],
@@ -137,7 +335,7 @@ export const useTreeStore = create<TreeState>((set, get) => {
     preferredFocusedPath: string | null,
     preferredSelectedPath: string | null,
     fallbackIndex?: number,
-    options?: { revealPreferredPaths?: boolean }
+    options?: { revealPreferredPaths?: boolean; hiddenFolderPaths?: Set<string> }
   ) => {
     const nodeByPath: Record<string, TreeNode> = {};
     const parentByPath: Record<string, string | null> = {};
@@ -155,8 +353,9 @@ export const useTreeStore = create<TreeState>((set, get) => {
       }
     }
 
+    const hiddenFolderPaths = options?.hiddenFolderPaths ?? get().hiddenFolderPaths;
     const visibleRows: VisibleTreeRow[] = [];
-    buildVisibleRows(nodes, effectiveExpandedPaths, visibleRows);
+    buildVisibleRows(nodes, effectiveExpandedPaths, hiddenFolderPaths, visibleRows);
     const visibleIndexByPath: Record<string, number> = {};
     visibleRows.forEach((row, index) => {
       visibleIndexByPath[row.path] = index;
@@ -197,10 +396,61 @@ export const useTreeStore = create<TreeState>((set, get) => {
       expandedPaths,
       state.focusedPath,
       state.selectedPath,
-      state.focusedPath ? state.visibleIndexByPath[state.focusedPath] : undefined
+      state.focusedPath ? state.visibleIndexByPath[state.focusedPath] : undefined,
+      { hiddenFolderPaths: state.hiddenFolderPaths }
     );
     set(derived);
     saveExpandedPaths(derived.expandedPaths);
+  };
+
+  const commitNodes = (
+    nodes: TreeNode[],
+    options?: {
+      focusedPath?: string | null;
+      selectedPath?: string | null;
+      fallbackIndex?: number;
+      revealPreferredPaths?: boolean;
+      expandedPaths?: Set<string>;
+      hiddenFolderPaths?: Set<string>;
+    }
+  ) => {
+    const state = get();
+    const derived = buildDerivedState(
+      nodes,
+      options?.expandedPaths ?? state.expandedPaths,
+      options?.focusedPath ?? state.focusedPath,
+      options?.selectedPath ?? state.selectedPath,
+      options?.fallbackIndex,
+      options?.revealPreferredPaths
+        ? {
+            revealPreferredPaths: true,
+            hiddenFolderPaths: options?.hiddenFolderPaths ?? state.hiddenFolderPaths,
+          }
+        : { hiddenFolderPaths: options?.hiddenFolderPaths ?? state.hiddenFolderPaths }
+    );
+    set({
+      ...derived,
+      selectedPath: options?.selectedPath ?? state.selectedPath,
+      hiddenFolderPaths: options?.hiddenFolderPaths ?? state.hiddenFolderPaths,
+    });
+    saveExpandedPaths(derived.expandedPaths);
+    return derived;
+  };
+
+  const markRecentlyChanged = (path: string | null) => {
+    if (recentChangeTimer) {
+      clearTimeout(recentChangeTimer);
+      recentChangeTimer = null;
+    }
+
+    set({ recentlyChangedPath: path });
+    if (!path) return;
+
+    recentChangeTimer = setTimeout(() => {
+      if (get().recentlyChangedPath === path) {
+        set({ recentlyChangedPath: null });
+      }
+    }, 1400);
   };
 
   const prefetchEditorNeighbors = (rows: VisibleTreeRow[], path: string) => {
@@ -226,8 +476,10 @@ export const useTreeStore = create<TreeState>((set, get) => {
     selectedPath: null,
     focusedPath: null,
     expandedPaths: loadExpandedPaths(),
+    hiddenFolderPaths: loadHiddenFolderPaths(),
     loading: false,
     dragOverPath: null,
+    recentlyChangedPath: null,
 
     loadTree: async () => {
       const state = get();
@@ -246,7 +498,7 @@ export const useTreeStore = create<TreeState>((set, get) => {
           latest.focusedPath,
           latest.selectedPath,
           fallbackIndex,
-          { revealPreferredPaths: true }
+          { revealPreferredPaths: true, hiddenFolderPaths: latest.hiddenFolderPaths }
         );
         set({ ...derived, loading: false });
         saveExpandedPaths(derived.expandedPaths);
@@ -341,7 +593,8 @@ export const useTreeStore = create<TreeState>((set, get) => {
         next,
         nextFocusedPath,
         state.selectedPath,
-        nextFocusedPath ? state.visibleIndexByPath[nextFocusedPath] : state.visibleIndexByPath[path]
+        nextFocusedPath ? state.visibleIndexByPath[nextFocusedPath] : state.visibleIndexByPath[path],
+        { hiddenFolderPaths: state.hiddenFolderPaths }
       );
       set(derived);
       saveExpandedPaths(derived.expandedPaths);
@@ -405,12 +658,14 @@ export const useTreeStore = create<TreeState>((set, get) => {
           await useEditorStore.getState().openInOtherPane(path, {
             source: options?.source,
             kindHint,
+            openMode: options?.openMode,
           });
         } else {
           await useEditorStore.getState().loadPage(path, {
             source: options?.source,
             kindHint,
             pane: options?.pane,
+            openMode: options?.openMode,
           });
         }
         get().prefetchAroundPath(path);
@@ -422,84 +677,261 @@ export const useTreeStore = create<TreeState>((set, get) => {
     },
 
     createPage: async (parentPath, title) => {
-      const newPath = await createPageApi(parentPath, title);
-      if (parentPath) {
-        get().expandPath(parentPath);
+      try {
+        const newPath = await createPageApi(parentPath, title);
+        const state = get();
+        const newNode: TreeNode = {
+          name: virtualBasename(newPath),
+          path: newPath,
+          type: "file",
+          canOpen: true,
+          frontmatter: {
+            title: title.trim() || deriveNodeTitle("file", virtualBasename(newPath)),
+          },
+        };
+
+        const inserted = insertTreeNode(state.nodes, parentPath, newNode);
+        if (inserted.inserted) {
+          commitNodes(inserted.nodes, {
+            focusedPath: newPath,
+            selectedPath: state.selectedPath,
+            revealPreferredPaths: true,
+          });
+        } else {
+          await get().loadTree();
+          get().revealPath(newPath);
+          set({ focusedPath: newPath });
+        }
+
+        markRecentlyChanged(newPath);
+        toast.success(`Created “${title.trim() || deriveNodeTitle("file", virtualBasename(newPath))}”`);
+        return newPath;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to create note";
+        toast.error(message);
+        throw error;
       }
-      await get().loadTree();
-      get().revealPath(newPath);
-      set({ focusedPath: newPath });
-      return newPath;
     },
 
     deletePage: async (path) => {
       const state = get();
       const fallbackIndex = state.visibleIndexByPath[path];
       const editor = useEditorStore.getState();
-      await editor.flushPendingSavesForPrefix(path);
+      const deletedTitle =
+        state.nodeByPath[path]?.frontmatter?.title ||
+        state.nodeByPath[path]?.name ||
+        virtualBasename(path);
 
-      await deletePageApi(path);
-      useEditorStore.getState().invalidatePath(path);
+      try {
+        await editor.flushPendingSavesForPrefix(path);
+        await deletePageApi(path);
+        useEditorStore.getState().invalidatePath(path);
 
-      const nextSelectedPath =
-        state.selectedPath === path || state.selectedPath?.startsWith(`${path}/`)
-          ? null
-          : state.selectedPath;
-      const nextFocusedPath =
-        state.focusedPath === path || state.focusedPath?.startsWith(`${path}/`)
-          ? null
-          : state.focusedPath;
+        const nextSelectedPath =
+          state.selectedPath === path || state.selectedPath?.startsWith(`${path}/`)
+            ? null
+            : state.selectedPath;
+        const nextFocusedPath =
+          state.focusedPath === path || state.focusedPath?.startsWith(`${path}/`)
+            ? null
+            : state.focusedPath;
+        const removed = removeTreeNode(state.nodes, path);
+        const nextExpandedPaths = pruneExpandedPaths(state.expandedPaths, path);
+        const nextHiddenFolderPaths = pruneExpandedPaths(state.hiddenFolderPaths, path);
 
-      set({ selectedPath: nextSelectedPath, focusedPath: nextFocusedPath });
-      await get().loadTree();
+        if (removed.changed) {
+          const derived = commitNodes(removed.nodes, {
+            selectedPath: nextSelectedPath,
+            focusedPath: nextFocusedPath,
+            fallbackIndex,
+            expandedPaths: nextExpandedPaths,
+            hiddenFolderPaths: nextHiddenFolderPaths,
+          });
+          markRecentlyChanged(derived.focusedPath);
+        } else {
+          set({
+            selectedPath: nextSelectedPath,
+            focusedPath: nextFocusedPath,
+            expandedPaths: nextExpandedPaths,
+            hiddenFolderPaths: nextHiddenFolderPaths,
+          });
+          saveHiddenFolderPaths(nextHiddenFolderPaths);
+          await get().loadTree();
+          markRecentlyChanged(get().focusedPath);
+        }
 
-      const rows = get().visibleRows;
-      if (!get().focusedPath && rows.length > 0) {
-        const nextRow = rows[Math.min(fallbackIndex ?? 0, rows.length - 1)];
-        set({ focusedPath: nextRow?.path ?? null });
+        saveHiddenFolderPaths(nextHiddenFolderPaths);
+        toast.success(`Deleted “${deletedTitle}”`);
+      } catch (error) {
+        console.error("Failed to delete node:", error);
+        toast.error(error instanceof Error ? error.message : "Failed to delete item");
       }
     },
 
     movePage: async (fromPath, toParentPath) => {
       const editor = useEditorStore.getState();
-      await editor.flushPendingSavesForPrefix(fromPath);
 
       try {
+        await editor.flushPendingSavesForPrefix(fromPath);
         const newPath = await movePageApi(fromPath, toParentPath);
-        if (toParentPath) {
-          get().expandPath(toParentPath);
-        }
+        const state = get();
+        const removed = removeTreeNode(state.nodes, fromPath);
 
         useEditorStore.getState().rebasePath(fromPath, newPath);
-        set((state) => ({
-          selectedPath: rebasePathValue(state.selectedPath, fromPath, newPath),
-          focusedPath: rebasePathValue(state.focusedPath, fromPath, newPath),
-        }));
+        const nextSelectedPath = rebasePathValue(state.selectedPath, fromPath, newPath);
+        const nextFocusedPath = rebasePathValue(state.focusedPath, fromPath, newPath);
+        const nextExpandedPaths = rebaseExpandedPaths(state.expandedPaths, fromPath, newPath);
+        const nextHiddenFolderPaths = rebaseExpandedPaths(state.hiddenFolderPaths, fromPath, newPath);
 
+        if (removed.removedNode) {
+          const movedNode = rebaseTreeNodePaths(removed.removedNode, fromPath, newPath);
+          const targetParentPath = newPath.split("/").slice(0, -1).join("/");
+          const inserted = insertTreeNode(removed.nodes, targetParentPath, movedNode);
+
+          if (inserted.inserted) {
+            commitNodes(inserted.nodes, {
+              selectedPath: nextSelectedPath,
+              focusedPath: nextFocusedPath,
+              revealPreferredPaths: true,
+              expandedPaths: nextExpandedPaths,
+              hiddenFolderPaths: nextHiddenFolderPaths,
+            });
+            saveHiddenFolderPaths(nextHiddenFolderPaths);
+            markRecentlyChanged(newPath);
+            toast.success(`Moved “${state.nodeByPath[fromPath]?.frontmatter?.title || state.nodeByPath[fromPath]?.name || virtualBasename(newPath)}”`);
+            return;
+          }
+        }
+
+        set({
+          selectedPath: nextSelectedPath,
+          focusedPath: nextFocusedPath,
+          expandedPaths: nextExpandedPaths,
+          hiddenFolderPaths: nextHiddenFolderPaths,
+        });
+        saveHiddenFolderPaths(nextHiddenFolderPaths);
         await get().loadTree();
         get().revealPath(newPath);
+        markRecentlyChanged(newPath);
+        toast.success(`Moved “${state.nodeByPath[fromPath]?.frontmatter?.title || state.nodeByPath[fromPath]?.name || virtualBasename(newPath)}”`);
       } catch (error) {
-        console.error("Failed to move page:", error);
+        console.error("Failed to move node:", error);
+        toast.error(error instanceof Error ? error.message : "Failed to move item");
       }
     },
 
     renamePage: async (pagePath, newName) => {
       const editor = useEditorStore.getState();
-      await editor.flushPendingSavesForPrefix(pagePath);
 
       try {
+        await editor.flushPendingSavesForPrefix(pagePath);
         const newPath = await renamePageApi(pagePath, newName);
-        useEditorStore.getState().rebasePath(pagePath, newPath);
-        set((state) => ({
-          selectedPath: rebasePathValue(state.selectedPath, pagePath, newPath),
-          focusedPath: rebasePathValue(state.focusedPath, pagePath, newPath),
-        }));
+        const state = get();
+        const removed = removeTreeNode(state.nodes, pagePath);
 
+        useEditorStore.getState().rebasePath(pagePath, newPath);
+        const nextSelectedPath = rebasePathValue(state.selectedPath, pagePath, newPath);
+        const nextFocusedPath = rebasePathValue(state.focusedPath, pagePath, newPath);
+        const nextExpandedPaths = rebaseExpandedPaths(state.expandedPaths, pagePath, newPath);
+        const nextHiddenFolderPaths = rebaseExpandedPaths(state.hiddenFolderPaths, pagePath, newPath);
+
+        if (removed.removedNode) {
+          const renamedNode = updateTreeNodeForPath(
+            rebaseTreeNodePaths(removed.removedNode, pagePath, newPath),
+            newPath
+          );
+          const targetParentPath = newPath.split("/").slice(0, -1).join("/");
+          const inserted = insertTreeNode(removed.nodes, targetParentPath, renamedNode);
+
+          if (inserted.inserted) {
+            commitNodes(inserted.nodes, {
+              selectedPath: nextSelectedPath,
+              focusedPath: nextFocusedPath,
+              revealPreferredPaths: true,
+              expandedPaths: nextExpandedPaths,
+              hiddenFolderPaths: nextHiddenFolderPaths,
+            });
+            saveHiddenFolderPaths(nextHiddenFolderPaths);
+            markRecentlyChanged(newPath);
+            toast.success(`Renamed to “${deriveNodeTitle(renamedNode.type, virtualBasename(newPath))}”`);
+            return;
+          }
+        }
+
+        set({
+          selectedPath: nextSelectedPath,
+          focusedPath: nextFocusedPath,
+          expandedPaths: nextExpandedPaths,
+          hiddenFolderPaths: nextHiddenFolderPaths,
+        });
+        saveHiddenFolderPaths(nextHiddenFolderPaths);
         await get().loadTree();
         get().revealPath(newPath);
+        markRecentlyChanged(newPath);
+        toast.success(`Renamed to “${deriveNodeTitle(inferNodeTypeFromPath(newPath), virtualBasename(newPath))}”`);
       } catch (error) {
-        console.error("Failed to rename page:", error);
+        console.error("Failed to rename node:", error);
+        toast.error(error instanceof Error ? error.message : "Failed to rename item");
       }
+    },
+
+    hideFolder: (path) => {
+      const state = get();
+      const node = state.nodeByPath[path];
+      if (node?.type !== "directory") return;
+      if (state.hiddenFolderPaths.has(path)) return;
+
+      const nextHiddenFolderPaths = new Set(state.hiddenFolderPaths);
+      nextHiddenFolderPaths.add(path);
+      saveHiddenFolderPaths(nextHiddenFolderPaths);
+
+      const nextSelectedPath =
+        state.selectedPath === path || state.selectedPath?.startsWith(`${path}/`)
+          ? state.parentByPath[path] ?? null
+          : state.selectedPath;
+      const nextFocusedPath =
+        state.focusedPath === path || state.focusedPath?.startsWith(`${path}/`)
+          ? state.parentByPath[path] ?? null
+          : state.focusedPath;
+
+      const derived = commitNodes(state.nodes, {
+        selectedPath: nextSelectedPath,
+        focusedPath: nextFocusedPath,
+        fallbackIndex: state.visibleIndexByPath[path],
+        hiddenFolderPaths: nextHiddenFolderPaths,
+      });
+      markRecentlyChanged(derived.focusedPath);
+      toast.success(`Hid “${node.frontmatter?.title || node.name}”`);
+    },
+
+    unhideFolder: (path) => {
+      const state = get();
+      if (!state.hiddenFolderPaths.has(path)) return;
+
+      const nextHiddenFolderPaths = new Set(state.hiddenFolderPaths);
+      nextHiddenFolderPaths.delete(path);
+      saveHiddenFolderPaths(nextHiddenFolderPaths);
+
+      commitNodes(state.nodes, {
+        focusedPath: path,
+        selectedPath: state.selectedPath,
+        hiddenFolderPaths: nextHiddenFolderPaths,
+        revealPreferredPaths: true,
+      });
+      markRecentlyChanged(path);
+      toast.success(`Unhid “${state.nodeByPath[path]?.frontmatter?.title || state.nodeByPath[path]?.name || virtualBasename(path)}”`);
+    },
+
+    clearHiddenFolders: () => {
+      const state = get();
+      if (state.hiddenFolderPaths.size === 0) return;
+      saveHiddenFolderPaths(new Set());
+      commitNodes(state.nodes, {
+        hiddenFolderPaths: new Set(),
+        selectedPath: state.selectedPath,
+        focusedPath: state.focusedPath,
+      });
+      toast.success("Unhid all folders");
     },
 
     setDragOver: (path) => {
