@@ -1,481 +1,815 @@
-// Theme definitions for the multi-theme system
-// Each theme defines CSS custom properties using OKLCh color space
+import type {
+  EditableThemeDefinition,
+  ThemeCustomFont,
+  ThemeMode,
+  ThemeVarKey,
+} from "@/types/settings";
 
-export interface ThemeDefinition {
-  name: string;
+export interface ThemeFontOption {
+  id: string;
   label: string;
-  type: "dark" | "light";
-  font?: string; // Google Font for body text
-  headingFont?: string; // Google Font for headings (h1-h4)
-  accent: string; // preview color for the picker
-  vars: Record<string, string>;
+  cssFamily: string;
+  googleFamily?: string;
 }
 
-export const DEFAULT_CUSTOM_THEME_NAME = "paper";
+export interface RuntimeThemeDefinition extends EditableThemeDefinition {
+  accent: string;
+  source: "built-in" | "custom";
+}
 
-export const THEMES: ThemeDefinition[] = [
-  // ─── CLAUDE THEME (signature) ───
-  {
-    name: "claude",
-    label: "Claude",
-    type: "dark",
-    font: "'Space Grotesk', var(--font-sans)",
-    headingFont: "'Playfair Display', Georgia, serif",
-    accent: "#cc785c",
-    vars: {
-      "--background": "oklch(0.13 0.01 45)",
-      "--foreground": "oklch(0.93 0.02 60)",
-      "--card": "oklch(0.18 0.01 45)",
-      "--card-foreground": "oklch(0.93 0.02 60)",
-      "--popover": "oklch(0.18 0.01 45)",
-      "--popover-foreground": "oklch(0.93 0.02 60)",
-      "--primary": "oklch(0.72 0.12 45)",
-      "--primary-foreground": "oklch(0.13 0.01 45)",
-      "--secondary": "oklch(0.22 0.01 45)",
-      "--secondary-foreground": "oklch(0.88 0.03 55)",
-      "--muted": "oklch(0.22 0.01 45)",
-      "--muted-foreground": "oklch(0.65 0.03 55)",
-      "--accent": "oklch(0.25 0.02 45)",
-      "--accent-foreground": "oklch(0.93 0.02 60)",
-      "--destructive": "oklch(0.65 0.2 25)",
-      "--border": "oklch(1 0 0 / 8%)",
-      "--input": "oklch(1 0 0 / 12%)",
-      "--ring": "oklch(0.72 0.12 45)",
-      "--sidebar": "oklch(0.16 0.01 45)",
-      "--sidebar-foreground": "oklch(0.88 0.02 55)",
-      "--sidebar-primary": "oklch(0.72 0.12 45)",
-      "--sidebar-primary-foreground": "oklch(0.98 0 0)",
-      "--sidebar-accent": "oklch(0.22 0.01 45)",
-      "--sidebar-accent-foreground": "oklch(0.88 0.02 55)",
-      "--sidebar-border": "oklch(1 0 0 / 8%)",
-      "--sidebar-ring": "oklch(0.5 0.05 45)",
-    },
-  },
+export type ThemeDefinition = RuntimeThemeDefinition;
 
-  // ─── DARK THEMES ───
-  {
-    name: "midnight-ocean",
-    label: "Midnight Ocean",
-    type: "dark",
-    font: "'DM Sans', var(--font-sans)",
-    headingFont: "'Unbounded', var(--font-sans)",
-    accent: "#5b8dee",
-    vars: {
-      "--background": "oklch(0.14 0.02 250)",
-      "--foreground": "oklch(0.92 0.01 230)",
-      "--card": "oklch(0.19 0.02 250)",
-      "--card-foreground": "oklch(0.92 0.01 230)",
-      "--popover": "oklch(0.19 0.02 250)",
-      "--popover-foreground": "oklch(0.92 0.01 230)",
-      "--primary": "oklch(0.7 0.15 250)",
-      "--primary-foreground": "oklch(0.98 0 0)",
-      "--secondary": "oklch(0.22 0.02 250)",
-      "--secondary-foreground": "oklch(0.88 0.01 230)",
-      "--muted": "oklch(0.22 0.02 250)",
-      "--muted-foreground": "oklch(0.62 0.04 240)",
-      "--accent": "oklch(0.25 0.03 250)",
-      "--accent-foreground": "oklch(0.92 0.01 230)",
-      "--destructive": "oklch(0.65 0.2 25)",
-      "--border": "oklch(0.7 0.1 250 / 12%)",
-      "--input": "oklch(0.7 0.1 250 / 15%)",
-      "--ring": "oklch(0.7 0.15 250)",
-      "--sidebar": "oklch(0.16 0.02 250)",
-      "--sidebar-foreground": "oklch(0.88 0.01 230)",
-      "--sidebar-primary": "oklch(0.7 0.15 250)",
-      "--sidebar-primary-foreground": "oklch(0.98 0 0)",
-      "--sidebar-accent": "oklch(0.22 0.02 250)",
-      "--sidebar-accent-foreground": "oklch(0.88 0.01 230)",
-      "--sidebar-border": "oklch(0.7 0.1 250 / 12%)",
-      "--sidebar-ring": "oklch(0.5 0.08 250)",
-    },
-  },
-  {
-    name: "aurora",
-    label: "Aurora",
-    type: "dark",
-    font: "'Outfit', var(--font-sans)",
-    headingFont: "'Syne', var(--font-sans)",
-    accent: "#8b5cf6",
-    vars: {
-      "--background": "oklch(0.13 0.02 290)",
-      "--foreground": "oklch(0.94 0.01 280)",
-      "--card": "oklch(0.18 0.02 290)",
-      "--card-foreground": "oklch(0.94 0.01 280)",
-      "--popover": "oklch(0.18 0.02 290)",
-      "--popover-foreground": "oklch(0.94 0.01 280)",
-      "--primary": "oklch(0.65 0.2 290)",
-      "--primary-foreground": "oklch(0.98 0 0)",
-      "--secondary": "oklch(0.22 0.03 290)",
-      "--secondary-foreground": "oklch(0.88 0.01 280)",
-      "--muted": "oklch(0.22 0.03 290)",
-      "--muted-foreground": "oklch(0.6 0.06 280)",
-      "--accent": "oklch(0.25 0.04 290)",
-      "--accent-foreground": "oklch(0.94 0.01 280)",
-      "--destructive": "oklch(0.65 0.2 25)",
-      "--border": "oklch(0.65 0.15 290 / 12%)",
-      "--input": "oklch(0.65 0.15 290 / 15%)",
-      "--ring": "oklch(0.65 0.2 290)",
-      "--sidebar": "oklch(0.15 0.02 290)",
-      "--sidebar-foreground": "oklch(0.88 0.01 280)",
-      "--sidebar-primary": "oklch(0.65 0.2 290)",
-      "--sidebar-primary-foreground": "oklch(0.98 0 0)",
-      "--sidebar-accent": "oklch(0.22 0.03 290)",
-      "--sidebar-accent-foreground": "oklch(0.88 0.01 280)",
-      "--sidebar-border": "oklch(0.65 0.15 290 / 12%)",
-      "--sidebar-ring": "oklch(0.5 0.1 290)",
-    },
-  },
-  {
-    name: "ember",
-    label: "Ember",
-    type: "dark",
-    font: "'Sora', var(--font-sans)",
-    headingFont: "'Bricolage Grotesque', var(--font-sans)",
-    accent: "#f97316",
-    vars: {
-      "--background": "oklch(0.14 0.01 30)",
-      "--foreground": "oklch(0.93 0.02 50)",
-      "--card": "oklch(0.19 0.02 30)",
-      "--card-foreground": "oklch(0.93 0.02 50)",
-      "--popover": "oklch(0.19 0.02 30)",
-      "--popover-foreground": "oklch(0.93 0.02 50)",
-      "--primary": "oklch(0.72 0.18 55)",
-      "--primary-foreground": "oklch(0.13 0.01 30)",
-      "--secondary": "oklch(0.23 0.02 30)",
-      "--secondary-foreground": "oklch(0.88 0.02 50)",
-      "--muted": "oklch(0.23 0.02 30)",
-      "--muted-foreground": "oklch(0.62 0.04 40)",
-      "--accent": "oklch(0.26 0.03 35)",
-      "--accent-foreground": "oklch(0.93 0.02 50)",
-      "--destructive": "oklch(0.65 0.22 25)",
-      "--border": "oklch(0.72 0.12 45 / 10%)",
-      "--input": "oklch(0.72 0.12 45 / 14%)",
-      "--ring": "oklch(0.72 0.18 55)",
-      "--sidebar": "oklch(0.16 0.01 30)",
-      "--sidebar-foreground": "oklch(0.88 0.02 50)",
-      "--sidebar-primary": "oklch(0.72 0.18 55)",
-      "--sidebar-primary-foreground": "oklch(0.98 0 0)",
-      "--sidebar-accent": "oklch(0.23 0.02 30)",
-      "--sidebar-accent-foreground": "oklch(0.88 0.02 50)",
-      "--sidebar-border": "oklch(0.72 0.12 45 / 10%)",
-      "--sidebar-ring": "oklch(0.5 0.08 40)",
-    },
-  },
-  {
-    name: "forest",
-    label: "Forest",
-    type: "dark",
-    font: "'Plus Jakarta Sans', var(--font-sans)",
-    headingFont: "'Fraunces', Georgia, serif",
-    accent: "#22c55e",
-    vars: {
-      "--background": "oklch(0.13 0.02 150)",
-      "--foreground": "oklch(0.92 0.02 145)",
-      "--card": "oklch(0.18 0.02 150)",
-      "--card-foreground": "oklch(0.92 0.02 145)",
-      "--popover": "oklch(0.18 0.02 150)",
-      "--popover-foreground": "oklch(0.92 0.02 145)",
-      "--primary": "oklch(0.7 0.18 150)",
-      "--primary-foreground": "oklch(0.13 0.02 150)",
-      "--secondary": "oklch(0.22 0.02 150)",
-      "--secondary-foreground": "oklch(0.88 0.02 145)",
-      "--muted": "oklch(0.22 0.02 150)",
-      "--muted-foreground": "oklch(0.6 0.05 148)",
-      "--accent": "oklch(0.25 0.03 150)",
-      "--accent-foreground": "oklch(0.92 0.02 145)",
-      "--destructive": "oklch(0.65 0.2 25)",
-      "--border": "oklch(0.7 0.12 150 / 10%)",
-      "--input": "oklch(0.7 0.12 150 / 14%)",
-      "--ring": "oklch(0.7 0.18 150)",
-      "--sidebar": "oklch(0.15 0.02 150)",
-      "--sidebar-foreground": "oklch(0.88 0.02 145)",
-      "--sidebar-primary": "oklch(0.7 0.18 150)",
-      "--sidebar-primary-foreground": "oklch(0.98 0 0)",
-      "--sidebar-accent": "oklch(0.22 0.02 150)",
-      "--sidebar-accent-foreground": "oklch(0.88 0.02 145)",
-      "--sidebar-border": "oklch(0.7 0.12 150 / 10%)",
-      "--sidebar-ring": "oklch(0.5 0.08 150)",
-    },
-  },
-  {
-    name: "cyber",
-    label: "Cyber",
-    type: "dark",
-    font: "'Space Mono', var(--font-mono)",
-    headingFont: "'Orbitron', var(--font-mono)",
-    accent: "#06b6d4",
-    vars: {
-      "--background": "oklch(0.1 0.01 200)",
-      "--foreground": "oklch(0.88 0.08 185)",
-      "--card": "oklch(0.15 0.01 200)",
-      "--card-foreground": "oklch(0.88 0.08 185)",
-      "--popover": "oklch(0.15 0.01 200)",
-      "--popover-foreground": "oklch(0.88 0.08 185)",
-      "--primary": "oklch(0.75 0.15 195)",
-      "--primary-foreground": "oklch(0.1 0.01 200)",
-      "--secondary": "oklch(0.18 0.01 200)",
-      "--secondary-foreground": "oklch(0.82 0.06 190)",
-      "--muted": "oklch(0.18 0.01 200)",
-      "--muted-foreground": "oklch(0.55 0.06 195)",
-      "--accent": "oklch(0.2 0.02 200)",
-      "--accent-foreground": "oklch(0.88 0.08 185)",
-      "--destructive": "oklch(0.65 0.2 25)",
-      "--border": "oklch(0.75 0.1 195 / 12%)",
-      "--input": "oklch(0.75 0.1 195 / 15%)",
-      "--ring": "oklch(0.75 0.15 195)",
-      "--sidebar": "oklch(0.12 0.01 200)",
-      "--sidebar-foreground": "oklch(0.82 0.06 190)",
-      "--sidebar-primary": "oklch(0.75 0.15 195)",
-      "--sidebar-primary-foreground": "oklch(0.98 0 0)",
-      "--sidebar-accent": "oklch(0.18 0.01 200)",
-      "--sidebar-accent-foreground": "oklch(0.82 0.06 190)",
-      "--sidebar-border": "oklch(0.75 0.1 195 / 12%)",
-      "--sidebar-ring": "oklch(0.5 0.08 195)",
-    },
-  },
+interface BuiltInThemeSeed {
+  name: string;
+  label: string;
+  type: ThemeMode;
+  background: string;
+  foreground: string;
+  surface: string;
+  surfaceAlt: string;
+  border: string;
+  mutedForeground: string;
+  primary: string;
+  primaryForeground?: string;
+  destructive: string;
+  ring?: string;
+  bodyFontId?: string | null;
+  headingFontId?: string | null;
+}
 
-  // ─── LIGHT THEMES ───
+export type StoredThemeSelection =
+  | { kind: "default"; mode: ThemeMode }
+  | { kind: "theme"; themeName: string };
+
+export const THEME_VAR_KEYS = [
+  "--background",
+  "--foreground",
+  "--card",
+  "--card-foreground",
+  "--popover",
+  "--popover-foreground",
+  "--primary",
+  "--primary-foreground",
+  "--secondary",
+  "--secondary-foreground",
+  "--muted",
+  "--muted-foreground",
+  "--accent",
+  "--accent-foreground",
+  "--destructive",
+  "--border",
+  "--input",
+  "--ring",
+  "--sidebar",
+  "--sidebar-foreground",
+  "--sidebar-primary",
+  "--sidebar-primary-foreground",
+  "--sidebar-accent",
+  "--sidebar-accent-foreground",
+  "--sidebar-border",
+  "--sidebar-ring",
+] as const satisfies readonly ThemeVarKey[];
+
+const THEME_SELECTION_STORAGE_KEY = "yantra-theme-selection";
+const LEGACY_THEME_STORAGE_KEY = "yantra-theme";
+const NEXT_THEMES_STORAGE_KEY = "theme";
+const THEME_FONTS_STYLESHEET_ID = "theme-fonts-link";
+const CUSTOM_THEME_FONT_LINK_ATTR = "data-theme-custom-font";
+
+export const DEFAULT_THEME_NAME = "gruvbox-light-medium";
+export const DEFAULT_CUSTOM_THEME_NAME = DEFAULT_THEME_NAME;
+export const DEFAULT_DARK_THEME_NAME = "gruvbox-dark-medium";
+
+export const THEME_FONT_OPTIONS: ThemeFontOption[] = [
   {
-    name: "paper",
-    label: "Sepia",
-    type: "light",
-    font: "'Merriweather Sans', var(--font-sans)",
-    headingFont: "'Libre Baskerville', Georgia, serif",
-    accent: "#854d0e",
-    vars: {
-      "--background": "oklch(0.97 0.01 80)",
-      "--foreground": "oklch(0.25 0.02 60)",
-      "--card": "oklch(0.98 0.005 80)",
-      "--card-foreground": "oklch(0.25 0.02 60)",
-      "--popover": "oklch(0.98 0.005 80)",
-      "--popover-foreground": "oklch(0.25 0.02 60)",
-      "--primary": "oklch(0.45 0.08 60)",
-      "--primary-foreground": "oklch(0.97 0.01 80)",
-      "--secondary": "oklch(0.93 0.01 75)",
-      "--secondary-foreground": "oklch(0.3 0.02 60)",
-      "--muted": "oklch(0.93 0.01 75)",
-      "--muted-foreground": "oklch(0.5 0.03 60)",
-      "--accent": "oklch(0.93 0.01 75)",
-      "--accent-foreground": "oklch(0.25 0.02 60)",
-      "--destructive": "oklch(0.55 0.22 25)",
-      "--border": "oklch(0.85 0.02 70)",
-      "--input": "oklch(0.85 0.02 70)",
-      "--ring": "oklch(0.55 0.06 65)",
-      "--sidebar": "oklch(0.95 0.01 78)",
-      "--sidebar-foreground": "oklch(0.25 0.02 60)",
-      "--sidebar-primary": "oklch(0.45 0.08 60)",
-      "--sidebar-primary-foreground": "oklch(0.97 0.01 80)",
-      "--sidebar-accent": "oklch(0.91 0.01 75)",
-      "--sidebar-accent-foreground": "oklch(0.3 0.02 60)",
-      "--sidebar-border": "oklch(0.85 0.02 70)",
-      "--sidebar-ring": "oklch(0.55 0.06 65)",
-    },
+    id: "app-sans",
+    label: "App Sans",
+    cssFamily: "var(--font-sans), ui-sans-serif, system-ui, sans-serif",
   },
   {
-    name: "sakura",
-    label: "Sakura",
-    type: "light",
-    font: "'Nunito', var(--font-sans)",
-    headingFont: "'Cormorant Garamond', Georgia, serif",
-    accent: "#ec4899",
-    vars: {
-      "--background": "oklch(0.97 0.01 340)",
-      "--foreground": "oklch(0.25 0.02 330)",
-      "--card": "oklch(0.98 0.01 340)",
-      "--card-foreground": "oklch(0.25 0.02 330)",
-      "--popover": "oklch(0.98 0.01 340)",
-      "--popover-foreground": "oklch(0.25 0.02 330)",
-      "--primary": "oklch(0.6 0.18 340)",
-      "--primary-foreground": "oklch(0.98 0 0)",
-      "--secondary": "oklch(0.93 0.02 340)",
-      "--secondary-foreground": "oklch(0.3 0.02 330)",
-      "--muted": "oklch(0.93 0.02 340)",
-      "--muted-foreground": "oklch(0.55 0.04 335)",
-      "--accent": "oklch(0.93 0.02 340)",
-      "--accent-foreground": "oklch(0.25 0.02 330)",
-      "--destructive": "oklch(0.55 0.22 25)",
-      "--border": "oklch(0.88 0.03 340)",
-      "--input": "oklch(0.88 0.03 340)",
-      "--ring": "oklch(0.6 0.15 340)",
-      "--sidebar": "oklch(0.96 0.01 340)",
-      "--sidebar-foreground": "oklch(0.25 0.02 330)",
-      "--sidebar-primary": "oklch(0.6 0.18 340)",
-      "--sidebar-primary-foreground": "oklch(0.98 0 0)",
-      "--sidebar-accent": "oklch(0.91 0.02 340)",
-      "--sidebar-accent-foreground": "oklch(0.3 0.02 330)",
-      "--sidebar-border": "oklch(0.88 0.03 340)",
-      "--sidebar-ring": "oklch(0.6 0.12 340)",
-    },
+    id: "app-mono",
+    label: "App Mono",
+    cssFamily: "var(--font-mono), ui-monospace, monospace",
   },
   {
-    name: "meadow",
-    label: "Meadow",
-    type: "light",
-    font: "'Rubik', var(--font-sans)",
-    headingFont: "'Bitter', Georgia, serif",
-    accent: "#16a34a",
-    vars: {
-      "--background": "oklch(0.97 0.01 140)",
-      "--foreground": "oklch(0.2 0.03 145)",
-      "--card": "oklch(0.98 0.005 140)",
-      "--card-foreground": "oklch(0.2 0.03 145)",
-      "--popover": "oklch(0.98 0.005 140)",
-      "--popover-foreground": "oklch(0.2 0.03 145)",
-      "--primary": "oklch(0.55 0.18 150)",
-      "--primary-foreground": "oklch(0.98 0 0)",
-      "--secondary": "oklch(0.93 0.02 140)",
-      "--secondary-foreground": "oklch(0.25 0.03 145)",
-      "--muted": "oklch(0.93 0.02 140)",
-      "--muted-foreground": "oklch(0.5 0.04 145)",
-      "--accent": "oklch(0.93 0.02 140)",
-      "--accent-foreground": "oklch(0.2 0.03 145)",
-      "--destructive": "oklch(0.55 0.22 25)",
-      "--border": "oklch(0.87 0.03 140)",
-      "--input": "oklch(0.87 0.03 140)",
-      "--ring": "oklch(0.55 0.12 150)",
-      "--sidebar": "oklch(0.95 0.01 140)",
-      "--sidebar-foreground": "oklch(0.2 0.03 145)",
-      "--sidebar-primary": "oklch(0.55 0.18 150)",
-      "--sidebar-primary-foreground": "oklch(0.98 0 0)",
-      "--sidebar-accent": "oklch(0.91 0.02 140)",
-      "--sidebar-accent-foreground": "oklch(0.25 0.03 145)",
-      "--sidebar-border": "oklch(0.87 0.03 140)",
-      "--sidebar-ring": "oklch(0.55 0.12 150)",
-    },
+    id: "system-serif",
+    label: "System Serif",
+    cssFamily: 'Georgia, Cambria, "Times New Roman", Times, serif',
   },
   {
-    name: "sky",
-    label: "Sky",
-    type: "light",
-    font: "'Figtree', var(--font-sans)",
-    headingFont: "'Montserrat', var(--font-sans)",
-    accent: "#2563eb",
-    vars: {
-      "--background": "oklch(0.97 0.01 240)",
-      "--foreground": "oklch(0.2 0.02 240)",
-      "--card": "oklch(0.98 0.005 240)",
-      "--card-foreground": "oklch(0.2 0.02 240)",
-      "--popover": "oklch(0.98 0.005 240)",
-      "--popover-foreground": "oklch(0.2 0.02 240)",
-      "--primary": "oklch(0.55 0.2 260)",
-      "--primary-foreground": "oklch(0.98 0 0)",
-      "--secondary": "oklch(0.93 0.01 240)",
-      "--secondary-foreground": "oklch(0.25 0.02 240)",
-      "--muted": "oklch(0.93 0.01 240)",
-      "--muted-foreground": "oklch(0.5 0.04 240)",
-      "--accent": "oklch(0.93 0.01 240)",
-      "--accent-foreground": "oklch(0.2 0.02 240)",
-      "--destructive": "oklch(0.55 0.22 25)",
-      "--border": "oklch(0.87 0.02 240)",
-      "--input": "oklch(0.87 0.02 240)",
-      "--ring": "oklch(0.55 0.15 260)",
-      "--sidebar": "oklch(0.95 0.01 240)",
-      "--sidebar-foreground": "oklch(0.2 0.02 240)",
-      "--sidebar-primary": "oklch(0.55 0.2 260)",
-      "--sidebar-primary-foreground": "oklch(0.98 0 0)",
-      "--sidebar-accent": "oklch(0.91 0.01 240)",
-      "--sidebar-accent-foreground": "oklch(0.25 0.02 240)",
-      "--sidebar-border": "oklch(0.87 0.02 240)",
-      "--sidebar-ring": "oklch(0.55 0.15 260)",
-    },
+    id: "space-grotesk",
+    label: "Space Grotesk",
+    cssFamily: "'Space Grotesk', var(--font-sans)",
+    googleFamily: "Space Grotesk:wght@400;500;600;700",
   },
   {
-    name: "lavender",
-    label: "Lavender",
-    type: "light",
-    font: "'Quicksand', var(--font-sans)",
-    headingFont: "'Spectral', Georgia, serif",
-    accent: "#a855f7",
-    vars: {
-      "--background": "oklch(0.97 0.01 295)",
-      "--foreground": "oklch(0.22 0.03 290)",
-      "--card": "oklch(0.98 0.005 295)",
-      "--card-foreground": "oklch(0.22 0.03 290)",
-      "--popover": "oklch(0.98 0.005 295)",
-      "--popover-foreground": "oklch(0.22 0.03 290)",
-      "--primary": "oklch(0.58 0.18 295)",
-      "--primary-foreground": "oklch(0.98 0 0)",
-      "--secondary": "oklch(0.93 0.02 295)",
-      "--secondary-foreground": "oklch(0.28 0.03 290)",
-      "--muted": "oklch(0.93 0.02 295)",
-      "--muted-foreground": "oklch(0.52 0.04 290)",
-      "--accent": "oklch(0.93 0.02 295)",
-      "--accent-foreground": "oklch(0.22 0.03 290)",
-      "--destructive": "oklch(0.55 0.22 25)",
-      "--border": "oklch(0.87 0.03 295)",
-      "--input": "oklch(0.87 0.03 295)",
-      "--ring": "oklch(0.58 0.14 295)",
-      "--sidebar": "oklch(0.95 0.01 295)",
-      "--sidebar-foreground": "oklch(0.22 0.03 290)",
-      "--sidebar-primary": "oklch(0.58 0.18 295)",
-      "--sidebar-primary-foreground": "oklch(0.98 0 0)",
-      "--sidebar-accent": "oklch(0.91 0.02 295)",
-      "--sidebar-accent-foreground": "oklch(0.28 0.03 290)",
-      "--sidebar-border": "oklch(0.87 0.03 295)",
-      "--sidebar-ring": "oklch(0.58 0.14 295)",
-    },
+    id: "playfair-display",
+    label: "Playfair Display",
+    cssFamily: "'Playfair Display', Georgia, serif",
+    googleFamily: "Playfair Display:wght@400;600;700",
+  },
+  {
+    id: "dm-sans",
+    label: "DM Sans",
+    cssFamily: "'DM Sans', var(--font-sans)",
+    googleFamily: "DM Sans:wght@400;500;600;700",
+  },
+  {
+    id: "unbounded",
+    label: "Unbounded",
+    cssFamily: "'Unbounded', var(--font-sans)",
+    googleFamily: "Unbounded:wght@400;600;700",
+  },
+  {
+    id: "outfit",
+    label: "Outfit",
+    cssFamily: "'Outfit', var(--font-sans)",
+    googleFamily: "Outfit:wght@400;500;600;700",
+  },
+  {
+    id: "syne",
+    label: "Syne",
+    cssFamily: "'Syne', var(--font-sans)",
+    googleFamily: "Syne:wght@400;600;700",
+  },
+  {
+    id: "sora",
+    label: "Sora",
+    cssFamily: "'Sora', var(--font-sans)",
+    googleFamily: "Sora:wght@400;500;600;700",
+  },
+  {
+    id: "bricolage-grotesque",
+    label: "Bricolage Grotesque",
+    cssFamily: "'Bricolage Grotesque', var(--font-sans)",
+    googleFamily: "Bricolage Grotesque:wght@400;600;700",
+  },
+  {
+    id: "plus-jakarta-sans",
+    label: "Plus Jakarta Sans",
+    cssFamily: "'Plus Jakarta Sans', var(--font-sans)",
+    googleFamily: "Plus Jakarta Sans:wght@400;500;600;700",
+  },
+  {
+    id: "fraunces",
+    label: "Fraunces",
+    cssFamily: "'Fraunces', Georgia, serif",
+    googleFamily: "Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700",
+  },
+  {
+    id: "space-mono",
+    label: "Space Mono",
+    cssFamily: "'Space Mono', var(--font-mono)",
+    googleFamily: "Space Mono:wght@400;700",
+  },
+  {
+    id: "orbitron",
+    label: "Orbitron",
+    cssFamily: "'Orbitron', var(--font-mono)",
+    googleFamily: "Orbitron:wght@400;600;700",
+  },
+  {
+    id: "merriweather-sans",
+    label: "Merriweather Sans",
+    cssFamily: "'Merriweather Sans', var(--font-sans)",
+    googleFamily: "Merriweather Sans:wght@400;500;600;700",
+  },
+  {
+    id: "libre-baskerville",
+    label: "Libre Baskerville",
+    cssFamily: "'Libre Baskerville', Georgia, serif",
+    googleFamily: "Libre Baskerville:wght@400;700",
+  },
+  {
+    id: "nunito",
+    label: "Nunito",
+    cssFamily: "'Nunito', var(--font-sans)",
+    googleFamily: "Nunito:wght@400;500;600;700",
+  },
+  {
+    id: "cormorant-garamond",
+    label: "Cormorant Garamond",
+    cssFamily: "'Cormorant Garamond', Georgia, serif",
+    googleFamily: "Cormorant Garamond:wght@400;600;700",
+  },
+  {
+    id: "rubik",
+    label: "Rubik",
+    cssFamily: "'Rubik', var(--font-sans)",
+    googleFamily: "Rubik:wght@400;500;600;700",
+  },
+  {
+    id: "bitter",
+    label: "Bitter",
+    cssFamily: "'Bitter', Georgia, serif",
+    googleFamily: "Bitter:wght@400;600;700",
+  },
+  {
+    id: "figtree",
+    label: "Figtree",
+    cssFamily: "'Figtree', var(--font-sans)",
+    googleFamily: "Figtree:wght@400;500;600;700",
+  },
+  {
+    id: "montserrat",
+    label: "Montserrat",
+    cssFamily: "'Montserrat', var(--font-sans)",
+    googleFamily: "Montserrat:wght@400;600;700",
+  },
+  {
+    id: "quicksand",
+    label: "Quicksand",
+    cssFamily: "'Quicksand', var(--font-sans)",
+    googleFamily: "Quicksand:wght@400;500;600;700",
+  },
+  {
+    id: "spectral",
+    label: "Spectral",
+    cssFamily: "'Spectral', Georgia, serif",
+    googleFamily: "Spectral:wght@400;600;700",
   },
 ];
 
-// Apply a custom theme by setting CSS variables on the root element
-export function applyTheme(theme: ThemeDefinition | null) {
+function createBuiltInThemeSeed({
+  name,
+  label,
+  type,
+  background,
+  foreground,
+  surface,
+  surfaceAlt,
+  border,
+  mutedForeground,
+  primary,
+  primaryForeground,
+  destructive,
+  ring,
+  bodyFontId,
+  headingFontId,
+}: BuiltInThemeSeed): EditableThemeDefinition {
+  const resolvedPrimaryForeground = primaryForeground ?? background;
+  const resolvedRing = ring ?? primary;
+
+  return {
+    name,
+    label,
+    type,
+    bodyFontId: bodyFontId ?? "app-sans",
+    headingFontId: headingFontId ?? "app-sans",
+    vars: {
+      "--background": background,
+      "--foreground": foreground,
+      "--card": surface,
+      "--card-foreground": foreground,
+      "--popover": surface,
+      "--popover-foreground": foreground,
+      "--primary": primary,
+      "--primary-foreground": resolvedPrimaryForeground,
+      "--secondary": surfaceAlt,
+      "--secondary-foreground": foreground,
+      "--muted": surfaceAlt,
+      "--muted-foreground": mutedForeground,
+      "--accent": surfaceAlt,
+      "--accent-foreground": foreground,
+      "--destructive": destructive,
+      "--border": border,
+      "--input": border,
+      "--ring": resolvedRing,
+      "--sidebar": surface,
+      "--sidebar-foreground": foreground,
+      "--sidebar-primary": primary,
+      "--sidebar-primary-foreground": resolvedPrimaryForeground,
+      "--sidebar-accent": surfaceAlt,
+      "--sidebar-accent-foreground": foreground,
+      "--sidebar-border": border,
+      "--sidebar-ring": resolvedRing,
+    },
+  };
+}
+
+const BUILT_IN_THEME_SEEDS: EditableThemeDefinition[] = [
+  createBuiltInThemeSeed({
+    name: "gruvbox-dark-medium",
+    label: "Gruvbox Dark Medium",
+    type: "dark",
+    background: "#282828",
+    foreground: "#ebdbb2",
+    surface: "#32302f",
+    surfaceAlt: "#3c3836",
+    border: "#504945",
+    mutedForeground: "#a89984",
+    primary: "#d79921",
+    primaryForeground: "#1d2021",
+    destructive: "#fb4934",
+    ring: "#83a598",
+  }),
+  createBuiltInThemeSeed({
+    name: "gruvbox-dark-hard",
+    label: "Gruvbox Dark Hard",
+    type: "dark",
+    background: "#1d2021",
+    foreground: "#ebdbb2",
+    surface: "#282828",
+    surfaceAlt: "#32302f",
+    border: "#504945",
+    mutedForeground: "#a89984",
+    primary: "#d79921",
+    primaryForeground: "#1d2021",
+    destructive: "#fb4934",
+    ring: "#83a598",
+  }),
+  createBuiltInThemeSeed({
+    name: "gruvbox-dark-soft",
+    label: "Gruvbox Dark Soft",
+    type: "dark",
+    background: "#32302f",
+    foreground: "#ebdbb2",
+    surface: "#3c3836",
+    surfaceAlt: "#504945",
+    border: "#665c54",
+    mutedForeground: "#a89984",
+    primary: "#d79921",
+    primaryForeground: "#1d2021",
+    destructive: "#fb4934",
+    ring: "#83a598",
+  }),
+  createBuiltInThemeSeed({
+    name: "gruvbox-light-medium",
+    label: "Gruvbox Light Medium",
+    type: "light",
+    background: "#fbf1c7",
+    foreground: "#3c3836",
+    surface: "#f2e5bc",
+    surfaceAlt: "#ebdbb2",
+    border: "#d5c4a1",
+    mutedForeground: "#7c6f64",
+    primary: "#b57614",
+    primaryForeground: "#fbf1c7",
+    destructive: "#9d0006",
+    ring: "#076678",
+  }),
+  createBuiltInThemeSeed({
+    name: "gruvbox-light-hard",
+    label: "Gruvbox Light Hard",
+    type: "light",
+    background: "#f9f5d7",
+    foreground: "#3c3836",
+    surface: "#fbf1c7",
+    surfaceAlt: "#ebdbb2",
+    border: "#d5c4a1",
+    mutedForeground: "#7c6f64",
+    primary: "#b57614",
+    primaryForeground: "#f9f5d7",
+    destructive: "#9d0006",
+    ring: "#076678",
+  }),
+  createBuiltInThemeSeed({
+    name: "gruvbox-light-soft",
+    label: "Gruvbox Light Soft",
+    type: "light",
+    background: "#f2e5bc",
+    foreground: "#3c3836",
+    surface: "#ebdbb2",
+    surfaceAlt: "#d5c4a1",
+    border: "#bdae93",
+    mutedForeground: "#7c6f64",
+    primary: "#b57614",
+    primaryForeground: "#f2e5bc",
+    destructive: "#9d0006",
+    ring: "#076678",
+  }),
+  createBuiltInThemeSeed({
+    name: "everforest",
+    label: "Everforest",
+    type: "dark",
+    background: "#2D353B",
+    foreground: "#D3C6AA",
+    surface: "#343F44",
+    surfaceAlt: "#3D484D",
+    border: "#475258",
+    mutedForeground: "#859289",
+    primary: "#7FBBB3",
+    primaryForeground: "#232A2E",
+    destructive: "#E67E80",
+    ring: "#DBBC7F",
+  }),
+  createBuiltInThemeSeed({
+    name: "catppuccin-latte",
+    label: "Catppuccin Latte",
+    type: "light",
+    background: "#eff1f5",
+    foreground: "#4c4f69",
+    surface: "#e6e9ef",
+    surfaceAlt: "#ccd0da",
+    border: "#bcc0cc",
+    mutedForeground: "#6c6f85",
+    primary: "#1e66f5",
+    primaryForeground: "#eff1f5",
+    destructive: "#d20f39",
+    ring: "#7287fd",
+  }),
+  createBuiltInThemeSeed({
+    name: "catppuccin-frappe",
+    label: "Catppuccin Frappé",
+    type: "dark",
+    background: "#303446",
+    foreground: "#c6d0f5",
+    surface: "#292c3c",
+    surfaceAlt: "#414559",
+    border: "#51576d",
+    mutedForeground: "#a5adce",
+    primary: "#8caaee",
+    primaryForeground: "#232634",
+    destructive: "#e78284",
+    ring: "#babbf1",
+  }),
+  createBuiltInThemeSeed({
+    name: "catppuccin-macchiato",
+    label: "Catppuccin Macchiato",
+    type: "dark",
+    background: "#24273a",
+    foreground: "#cad3f5",
+    surface: "#1e2030",
+    surfaceAlt: "#363a4f",
+    border: "#494d64",
+    mutedForeground: "#a5adcb",
+    primary: "#8aadf4",
+    primaryForeground: "#181926",
+    destructive: "#ed8796",
+    ring: "#b7bdf8",
+  }),
+  createBuiltInThemeSeed({
+    name: "catppuccin-mocha",
+    label: "Catppuccin Mocha",
+    type: "dark",
+    background: "#1e1e2e",
+    foreground: "#cdd6f4",
+    surface: "#181825",
+    surfaceAlt: "#313244",
+    border: "#45475a",
+    mutedForeground: "#a6adc8",
+    primary: "#89b4fa",
+    primaryForeground: "#11111b",
+    destructive: "#f38ba8",
+    ring: "#b4befe",
+  }),
+  createBuiltInThemeSeed({
+    name: "nord",
+    label: "Nord",
+    type: "dark",
+    background: "#2e3440",
+    foreground: "#eceff4",
+    surface: "#3b4252",
+    surfaceAlt: "#434c5e",
+    border: "#4c566a",
+    mutedForeground: "#d8dee9",
+    primary: "#88c0d0",
+    primaryForeground: "#2e3440",
+    destructive: "#bf616a",
+    ring: "#81a1c1",
+  }),
+  createBuiltInThemeSeed({
+    name: "tokyo-night",
+    label: "Tokyo Night",
+    type: "dark",
+    background: "#222436",
+    foreground: "#c8d3f5",
+    surface: "#1e2030",
+    surfaceAlt: "#2f334d",
+    border: "#545c7e",
+    mutedForeground: "#828bb8",
+    primary: "#82aaff",
+    primaryForeground: "#191B29",
+    destructive: "#ff757f",
+    ring: "#c099ff",
+  }),
+  createBuiltInThemeSeed({
+    name: "rose-pine",
+    label: "Rose Pine",
+    type: "dark",
+    background: "#191724",
+    foreground: "#e0def4",
+    surface: "#1f1d2e",
+    surfaceAlt: "#26233a",
+    border: "#403d52",
+    mutedForeground: "#908caa",
+    primary: "#9ccfd8",
+    primaryForeground: "#191724",
+    destructive: "#eb6f92",
+    ring: "#c4a7e7",
+  }),
+  createBuiltInThemeSeed({
+    name: "rose-pine-dawn",
+    label: "Rose Pine Dawn",
+    type: "light",
+    background: "#faf4ed",
+    foreground: "#464261",
+    surface: "#fffaf3",
+    surfaceAlt: "#f2e9e1",
+    border: "#dfdad9",
+    mutedForeground: "#797593",
+    primary: "#56949f",
+    primaryForeground: "#faf4ed",
+    destructive: "#b4637a",
+    ring: "#907aa9",
+  }),
+];
+
+function toRuntimeTheme(
+  theme: EditableThemeDefinition,
+  source: RuntimeThemeDefinition["source"]
+): RuntimeThemeDefinition {
+  return {
+    ...theme,
+    accent: theme.vars["--primary"],
+    source,
+    vars: { ...theme.vars },
+  };
+}
+
+export const BUILT_IN_THEMES: RuntimeThemeDefinition[] = BUILT_IN_THEME_SEEDS.map((theme) =>
+  toRuntimeTheme(theme, "built-in")
+);
+
+export const THEMES = BUILT_IN_THEMES;
+
+export function slugifyThemeName(value: string): string {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+}
+
+export function getThemeFontById(id: string | null | undefined): ThemeFontOption | null {
+  if (!id) return null;
+  return THEME_FONT_OPTIONS.find((font) => font.id === id) ?? null;
+}
+
+export function normalizeCustomThemeFont(font: unknown): ThemeCustomFont | null {
+  if (!font || typeof font !== "object" || !("family" in font)) return null;
+
+  const family = typeof font.family === "string" ? font.family.trim() : "";
+  if (!family) return null;
+
+  return {
+    family,
+    importUrl:
+      "importUrl" in font && typeof font.importUrl === "string"
+        ? font.importUrl.trim() || null
+        : null,
+  };
+}
+
+export function getCustomThemeFontFamily(
+  font: ThemeCustomFont | null | undefined,
+  fallbackVar = "--font-sans"
+): string | null {
+  const normalized = normalizeCustomThemeFont(font);
+  if (!normalized) return null;
+
+  if (/[,'"]|var\(--/.test(normalized.family)) {
+    return normalized.family;
+  }
+
+  return `'${normalized.family}', var(${fallbackVar})`;
+}
+
+export function getThemeFontFamily(
+  id: string | null | undefined,
+  customFont?: ThemeCustomFont | null,
+  fallbackVar = "--font-sans"
+): string | null {
+  return getCustomThemeFontFamily(customFont, fallbackVar) ?? getThemeFontById(id)?.cssFamily ?? null;
+}
+
+export function ensureThemeFontStylesheet(): void {
+  if (typeof document === "undefined") return;
+  if (document.getElementById(THEME_FONTS_STYLESHEET_ID)) return;
+
+  const families = THEME_FONT_OPTIONS.flatMap((font) =>
+    font.googleFamily ? [font.googleFamily] : []
+  );
+  if (families.length === 0) return;
+
+  const params = new URLSearchParams();
+  for (const family of families) {
+    params.append("family", family);
+  }
+  params.set("display", "swap");
+
+  const link = document.createElement("link");
+  link.id = THEME_FONTS_STYLESHEET_ID;
+  link.rel = "stylesheet";
+  link.href = `https://fonts.googleapis.com/css2?${params.toString()}`;
+  document.head.appendChild(link);
+}
+
+export function getBuiltInThemeByName(name: string | null | undefined) {
+  if (!name) return null;
+  return BUILT_IN_THEMES.find((theme) => theme.name === name) ?? null;
+}
+
+export function getDefaultBuiltInThemeForType(type: ThemeMode) {
+  return getBuiltInThemeByName(type === "dark" ? DEFAULT_DARK_THEME_NAME : DEFAULT_THEME_NAME);
+}
+
+export function resolveAvailableThemes(
+  customThemes: EditableThemeDefinition[] = []
+): RuntimeThemeDefinition[] {
+  return [
+    ...BUILT_IN_THEMES,
+    ...customThemes.map((theme) => toRuntimeTheme(theme, "custom")),
+  ];
+}
+
+export function getThemeByName(
+  name: string | null,
+  customThemes: EditableThemeDefinition[] = []
+) {
+  if (!name) return null;
+  return resolveAvailableThemes(customThemes).find((theme) => theme.name === name) ?? null;
+}
+
+export function createEditableThemeFromRuntimeTheme(
+  theme: RuntimeThemeDefinition
+): EditableThemeDefinition {
+  return {
+    name: theme.name,
+    label: theme.label,
+    type: theme.type,
+    bodyFontId: theme.bodyFontId,
+    headingFontId: theme.headingFontId,
+    bodyFontCustom: normalizeCustomThemeFont(theme.bodyFontCustom),
+    headingFontCustom: normalizeCustomThemeFont(theme.headingFontCustom),
+    vars: { ...theme.vars },
+  };
+}
+
+export function collectThemeFontImportUrls(
+  themes: Array<Pick<EditableThemeDefinition, "bodyFontCustom" | "headingFontCustom">>
+): string[] {
+  const urls = new Set<string>();
+
+  for (const theme of themes) {
+    const bodyImport = normalizeCustomThemeFont(theme.bodyFontCustom)?.importUrl;
+    const headingImport = normalizeCustomThemeFont(theme.headingFontCustom)?.importUrl;
+    if (bodyImport) urls.add(bodyImport);
+    if (headingImport) urls.add(headingImport);
+  }
+
+  return Array.from(urls);
+}
+
+export function syncCustomThemeFontStylesheets(
+  themes: Array<Pick<EditableThemeDefinition, "bodyFontCustom" | "headingFontCustom">>
+): void {
+  if (typeof document === "undefined") return;
+
+  const desiredUrls = new Set(collectThemeFontImportUrls(themes));
+  const existingLinks = Array.from(
+    document.head.querySelectorAll<HTMLLinkElement>(`link[${CUSTOM_THEME_FONT_LINK_ATTR}="true"]`)
+  );
+
+  for (const link of existingLinks) {
+    if (!desiredUrls.has(link.href)) {
+      link.remove();
+    }
+  }
+
+  const existingUrls = new Set(existingLinks.map((link) => link.href));
+  for (const url of desiredUrls) {
+    if (existingUrls.has(url)) continue;
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = url;
+    link.setAttribute(CUSTOM_THEME_FONT_LINK_ATTR, "true");
+    document.head.appendChild(link);
+  }
+}
+
+function parseStoredThemeSelection(raw: string | null): StoredThemeSelection | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as StoredThemeSelection;
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      parsed.kind === "default" &&
+      (parsed.mode === "light" || parsed.mode === "dark")
+    ) {
+      return parsed;
+    }
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      parsed.kind === "theme" &&
+      typeof parsed.themeName === "string" &&
+      parsed.themeName.trim()
+    ) {
+      return { kind: "theme", themeName: parsed.themeName.trim() };
+    }
+  } catch {
+    // ignore malformed storage
+  }
+  return null;
+}
+
+export function readLegacyThemeSelection(): StoredThemeSelection | null {
+  if (typeof window === "undefined") return null;
+
+  const legacyThemeName = localStorage.getItem(LEGACY_THEME_STORAGE_KEY)?.trim();
+  if (legacyThemeName) {
+    return { kind: "theme", themeName: legacyThemeName };
+  }
+
+  const nextThemeMode = localStorage.getItem(NEXT_THEMES_STORAGE_KEY);
+  if (nextThemeMode === "light" || nextThemeMode === "dark") {
+    return { kind: "default", mode: nextThemeMode };
+  }
+
+  return null;
+}
+
+export function getStoredThemeSelection(): StoredThemeSelection | null {
+  if (typeof window === "undefined") return null;
+
+  const structured = parseStoredThemeSelection(
+    localStorage.getItem(THEME_SELECTION_STORAGE_KEY)
+  );
+  if (structured) {
+    return structured;
+  }
+
+  const legacy = readLegacyThemeSelection();
+  if (legacy) {
+    storeThemeSelection(legacy);
+  }
+  return legacy;
+}
+
+export function storeThemeSelection(selection: StoredThemeSelection | null): void {
+  if (typeof window === "undefined") return;
+
+  if (!selection) {
+    localStorage.removeItem(THEME_SELECTION_STORAGE_KEY);
+    localStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
+    return;
+  }
+
+  localStorage.setItem(THEME_SELECTION_STORAGE_KEY, JSON.stringify(selection));
+  if (selection.kind === "theme") {
+    localStorage.setItem(LEGACY_THEME_STORAGE_KEY, selection.themeName);
+  } else {
+    localStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
+  }
+}
+
+export function getStoredThemeName(): string | null {
+  const selection = getStoredThemeSelection();
+  return selection?.kind === "theme" ? selection.themeName : null;
+}
+
+export function storeThemeName(name: string | null): void {
+  storeThemeSelection(name ? { kind: "theme", themeName: name } : null);
+}
+
+export function applyTheme(theme: RuntimeThemeDefinition | null) {
   const root = document.documentElement;
 
   if (!theme) {
-    // Reset to default (remove custom vars, let .dark/:root handle it)
     root.removeAttribute("data-custom-theme");
     root.style.removeProperty("--font-theme");
     root.style.removeProperty("--font-heading-theme");
-    const defaultTheme = THEMES[0];
-    if (defaultTheme) {
-      Object.keys(defaultTheme.vars).forEach((key) => {
-        root.style.removeProperty(key);
-      });
+    for (const key of THEME_VAR_KEYS) {
+      root.style.removeProperty(key);
     }
     return;
   }
 
-  // Set the dark/light class
-  root.classList.toggle("dark", theme.type === "dark");
+  for (const key of THEME_VAR_KEYS) {
+    root.style.setProperty(key, theme.vars[key]);
+  }
 
-  // Apply CSS variables
-  Object.entries(theme.vars).forEach(([key, value]) => {
-    root.style.setProperty(key, value);
-  });
+  const bodyFont = getThemeFontFamily(theme.bodyFontId, theme.bodyFontCustom, "--font-sans");
+  const headingFont = getThemeFontFamily(
+    theme.headingFontId,
+    theme.headingFontCustom,
+    "--font-sans"
+  );
 
-  // Apply fonts
-  if (theme.font) {
-    root.style.setProperty("--font-theme", theme.font);
+  if (bodyFont) {
+    root.style.setProperty("--font-theme", bodyFont);
   } else {
     root.style.removeProperty("--font-theme");
   }
 
-  if (theme.headingFont) {
-    root.style.setProperty("--font-heading-theme", theme.headingFont);
+  if (headingFont) {
+    root.style.setProperty("--font-heading-theme", headingFont);
   } else {
     root.style.removeProperty("--font-heading-theme");
   }
 
   root.setAttribute("data-custom-theme", theme.name);
-}
-
-export function getThemeByName(name: string | null) {
-  if (!name) return null;
-  return THEMES.find((theme) => theme.name === name) ?? null;
-}
-
-// Get the stored theme name from localStorage
-export function getStoredThemeName(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("yantra-theme");
-}
-
-// Store theme name to localStorage
-export function storeThemeName(name: string | null) {
-  if (typeof window === "undefined") return;
-  if (name) {
-    localStorage.setItem("yantra-theme", name);
-  } else {
-    localStorage.removeItem("yantra-theme");
-  }
 }
