@@ -73,6 +73,7 @@ export function useAgentsWorkspaceData({
   const conversationsRequestRef = useRef(0);
   const settingsRequestRef = useRef(0);
   const conversationDetailRequestRef = useRef(0);
+  const hasLoadedConversationsRef = useRef(false);
 
   const agents = useMemo(() => {
     const generalRunning =
@@ -106,7 +107,7 @@ export function useAgentsWorkspaceData({
     async (options?: { resetLoading?: boolean }) => {
       const requestId = ++conversationsRequestRef.current;
 
-      if (options?.resetLoading || !hasLoadedConversations) {
+      if (options?.resetLoading || !hasLoadedConversationsRef.current) {
         setConversationsLoading(true);
       }
 
@@ -123,12 +124,13 @@ export function useAgentsWorkspaceData({
       } catch {
       } finally {
         if (conversationsRequestRef.current === requestId) {
+          hasLoadedConversationsRef.current = true;
           setConversationsLoading(false);
           setHasLoadedConversations(true);
         }
       }
     },
-    [activeAgentSlug, hasLoadedConversations, statusFilter, triggerFilter]
+    [activeAgentSlug, statusFilter, triggerFilter]
   );
 
   const refreshSettings = useCallback(async (slug: string) => {
@@ -171,10 +173,11 @@ export function useAgentsWorkspaceData({
   }, []);
 
   useEffect(() => {
+    hasLoadedConversationsRef.current = false;
     setHasLoadedConversations(false);
     setConversationsLoading(true);
     void refreshConversations({ resetLoading: true });
-  }, [refreshConversations]);
+  }, [activeAgentSlug, refreshConversations, statusFilter, triggerFilter]);
 
   useEffect(() => {
     void refreshAgents();
