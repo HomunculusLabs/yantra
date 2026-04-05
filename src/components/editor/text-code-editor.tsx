@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import type { Extension } from "@codemirror/state";
 import { StreamLanguage } from "@codemirror/language";
@@ -81,6 +82,17 @@ const envLanguage: TextEditorLanguage = {
 const shellEditorLanguage: TextEditorLanguage = {
   label: "Shell",
   extension: shellLanguage,
+};
+
+const codeMirrorBasicSetup = {
+  lineNumbers: true,
+  foldGutter: true,
+  highlightActiveLine: true,
+  highlightActiveLineGutter: true,
+  bracketMatching: true,
+  closeBrackets: true,
+  autocompletion: true,
+  syntaxHighlighting: true,
 };
 
 const editorTheme = EditorView.theme({
@@ -191,22 +203,16 @@ export function getTextEditorLanguage(path: string, value = ""): TextEditorLangu
 
 export function TextCodeEditor({ path, value, onChange, language }: TextCodeEditorProps) {
   const resolvedLanguage = language ?? getTextEditorLanguage(path, value);
-  const extensions = [editorTheme, ...(resolvedLanguage.extension ? [resolvedLanguage.extension] : [])];
+  const extensions = useMemo(
+    () => [editorTheme, ...(resolvedLanguage.extension ? [resolvedLanguage.extension] : [])],
+    [resolvedLanguage.extension]
+  );
 
   return (
     <CodeMirror
       value={value}
       height="100%"
-      basicSetup={{
-        lineNumbers: true,
-        foldGutter: true,
-        highlightActiveLine: true,
-        highlightActiveLineGutter: true,
-        bracketMatching: true,
-        closeBrackets: true,
-        autocompletion: true,
-        syntaxHighlighting: true,
-      }}
+      basicSetup={codeMirrorBasicSetup}
       extensions={extensions}
       onChange={onChange}
       theme="none"

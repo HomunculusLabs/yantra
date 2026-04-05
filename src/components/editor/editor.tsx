@@ -1,104 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useCallback, useState, useMemo } from "react";
-import { useEditor, EditorContent } from "@tiptap/react";
-import { Sparkles, Code2, Loader2, RotateCcw, X } from "lucide-react";
-import { editorExtensions } from "./extensions";
-import { EditorToolbar } from "./editor-toolbar";
-import { SlashCommands } from "./slash-commands";
+import { useMemo } from "react";
+import { Loader2, RotateCcw, X } from "lucide-react";
+import { RichPageEditor } from "./rich-page-editor";
+import { SaveIndicator } from "./save-indicator";
 import { TextCodeEditor, getTextEditorLanguage } from "./text-code-editor";
 import { useEditorStore, type EditorPaneId, type EditorPaneState } from "@/stores/editor-store";
-import { useAIPanelStore } from "@/stores/ai-panel-store";
+import { getPaneTabDisplayState, paneHasOpenPage } from "@/stores/editor-store.state";
 import { useTreeStore } from "@/stores/tree-store";
-import { renderMarkdown } from "@/lib/api/client";
-import { htmlToMarkdown } from "@/lib/markdown/to-markdown";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { SaveStatus, TreeNode } from "@/types";
-
-async function uploadFile(pagePath: string, file: File): Promise<string | null> {
-  const formData = new FormData();
-  formData.append("file", file);
-  try {
-    const res = await fetch(`/api/upload/${pagePath}`, {
-      method: "POST",
-      body: formData,
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data.url;
-  } catch {
-    return null;
-  }
-}
-
-function normalizeWikiLinkTarget(value: string): string {
-  return value.trim().replace(/^\/+|\/+$/g, "");
-}
-
-function slugifyWikiLinkTarget(value: string): string {
-  return normalizeWikiLinkTarget(value)
-    .toLowerCase()
-    .replace(/\.[^.]+$/, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-}
-
-function basenameWithoutExtension(value: string): string {
-  const normalized = normalizeWikiLinkTarget(value);
-  const basename = normalized.split("/").pop() || normalized;
-  return basename.replace(/\.[^.]+$/, "");
-}
-
-function isMatchingPath(nodePath: string, target: string): boolean {
-  const normalizedNodePath = normalizeWikiLinkTarget(nodePath).toLowerCase();
-  const normalizedTarget = normalizeWikiLinkTarget(target).toLowerCase();
-
-  return (
-    normalizedNodePath === normalizedTarget ||
-    normalizedNodePath === `${normalizedTarget}.md` ||
-    normalizedNodePath.replace(/\.md$/i, "") === normalizedTarget
-  );
-}
-
-function isMatchingDisplayName(node: TreeNode, target: string): boolean {
-  const normalizedTarget = normalizeWikiLinkTarget(target).toLowerCase();
-  const title = (node.frontmatter?.title || "").trim().toLowerCase();
-  const name = basenameWithoutExtension(node.name).toLowerCase();
-  const pathName = basenameWithoutExtension(node.path).toLowerCase();
-
-  return title === normalizedTarget || name === normalizedTarget || pathName === normalizedTarget;
-}
-
-function isMatchingSlug(node: TreeNode, target: string): boolean {
-  const targetSlug = slugifyWikiLinkTarget(target);
-  if (!targetSlug) return false;
-
-  const candidates = [
-    node.frontmatter?.title || "",
-    node.name,
-    basenameWithoutExtension(node.path),
-    node.path,
-  ];
-
-  return candidates.some((candidate) => slugifyWikiLinkTarget(candidate) === targetSlug);
-}
-
-function resolveWikiLinkPath(target: string): string | null {
-  const normalizedTarget = normalizeWikiLinkTarget(target);
-  if (!normalizedTarget) return null;
-
-  const nodes = Object.values(useTreeStore.getState().nodeByPath);
-  const matchedPath =
-    nodes.find((node) => isMatchingPath(node.path, normalizedTarget))?.path ||
-    nodes.find((node) => isMatchingDisplayName(node, normalizedTarget))?.path ||
-    nodes.find((node) => isMatchingSlug(node, normalizedTarget))?.path;
-
-  if (matchedPath) return matchedPath;
-
-  const directPathFallback = normalizedTarget.replace(/\.md$/i, "");
-  return directPathFallback || null;
-}
 
 function getPaneTitle(path: string, pane: EditorPaneState, nodeByPath: Record<string, TreeNode>) {
   return (
@@ -107,16 +19,6 @@ function getPaneTitle(path: string, pane: EditorPaneState, nodeByPath: Record<st
     nodeByPath[path]?.name ||
     path.split("/").pop() ||
     path
-  );
-}
-
-function SaveIndicator({ saveStatus, errorLabel = "Save failed" }: { saveStatus: SaveStatus; errorLabel?: string }) {
-  return (
-    <div className="flex items-center justify-end border-t border-border px-4 py-1 text-xs text-muted-foreground/60">
-      {saveStatus === "saving" && "Saving..."}
-      {saveStatus === "saved" && "Saved"}
-      {saveStatus === "error" && errorLabel}
-    </div>
   );
 }
 
@@ -204,260 +106,60 @@ function TextPageEditor({
   );
 }
 
-function RichPageEditor({
-  paneId,
-  currentPath,
-  content,
-  preparedHtml,
-  preparedHtmlVersion,
-  saveStatus,
-  isRtl,
-}: {
-  paneId: EditorPaneId;
-  currentPath: string;
-  content: string;
-  preparedHtml: string;
-  preparedHtmlVersion: number;
-  saveStatus: SaveStatus;
-  isRtl?: boolean;
-}) {
-  const handleWikiLinkOpen = useCallback((target: EventTarget | null) => {
-    const element =
-      target instanceof Element
-        ? target
-        : target instanceof Node
-          ? target.parentElement
-          : null;
-    if (!element) return false;
-
-    const link = element.closest('a[data-wiki-link="true"]');
-    if (!(link instanceof HTMLAnchorElement)) return false;
-
-    const rawTarget =
-      link.getAttribute("data-page-path") ||
-      link.getAttribute("data-page-name") ||
-      link.textContent ||
-      "";
-    const resolvedPath = resolveWikiLinkPath(rawTarget);
-
-    if (!resolvedPath) {
-      console.warn("Could not resolve wiki link target:", rawTarget);
-      return true;
-    }
-
-    void useTreeStore.getState().openPath(resolvedPath, { source: "search" });
-    return true;
-  }, []);
-
-  const openEditorPanel = useAIPanelStore((state) => state.openEditorPanel);
-  const clearMessages = useAIPanelStore((state) => state.clearMessages);
-  const isLoadingRef = useRef(false);
-  const appliedPreparedVersionRef = useRef(0);
-  const [sourceMode, setSourceMode] = useState(false);
-  const [sourceText, setSourceText] = useState("");
-
-  const handleUpdate = useCallback(
-    ({ editor }: { editor: ReturnType<typeof useEditor> }) => {
-      if (isLoadingRef.current || !editor) return;
-      const html = editor.getHTML();
-      const md = htmlToMarkdown(html);
-      useEditorStore.getState().updateContent(md, paneId);
-    },
-    [paneId]
-  );
-
-  const editor = useEditor({
-    extensions: editorExtensions,
-    content: "",
-    onUpdate: handleUpdate,
-    editorProps: {
-      attributes: {
-        class:
-          "focus:outline-none min-h-[calc(100vh-12rem)] px-4 py-6 sm:px-8 max-w-3xl mx-auto",
-      },
-      handlePaste: (_view, event) => {
-        const files = event.clipboardData?.files;
-        if (!files || files.length === 0) return false;
-
-        for (const file of Array.from(files)) {
-          uploadFile(currentPath, file).then((url) => {
-            if (!url || !editor || !file.type.startsWith("image/")) return;
-            editor.chain().focus().setImage({ src: url, alt: file.name }).run();
-          });
-        }
-        return true;
-      },
-      handleDrop: (_view, event) => {
-        const files = event.dataTransfer?.files;
-        if (!files || files.length === 0) return false;
-
-        event.preventDefault();
-        for (const file of Array.from(files)) {
-          uploadFile(currentPath, file).then((url) => {
-            if (!url || !editor || !file.type.startsWith("image/")) return;
-            editor.chain().focus().setImage({ src: url, alt: file.name }).run();
-          });
-        }
-        return true;
-      },
-      handleClick: (_view, _pos, event) => {
-        const handled = handleWikiLinkOpen(event.target);
-        if (!handled) return false;
-        event.preventDefault();
-        event.stopPropagation();
-        return true;
-      },
-    },
-    immediatelyRender: false,
-  });
-
-  useEffect(() => {
-    if (!editor || !preparedHtml || preparedHtmlVersion === 0) return;
-    if (appliedPreparedVersionRef.current === preparedHtmlVersion) return;
-
-    appliedPreparedVersionRef.current = preparedHtmlVersion;
-    isLoadingRef.current = true;
-    editor.commands.setContent(preparedHtml);
-    setTimeout(() => {
-      isLoadingRef.current = false;
-    }, 50);
-  }, [editor, preparedHtml, preparedHtmlVersion]);
-
-  const handleOpenAI = () => {
-    clearMessages();
-    openEditorPanel();
-  };
-
-  const toggleSourceMode = async () => {
-    if (!sourceMode) {
-      setSourceText(content);
-      setSourceMode(true);
-      return;
-    }
-
-    useEditorStore.getState().updateContent(sourceText, paneId);
-    if (editor) {
-      isLoadingRef.current = true;
-      const html = await renderMarkdown(sourceText, currentPath);
-      editor.commands.setContent(html);
-      setTimeout(() => {
-        isLoadingRef.current = false;
-      }, 50);
-    }
-    setSourceMode(false);
-  };
-
-  return (
-    <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex items-center border-b border-border">
-        <div className="min-w-0 flex-1">{!sourceMode && <EditorToolbar editor={editor} paneId={paneId} />}</div>
-        <button
-          onClick={() => {
-            void toggleSourceMode();
-          }}
-          className={cn(
-            "mr-2 flex items-center gap-1.5 rounded-md border border-border px-3 py-1 text-[11px] transition-colors",
-            sourceMode
-              ? "bg-primary text-primary-foreground"
-              : "text-muted-foreground hover:bg-accent"
-          )}
-        >
-          <Code2 className="h-3 w-3" />
-          {sourceMode ? "Preview" : "Source"}
-        </button>
-      </div>
-
-      {sourceMode ? (
-        <div className="flex-1 overflow-y-auto p-4" dir={isRtl ? "rtl" : undefined}>
-          <textarea
-            value={sourceText}
-            onChange={(event) => setSourceText(event.target.value)}
-            className="min-h-[calc(100vh-12rem)] h-full w-full resize-none bg-transparent font-mono text-[13px] leading-relaxed focus:outline-none"
-            spellCheck={false}
-          />
-        </div>
-      ) : (
-        <div
-          className="relative flex-1 overflow-y-auto"
-          dir={isRtl ? "rtl" : undefined}
-          onClickCapture={(event) => {
-            const handled = handleWikiLinkOpen(event.target);
-            if (!handled) return;
-            event.preventDefault();
-            event.stopPropagation();
-          }}
-          onMouseDownCapture={(event) => {
-            if (!(event.target instanceof Element)) return;
-            if (!event.target.closest('a[data-wiki-link="true"]')) return;
-            event.preventDefault();
-          }}
-        >
-          <EditorContent editor={editor} />
-          <SlashCommands editor={editor} />
-
-          <div className="mx-auto max-w-3xl px-8 pb-8">
-            <button
-              onClick={handleOpenAI}
-              className="group flex items-center gap-2 text-[13px] text-muted-foreground/50 transition-colors hover:text-muted-foreground"
-            >
-              <Sparkles className="h-3.5 w-3.5 transition-colors group-hover:text-primary" />
-              <span>How would you like to edit this page?</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      <SaveIndicator saveStatus={saveStatus} />
-    </div>
-  );
-}
-
 function PaneTabs({ paneId, pane, isActive }: { paneId: EditorPaneId; pane: EditorPaneState; isActive: boolean }) {
   const nodeByPath = useTreeStore((state) => state.nodeByPath);
   const activateTab = useEditorStore((state) => state.activateTab);
   const closeTab = useEditorStore((state) => state.closeTab);
   const closePane = useEditorStore((state) => state.closePane);
+  const { previewPath, visibleTabs } = getPaneTabDisplayState(pane);
 
   return (
     <div className="flex items-center gap-1 border-b border-border bg-muted/30 px-2 py-1">
       <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto scrollbar-none">
-        {pane.tabs.length === 0 ? (
+        {visibleTabs.length === 0 ? (
           <span className="px-2 text-xs text-muted-foreground/70">
             {paneId === "secondary" ? "Open a file in this pane" : "Open a file"}
           </span>
         ) : (
-          pane.tabs.map((path) => {
+          visibleTabs.map((path) => {
             const isCurrent = pane.currentPath === path;
+            const isPreview = previewPath === path;
             return (
               <button
-                key={path}
+                key={`${isPreview ? "preview" : "tab"}:${path}`}
                 type="button"
-                onClick={() => void activateTab(path, paneId)}
+                onClick={() => {
+                  if (isPreview) return;
+                  void activateTab(path, paneId);
+                }}
                 className={cn(
                   "group flex h-8 min-w-0 items-center gap-1.5 rounded-md border px-2 text-xs transition-colors",
                   isCurrent
                     ? "border-border bg-background text-foreground"
-                    : "border-transparent text-muted-foreground hover:bg-accent hover:text-foreground"
+                    : "border-transparent text-muted-foreground hover:bg-accent hover:text-foreground",
+                  isPreview && "border-dashed border-border/60 bg-muted/40 text-foreground/80"
                 )}
               >
                 <span className="max-w-[160px] truncate">{getPaneTitle(path, pane, nodeByPath)}</span>
-                <span
-                  role="button"
-                  tabIndex={-1}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    void closeTab(path, paneId);
-                  }}
-                  className="inline-flex size-4 items-center justify-center rounded-sm text-muted-foreground/70 hover:bg-muted hover:text-foreground"
-                >
-                  <X className="h-3 w-3" />
-                </span>
+                {isPreview ? null : (
+                  <span
+                    role="button"
+                    tabIndex={-1}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void closeTab(path, paneId);
+                    }}
+                    className="inline-flex size-4 items-center justify-center rounded-sm text-muted-foreground/70 hover:bg-muted hover:text-foreground"
+                  >
+                    <X className="h-3 w-3" />
+                  </span>
+                )}
               </button>
             );
           })
         )}
       </div>
-      {paneId === "secondary" && pane.tabs.length > 0 ? (
+      {paneId === "secondary" && (visibleTabs.length > 0 || Boolean(pane.currentPath)) ? (
         <Button
           variant="ghost"
           size="icon-sm"
@@ -537,9 +239,9 @@ function EditorPane({ paneId }: { paneId: EditorPaneId }) {
 
 export function KBEditor() {
   const isSplitView = useEditorStore((state) => state.isSplitView);
-  const secondaryHasTabs = useEditorStore((state) => state.panes.secondary.tabs.length > 0);
+  const secondaryHasOpenPage = useEditorStore((state) => paneHasOpenPage(state.panes.secondary));
 
-  if (!isSplitView || !secondaryHasTabs) {
+  if (!isSplitView || !secondaryHasOpenPage) {
     return <EditorPane paneId="primary" />;
   }
 

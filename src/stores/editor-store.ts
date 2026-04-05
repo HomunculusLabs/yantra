@@ -1,71 +1,43 @@
 import { create } from "zustand";
+import type { FrontMatter, PageLoadState } from "@/types";
+import { renderMarkdown, savePage } from "@/lib/api/client";
+import {
+  fetchAndCachePage,
+  inflightLoads,
+  pageCache,
+  touchCacheEntry,
+  trimCache,
+  upsertCacheEntry,
+} from "@/stores/editor-store.cache";
+import {
+  addTab,
+  createEmptyPaneState,
+  getOtherPaneId,
+  getPreviewPathForOpen,
+  getVisiblePreviewPath,
+  isMarkdownKind,
+  isPreviewOnlyPath,
+  matchesPathPrefix,
+  paneHasOpenPage,
+  patchPanes,
+  PANE_IDS,
+  rebasePathValue,
+  replaceTabPath,
+  uniqueTabs,
+} from "@/stores/editor-store.state";
 import type {
-  FrontMatter,
-  PageData,
-  PageLoadState,
-  SaveStatus,
-} from "@/types";
-import { fetchPage, renderMarkdown, savePage } from "@/lib/api/client";
+  CachedPageEntry,
+  EditorPaneId,
+  EditorPaneState,
+  EditorStateBase,
+  LoadPageOptions,
+  OpenMode,
+  PageSnapshot,
+} from "@/stores/editor-store.types";
 
-type PageSource = "tree-click" | "tree-keyboard" | "search" | "mutation";
-type PageKind = PageData["kind"] | null;
+export type { EditorPaneId, EditorPaneState } from "@/stores/editor-store.types";
 
-export type EditorPaneId = "primary" | "secondary";
-
-interface LoadPageOptions {
-  source?: PageSource;
-  kindHint?: "markdown" | "directory-index" | "text";
-  force?: boolean;
-  pane?: EditorPaneId;
-  activatePane?: boolean;
-}
-
-interface CachedPageEntry {
-  page: PageData;
-  preparedHtml?: string;
-  preparedForPath: string;
-  dirty: boolean;
-  lastAccessedAt: number;
-  revision: number;
-}
-
-interface PageSnapshot {
-  path: string;
-  content: string;
-  frontmatter: FrontMatter;
-  revision: number;
-}
-
-export interface EditorPaneState {
-  tabs: string[];
-  currentPath: string | null;
-  content: string;
-  frontmatter: FrontMatter | null;
-  pageKind: PageKind;
-  saveStatus: SaveStatus;
-  isDirty: boolean;
-  pageLoadState: PageLoadState;
-  preparedHtml: string | null;
-  preparedHtmlVersion: number;
-  activeRevision: number;
-}
-
-interface EditorState {
-  activePaneId: EditorPaneId;
-  isSplitView: boolean;
-  panes: Record<EditorPaneId, EditorPaneState>;
-
-  currentPath: string | null;
-  content: string;
-  frontmatter: FrontMatter | null;
-  pageKind: PageKind;
-  saveStatus: SaveStatus;
-  isDirty: boolean;
-  pageLoadState: PageLoadState;
-  preparedHtml: string | null;
-  preparedHtmlVersion: number;
-  activeRevision: number;
-
+interface EditorState extends EditorStateBase {
   setActivePane: (paneId: EditorPaneId) => void;
   loadPage: (path: string, options?: LoadPageOptions) => Promise<void>;
   openInOtherPane: (path: string, options?: Omit<LoadPageOptions, "pane">) => Promise<void>;
@@ -76,6 +48,11 @@ interface EditorState {
   prefetchPage: (path: string) => Promise<void>;
   prefetchPages: (paths: string[]) => Promise<void>;
   updateContent: (content: string, paneId?: EditorPaneId) => void;
+  replaceDocument: (
+    content: string,
+    frontmatter: FrontMatter,
+    paneId?: EditorPaneId
+  ) => void;
   updateFrontmatter: (updates: Partial<FrontMatter>, paneId?: EditorPaneId) => void;
   save: (paneId?: EditorPaneId) => Promise<void>;
   retryCurrentPage: (paneId?: EditorPaneId) => Promise<void>;
@@ -85,13 +62,8 @@ interface EditorState {
   clear: () => void;
 }
 
-const MAX_PAGE_CACHE_ENTRIES = 40;
-const MAX_PREPARED_HTML_ENTRIES = 10;
 const SAVE_DEBOUNCE_MS = 500;
-const PANE_IDS: EditorPaneId[] = ["primary", "secondary"];
 
-const pageCache = new Map<string, CachedPageEntry>();
-const inflightLoads = new Map<string, Promise<PageData>>();
 const inflightPrepares = new Map<string, Promise<string>>();
 const saveTimersByPath = new Map<string, ReturnType<typeof setTimeout>>();
 const pendingSavesByPath = new Map<string, Promise<void>>();
@@ -105,31 +77,6 @@ const openRequestSeq: Record<EditorPaneId, number> = {
 };
 let preparedHtmlVersionSeq = 0;
 
-function createEmptyPaneState(): EditorPaneState {
-  return {
-    tabs: [],
-    currentPath: null,
-    content: "",
-    frontmatter: null,
-    pageKind: null,
-    saveStatus: "idle",
-    isDirty: false,
-    pageLoadState: "idle",
-    preparedHtml: null,
-    preparedHtmlVersion: 0,
-    activeRevision: 0,
-  };
-}
-
-function isMarkdownKind(kind: PageData["kind"] | undefined | null) {
-  return kind === "markdown" || kind === "directory-index";
-}
-
-function matchesPathPrefix(candidate: string | null | undefined, path: string) {
-  if (!candidate) return false;
-  return candidate === path || candidate.startsWith(`${path}/`);
-}
-
 function scheduleIdle(callback: () => void) {
   if (typeof window !== "undefined" && "requestIdleCallback" in window) {
     (window as Window & {
@@ -140,128 +87,13 @@ function scheduleIdle(callback: () => void) {
   setTimeout(callback, 0);
 }
 
-function uniqueTabs(tabs: string[]) {
-  return [...new Set(tabs.filter(Boolean))];
-}
-
-function addTab(tabs: string[], path: string) {
-  return uniqueTabs([...tabs, path]);
-}
-
-function replaceTabPath(tabs: string[], requestedPath: string, resolvedPath: string) {
-  const replaced = tabs.map((tab) => (tab === requestedPath ? resolvedPath : tab));
-  return addTab(replaced, resolvedPath);
-}
-
-function getOtherPaneId(paneId: EditorPaneId): EditorPaneId {
-  return paneId === "primary" ? "secondary" : "primary";
-}
-
-function rebasePathValue(
-  currentPath: string | null,
-  fromPath: string,
-  toPath: string
-): string | null {
-  if (!currentPath) return currentPath;
-  if (currentPath === fromPath) return toPath;
-  if (currentPath.startsWith(`${fromPath}/`)) {
-    return `${toPath}${currentPath.slice(fromPath.length)}`;
-  }
-  return currentPath;
-}
-
 export const useEditorStore = create<EditorState>((set, get) => {
-  const touchCacheEntry = (path: string, entry: CachedPageEntry) => {
-    entry.lastAccessedAt = Date.now();
-    pageCache.delete(path);
-    pageCache.set(path, entry);
-  };
-
-  const getActivePaneFields = (pane: EditorPaneState) => ({
-    currentPath: pane.currentPath,
-    content: pane.content,
-    frontmatter: pane.frontmatter,
-    pageKind: pane.pageKind,
-    saveStatus: pane.saveStatus,
-    isDirty: pane.isDirty,
-    pageLoadState: pane.pageLoadState,
-    preparedHtml: pane.preparedHtml,
-    preparedHtmlVersion: pane.preparedHtmlVersion,
-    activeRevision: pane.activeRevision,
-  });
-
-  const patchPanes = (
-    state: EditorState,
-    panePatches: Partial<Record<EditorPaneId, Partial<EditorPaneState>>>,
-    extraUpdates: Partial<EditorState> = {}
-  ): Partial<EditorState> => {
-    const nextPanes = { ...state.panes };
-
-    for (const paneId of PANE_IDS) {
-      const panePatch = panePatches[paneId];
-      if (!panePatch) continue;
-      nextPanes[paneId] = {
-        ...nextPanes[paneId],
-        ...panePatch,
-        tabs: panePatch.tabs ? uniqueTabs(panePatch.tabs) : nextPanes[paneId].tabs,
-      };
-    }
-
-    const nextState = {
-      ...state,
-      ...extraUpdates,
-      panes: nextPanes,
-    };
-
-    return {
-      panes: nextPanes,
-      ...extraUpdates,
-      ...getActivePaneFields(nextPanes[nextState.activePaneId]),
-    };
-  };
-
-  const trimCache = () => {
-    const activePaths = new Set(
-      PANE_IDS.map((paneId) => get().panes[paneId].currentPath).filter(Boolean)
+  const getActivePaths = () =>
+    new Set(
+      PANE_IDS.map((paneId) => get().panes[paneId].currentPath).filter(
+        (path): path is string => Boolean(path)
+      )
     );
-
-    let preparedEntries = Array.from(pageCache.entries()).filter(([, entry]) => entry.preparedHtml);
-    for (const [path, entry] of preparedEntries) {
-      if (preparedEntries.length <= MAX_PREPARED_HTML_ENTRIES) break;
-      if (activePaths.has(path) || entry.dirty || !entry.preparedHtml) continue;
-      delete entry.preparedHtml;
-      touchCacheEntry(path, entry);
-      preparedEntries = Array.from(pageCache.entries()).filter(([, current]) => current.preparedHtml);
-    }
-
-    while (pageCache.size > MAX_PAGE_CACHE_ENTRIES) {
-      const removable = Array.from(pageCache.entries()).find(
-        ([path, entry]) => !activePaths.has(path) && !entry.dirty
-      );
-      if (!removable) break;
-      pageCache.delete(removable[0]);
-    }
-  };
-
-  const upsertCacheEntry = (
-    path: string,
-    page: PageData,
-    overrides: Partial<CachedPageEntry> = {}
-  ) => {
-    const existing = pageCache.get(path);
-    const entry: CachedPageEntry = {
-      page,
-      preparedForPath: path,
-      dirty: existing?.dirty ?? false,
-      lastAccessedAt: Date.now(),
-      revision: existing?.revision ?? 0,
-      preparedHtml: existing?.preparedHtml,
-      ...overrides,
-    };
-    touchCacheEntry(path, entry);
-    trimCache();
-    return entry;
-  };
 
   const getSnapshotForPath = (path: string): PageSnapshot | null => {
     const state = get();
@@ -417,7 +249,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
           latest.preparedHtml = html;
           latest.preparedForPath = path;
           touchCacheEntry(path, latest);
-          trimCache();
+          trimCache(getActivePaths);
         }
         return html;
       })
@@ -441,42 +273,6 @@ export const useEditorStore = create<EditorState>((set, get) => {
     });
   };
 
-  const fetchAndCachePage = async (
-    path: string,
-    options?: { force?: boolean }
-  ): Promise<PageData> => {
-    if (!options?.force) {
-      const cached = pageCache.get(path);
-      if (cached) {
-        touchCacheEntry(path, cached);
-        return cached.page;
-      }
-    }
-
-    const inflight = inflightLoads.get(path);
-    if (inflight) {
-      return inflight;
-    }
-
-    const promise = fetchPage(path)
-      .then((page) => {
-        const resolvedPath = page.path || path;
-        upsertCacheEntry(resolvedPath, page, {
-          preparedHtml: resolvedPath === path ? pageCache.get(path)?.preparedHtml : undefined,
-          preparedForPath: resolvedPath,
-        });
-        return { ...page, path: resolvedPath };
-      })
-      .finally(() => {
-        if (inflightLoads.get(path) === promise) {
-          inflightLoads.delete(path);
-        }
-      });
-
-    inflightLoads.set(path, promise);
-    return promise;
-  };
-
   const applyPaneEntry = (
     state: EditorState,
     paneId: EditorPaneId,
@@ -484,7 +280,8 @@ export const useEditorStore = create<EditorState>((set, get) => {
     resolvedPath: string,
     entry: CachedPageEntry,
     pageLoadState?: PageLoadState,
-    extraUpdates: Partial<EditorState> = {}
+    extraUpdates: Partial<EditorState> = {},
+    openMode: OpenMode = "tab"
   ) => {
     const nextPageLoadState =
       pageLoadState ??
@@ -494,11 +291,19 @@ export const useEditorStore = create<EditorState>((set, get) => {
           : "preparing"
         : "ready");
 
+    const pane = state.panes[paneId];
+    const nextTabs =
+      openMode === "preview"
+        ? pane.tabs
+        : replaceTabPath(pane.tabs, requestedPath, resolvedPath);
+    const nextPreviewPath = getPreviewPathForOpen(nextTabs, resolvedPath, openMode);
+
     return patchPanes(
       state,
       {
         [paneId]: {
-          tabs: replaceTabPath(state.panes[paneId].tabs, requestedPath, resolvedPath),
+          tabs: nextTabs,
+          previewPath: nextPreviewPath,
           currentPath: resolvedPath,
           content: entry.page.content,
           frontmatter: entry.page.frontmatter,
@@ -531,23 +336,79 @@ export const useEditorStore = create<EditorState>((set, get) => {
 
   const syncVisiblePanesForPath = (
     path: string,
-    panePatch: Partial<EditorPaneState>,
-    sourcePaneId: EditorPaneId
+    panePatch: Partial<EditorPaneState>
   ) => {
     set((state) => {
-      const panePatches: Partial<Record<EditorPaneId, Partial<EditorPaneState>>> = {
-        [sourcePaneId]: panePatch,
-      };
+      const panePatches: Partial<Record<EditorPaneId, Partial<EditorPaneState>>> = {};
 
       for (const paneId of PANE_IDS) {
-        if (paneId === sourcePaneId) continue;
-        if (state.panes[paneId].currentPath === path) {
-          panePatches[paneId] = panePatch;
-        }
+        if (state.panes[paneId].currentPath !== path) continue;
+        const pane = state.panes[paneId];
+        const previewPromotion = isPreviewOnlyPath(pane, path)
+          ? {
+              tabs: addTab(pane.tabs, path),
+              previewPath: null,
+            }
+          : {};
+
+        panePatches[paneId] = {
+          ...previewPromotion,
+          ...panePatch,
+        };
       }
 
+      if (Object.keys(panePatches).length === 0) return {};
       return patchPanes(state, panePatches);
     });
+  };
+
+  const replaceDocumentForPane = (
+    paneId: EditorPaneId,
+    content: string,
+    frontmatter: FrontMatter
+  ) => {
+    const pane = get().panes[paneId];
+    if (!pane.currentPath || !pane.frontmatter) return;
+    const nextRevision = pane.activeRevision + 1;
+    const pageKind = pane.pageKind || "markdown";
+    const cached = pageCache.get(pane.currentPath);
+
+    const nextEntry = upsertCacheEntry(
+      pane.currentPath,
+      {
+        path: pane.currentPath,
+        content,
+        frontmatter,
+        kind: pageKind || undefined,
+        editable: true,
+      },
+      getActivePaths,
+      {
+        dirty: true,
+        revision: nextRevision,
+        preparedHtml: isMarkdownKind(pageKind) ? undefined : cached?.preparedHtml,
+        preparedForPath: pane.currentPath,
+      }
+    );
+
+    nextEntry.page = {
+      ...nextEntry.page,
+      path: pane.currentPath,
+      content,
+      frontmatter,
+      kind: pageKind || undefined,
+    };
+    touchCacheEntry(pane.currentPath, nextEntry);
+
+    syncVisiblePanesForPath(pane.currentPath, {
+      content,
+      frontmatter,
+      isDirty: true,
+      saveStatus: "idle",
+      activeRevision: nextRevision,
+    });
+
+    scheduleSave(pane.currentPath);
   };
 
   return {
@@ -579,6 +440,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     loadPage: async (path, options) => {
       const paneId = options?.pane ?? get().activePaneId;
       const activatePane = options?.activatePane ?? true;
+      const openMode = options?.openMode ?? "tab";
       const requestId = ++openRequestSeq[paneId];
 
       queuePaneIfDirty(paneId, path);
@@ -587,9 +449,18 @@ export const useEditorStore = create<EditorState>((set, get) => {
       if (cached) {
         touchCacheEntry(path, cached);
         set((state) =>
-          applyPaneEntry(state, paneId, path, path, cached, undefined, {
-            activePaneId: activatePane ? paneId : state.activePaneId,
-          })
+          applyPaneEntry(
+            state,
+            paneId,
+            path,
+            path,
+            cached,
+            undefined,
+            {
+              activePaneId: activatePane ? paneId : state.activePaneId,
+            },
+            openMode
+          )
         );
         if (isMarkdownKind(cached.page.kind) && !cached.preparedHtml) {
           try {
@@ -599,9 +470,18 @@ export const useEditorStore = create<EditorState>((set, get) => {
             if (requestId !== openRequestSeq[paneId]) return;
             if (get().panes[paneId].currentPath !== path) return;
             set((state) =>
-              applyPaneEntry(state, paneId, path, path, latest, "ready", {
-                activePaneId: activatePane ? paneId : state.activePaneId,
-              })
+              applyPaneEntry(
+                state,
+                paneId,
+                path,
+                path,
+                latest,
+                "ready",
+                {
+                  activePaneId: activatePane ? paneId : state.activePaneId,
+                },
+                openMode
+              )
             );
           } catch {
             if (requestId === openRequestSeq[paneId] && get().panes[paneId].currentPath === path) {
@@ -621,7 +501,11 @@ export const useEditorStore = create<EditorState>((set, get) => {
           state,
           {
             [paneId]: {
-              tabs: addTab(state.panes[paneId].tabs, path),
+              tabs:
+                openMode === "preview"
+                  ? state.panes[paneId].tabs
+                  : addTab(state.panes[paneId].tabs, path),
+              previewPath: getPreviewPathForOpen(state.panes[paneId].tabs, path, openMode),
               currentPath: path,
               content: "",
               frontmatter: null,
@@ -642,7 +526,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
       );
 
       try {
-        const page = await fetchAndCachePage(path, { force: options?.force });
+        const page = await fetchAndCachePage(path, getActivePaths, { force: options?.force });
         const resolvedPath = page.path || path;
         const entry = pageCache.get(resolvedPath);
         if (!entry) throw new Error(`Missing cache entry for ${resolvedPath}`);
@@ -656,7 +540,8 @@ export const useEditorStore = create<EditorState>((set, get) => {
             resolvedPath,
             entry,
             isMarkdownKind(entry.page.kind) && !entry.preparedHtml ? "preparing" : "ready",
-            { activePaneId: activatePane ? paneId : state.activePaneId }
+            { activePaneId: activatePane ? paneId : state.activePaneId },
+            openMode
           )
         );
 
@@ -668,9 +553,18 @@ export const useEditorStore = create<EditorState>((set, get) => {
             if (requestId !== openRequestSeq[paneId]) return;
             if (get().panes[paneId].currentPath !== resolvedPath) return;
             set((state) =>
-              applyPaneEntry(state, paneId, resolvedPath, resolvedPath, latest, "ready", {
-                activePaneId: activatePane ? paneId : state.activePaneId,
-              })
+              applyPaneEntry(
+                state,
+                paneId,
+                resolvedPath,
+                resolvedPath,
+                latest,
+                "ready",
+                {
+                  activePaneId: activatePane ? paneId : state.activePaneId,
+                },
+                openMode
+              )
             );
           } catch {
             if (
@@ -692,7 +586,11 @@ export const useEditorStore = create<EditorState>((set, get) => {
             state,
             {
               [paneId]: {
-                tabs: addTab(state.panes[paneId].tabs, path),
+                tabs:
+                  openMode === "preview"
+                    ? state.panes[paneId].tabs
+                    : addTab(state.panes[paneId].tabs, path),
+                previewPath: getPreviewPathForOpen(state.panes[paneId].tabs, path, openMode),
                 currentPath: path,
                 content: "",
                 frontmatter: null,
@@ -725,7 +623,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
 
     toggleSplitWithCurrentPage: async () => {
       const state = get();
-      if (state.isSplitView && state.panes.secondary.tabs.length > 0) {
+      if (state.isSplitView && paneHasOpenPage(state.panes.secondary)) {
         get().closePane("secondary");
         return;
       }
@@ -876,7 +774,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
       }
 
       try {
-        const page = await fetchAndCachePage(path);
+        const page = await fetchAndCachePage(path, getActivePaths);
         const resolvedPath = page.path || path;
         queuePrepareIfNeeded(resolvedPath);
       } catch {
@@ -893,48 +791,12 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const targetPaneId = paneId ?? get().activePaneId;
       const pane = get().panes[targetPaneId];
       if (!pane.currentPath || !pane.frontmatter) return;
-      const nextRevision = pane.activeRevision + 1;
-      const pageKind = pane.pageKind || "markdown";
+      replaceDocumentForPane(targetPaneId, content, pane.frontmatter);
+    },
 
-      const cached = pageCache.get(pane.currentPath);
-      const nextEntry = upsertCacheEntry(
-        pane.currentPath,
-        {
-          path: pane.currentPath,
-          content,
-          frontmatter: pane.frontmatter,
-          kind: pageKind || undefined,
-          editable: true,
-        },
-        {
-          dirty: true,
-          revision: nextRevision,
-          preparedHtml: isMarkdownKind(pageKind) ? undefined : cached?.preparedHtml,
-          preparedForPath: pane.currentPath,
-        }
-      );
-
-      nextEntry.page = {
-        ...nextEntry.page,
-        path: pane.currentPath,
-        content,
-        frontmatter: pane.frontmatter,
-        kind: pageKind || undefined,
-      };
-      touchCacheEntry(pane.currentPath, nextEntry);
-
-      syncVisiblePanesForPath(
-        pane.currentPath,
-        {
-          content,
-          isDirty: true,
-          saveStatus: "idle",
-          activeRevision: nextRevision,
-        },
-        targetPaneId
-      );
-
-      scheduleSave(pane.currentPath);
+    replaceDocument: (content, frontmatter, paneId) => {
+      const targetPaneId = paneId ?? get().activePaneId;
+      replaceDocumentForPane(targetPaneId, content, frontmatter);
     },
 
     updateFrontmatter: (updates, paneId) => {
@@ -942,45 +804,10 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const pane = get().panes[targetPaneId];
       if (!pane.currentPath || !pane.frontmatter) return;
 
-      const nextFrontmatter = { ...pane.frontmatter, ...updates };
-      const nextRevision = pane.activeRevision + 1;
-      const pageKind = pane.pageKind || "markdown";
-
-      const cached = pageCache.get(pane.currentPath);
-      const nextEntry = upsertCacheEntry(
-        pane.currentPath,
-        {
-          path: pane.currentPath,
-          content: pane.content,
-          frontmatter: nextFrontmatter,
-          kind: pageKind || undefined,
-          editable: true,
-        },
-        {
-          dirty: true,
-          revision: nextRevision,
-          preparedHtml: cached?.preparedHtml,
-          preparedForPath: pane.currentPath,
-        }
-      );
-
-      nextEntry.page = {
-        ...nextEntry.page,
-        path: pane.currentPath,
-        content: pane.content,
-        frontmatter: nextFrontmatter,
-        kind: pageKind || undefined,
-      };
-      touchCacheEntry(pane.currentPath, nextEntry);
-
-      syncVisiblePanesForPath(pane.currentPath, {
-        frontmatter: nextFrontmatter,
-        isDirty: true,
-        saveStatus: "idle",
-        activeRevision: nextRevision,
-      }, targetPaneId);
-
-      scheduleSave(pane.currentPath);
+      replaceDocumentForPane(targetPaneId, pane.content, {
+        ...pane.frontmatter,
+        ...updates,
+      });
     },
 
     save: async (paneId) => {
@@ -994,9 +821,14 @@ export const useEditorStore = create<EditorState>((set, get) => {
 
     retryCurrentPage: async (paneId) => {
       const targetPaneId = paneId ?? get().activePaneId;
-      const currentPath = get().panes[targetPaneId].currentPath;
+      const pane = get().panes[targetPaneId];
+      const currentPath = pane.currentPath;
       if (!currentPath) return;
-      await get().loadPage(currentPath, { force: true, pane: targetPaneId });
+      await get().loadPage(currentPath, {
+        force: true,
+        pane: targetPaneId,
+        openMode: isPreviewOnlyPath(pane, currentPath) ? "preview" : "tab",
+      });
     },
 
     rebasePath: (fromPath, toPath) => {
@@ -1037,11 +869,18 @@ export const useEditorStore = create<EditorState>((set, get) => {
               .map((tab) => rebasePathValue(tab, fromPath, toPath))
               .filter((tab): tab is string => Boolean(tab))
           );
+          const rawPreviewPath = rebasePathValue(pane.previewPath, fromPath, toPath);
+          const nextPreviewPath = getVisiblePreviewPath(nextTabs, rawPreviewPath);
 
-          if (nextCurrentPath !== pane.currentPath || nextTabs.join("\n") !== pane.tabs.join("\n")) {
+          if (
+            nextCurrentPath !== pane.currentPath ||
+            nextTabs.join("\n") !== pane.tabs.join("\n") ||
+            nextPreviewPath !== pane.previewPath
+          ) {
             panePatches[paneId] = {
               currentPath: nextCurrentPath,
               tabs: nextTabs,
+              previewPath: nextPreviewPath,
             };
           }
         }
@@ -1049,7 +888,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
         return patchPanes(state, panePatches);
       });
 
-      trimCache();
+      trimCache(getActivePaths);
     },
 
     invalidatePath: (path) => {
@@ -1120,6 +959,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
           if (cached) {
             panePatches[paneId] = {
               tabs: nextTabs,
+              previewPath: null,
               currentPath: fallbackPath,
               content: cached.page.content,
               frontmatter: cached.page.frontmatter,
@@ -1141,6 +981,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
           } else {
             panePatches[paneId] = {
               tabs: nextTabs,
+              previewPath: null,
               currentPath: fallbackPath,
               content: "",
               frontmatter: null,
