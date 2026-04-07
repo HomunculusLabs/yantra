@@ -100,6 +100,24 @@ function findContextSummaryInAssistantParts(
   return parts.find((part) => part.kind === "context")?.text;
 }
 
+export function overlayConversationMetaWithRuntimeSnapshot(
+  meta: ConversationMeta,
+  runtimeSnapshot: ConversationRuntimeSnapshot
+): ConversationMeta {
+  return {
+    ...meta,
+    status: runtimeSnapshot.status,
+    summary: runtimeSnapshot.assistant.summary || meta.summary || undefined,
+    contextSummary:
+      findContextSummaryInAssistantParts(runtimeSnapshot.assistant.parts) ||
+      meta.contextSummary,
+    artifactPaths: collectArtifactsFromAssistantParts(
+      runtimeSnapshot.assistant.parts
+    ).map((artifact) => artifact.path),
+    runtimeSession: runtimeSnapshot.runtimeSession,
+  };
+}
+
 function makeAssistantBody(output: string): string | undefined {
   const stripped = stripYantraPresentationBlocks(output);
   const excerpt = stripped
@@ -335,20 +353,7 @@ export function buildConversationPresentation(
     meta: {
       ...input.meta,
       ...(runtimeSnapshot
-        ? {
-            status: runtimeSnapshot.status,
-            summary:
-              runtimeSnapshot.assistant.summary ||
-              input.meta.summary ||
-              undefined,
-            contextSummary:
-              findContextSummaryInAssistantParts(runtimeSnapshot.assistant.parts) ||
-              input.meta.contextSummary,
-            artifactPaths: collectArtifactsFromAssistantParts(
-              runtimeSnapshot.assistant.parts
-            ).map((artifact) => artifact.path),
-            runtimeSession: runtimeSnapshot.runtimeSession,
-          }
+        ? overlayConversationMetaWithRuntimeSnapshot(input.meta, runtimeSnapshot)
         : {
             summary:
               input.meta.summary ||

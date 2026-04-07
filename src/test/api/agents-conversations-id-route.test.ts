@@ -20,6 +20,7 @@ const readConversationRecord = mock(async () => conversationRecord);
 const declineConversationAgentProposal = mock(async () => declineResult);
 const restoreConversationAgentProposal = mock(async () => restoreResult);
 const reconcileRunningConversation = mock(async (meta: ConversationMeta) => meta);
+const reconcileRunningConversations = mock(async (metas: ConversationMeta[]) => metas);
 const getDaemonSessionRuntimeSnapshot = mock(async () => {
   if (!daemonRuntimeSnapshot) {
     throw new Error("missing runtime snapshot");
@@ -43,6 +44,7 @@ mock.module("@/lib/agents/conversation-store", () => ({
 
 mock.module("@/lib/agents/conversation-reconciler", () => ({
   reconcileRunningConversation,
+  reconcileRunningConversations,
 }));
 
 mock.module("@/lib/agents/daemon-client", () => ({
@@ -117,6 +119,7 @@ beforeEach(() => {
   declineConversationAgentProposal.mockClear();
   restoreConversationAgentProposal.mockClear();
   reconcileRunningConversation.mockClear();
+  reconcileRunningConversations.mockClear();
   getDaemonSessionOutput.mockClear();
   getDaemonSessionRuntimeSnapshot.mockClear();
   reloadDaemonSchedules.mockClear();

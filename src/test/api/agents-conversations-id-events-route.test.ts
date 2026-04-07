@@ -14,6 +14,7 @@ const finalizeConversation = mock(async () => null);
 const readConversationRecord = mock(async () => conversationRecord);
 const readConversationMeta = mock(async () => conversationRecord?.meta ?? null);
 const reconcileRunningConversation = mock(async (meta: ConversationMeta) => meta);
+const reconcileRunningConversations = mock(async (metas: ConversationMeta[]) => metas);
 const getDaemonSessionOutput = mock(async () => ({
   status: "running" as const,
   output: [
@@ -45,6 +46,7 @@ mock.module("@/lib/agents/conversation-store", () => ({
 
 mock.module("@/lib/agents/conversation-reconciler", () => ({
   reconcileRunningConversation,
+  reconcileRunningConversations,
 }));
 
 mock.module("@/lib/agents/daemon-client", () => ({
@@ -116,6 +118,7 @@ beforeEach(() => {
   readConversationMeta.mockClear();
   readConversationRecord.mockClear();
   reconcileRunningConversation.mockClear();
+  reconcileRunningConversations.mockClear();
   getDaemonSessionOutput.mockClear();
   getDaemonSessionRuntimeSnapshot.mockClear();
   streamDaemonSessionRuntimeSnapshots.mockClear();
