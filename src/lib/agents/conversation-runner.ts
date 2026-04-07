@@ -2,6 +2,7 @@ import type { JobConfig, JobRun, JobPostAction } from "@/types/jobs";
 import type { ConversationMeta } from "@/types/conversations";
 import path from "path";
 import { resolveVaultPath } from "@/lib/config/yantra-roots";
+import { getFrontmatterTitle } from "@/lib/markdown/frontmatter";
 import { readPage } from "../storage/page-io";
 import { DATA_DIR } from "../storage/path-utils";
 import { getYantraRoots } from "@/lib/config/yantra-roots";
@@ -11,6 +12,7 @@ import {
   finalizeConversation,
   readConversationMeta,
   readConversationTranscript,
+  writeConversationMeta,
 } from "./conversation-store";
 import {
   createDaemonSession,
@@ -39,6 +41,8 @@ interface StartConversationInput {
   mentionedPaths?: string[];
   jobId?: string;
   jobName?: string;
+  userMessage?: string;
+  pagePath?: string;
   cwd?: string;
   launch?: ResolvedLaunchSpec;
   timeoutSeconds?: number;
@@ -52,6 +56,9 @@ function buildYantraEpilogueInstructions(): string {
     "SUMMARY: one short summary line",
     "CONTEXT: optional lightweight memory/context summary",
     "ARTIFACT: relative/path/to/file for every KB file you created or updated",
+    "",
+    "If you are proposing a brand-new Yantra agent for human approval, include one additional ```yantra-create-agent block containing ONLY valid JSON with fields like name, slug, emoji, role, heartbeat, body, active, and launcher.",
+    "Do not scaffold files or claim the agent was created. That block is only a proposal for human review and approval.",
   ].join("\n");
 }
 
@@ -96,7 +103,7 @@ async function buildMentionContext(mentionedPaths: string[]): Promise<string> {
     mentionedPaths.map(async (pagePath) => {
       try {
         const page = await readPage(pagePath);
-        return `--- ${page.frontmatter.title} (${pagePath}) ---\n${page.content}`;
+        return `--- ${getFrontmatterTitle(page.frontmatter, pagePath)} (${pagePath}) ---\n${page.content}`;
       } catch {
         return null;
       }
@@ -181,7 +188,7 @@ export async function buildEditorConversationPrompt(input: {
 export async function startConversationRun(
   input: StartConversationInput
 ): Promise<StartedConversation> {
-  const meta = await createConversation({
+  let meta = await createConversation({
     agentSlug: input.agentSlug,
     title: input.title,
     trigger: input.trigger,
@@ -189,6 +196,8 @@ export async function startConversationRun(
     mentionedPaths: input.mentionedPaths,
     jobId: input.jobId,
     jobName: input.jobName,
+    userMessage: input.userMessage,
+    pagePath: input.pagePath,
   });
 
   let daemonSession: DaemonSessionHandle;
@@ -209,6 +218,18 @@ export async function startConversationRun(
       launch,
       timeoutSeconds: input.timeoutSeconds,
     });
+
+    meta = {
+      ...meta,
+      runtimeSession: {
+        launchTransport: daemonSession.launchTransport,
+        startedAt: meta.startedAt,
+        tmuxSessionName: daemonSession.tmuxSessionName || undefined,
+        tmuxAttachCommand: daemonSession.tmuxAttachCommand || undefined,
+        eventStreamFormat: daemonSession.eventStreamFormat,
+      },
+    };
+    await writeConversationMeta(meta);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to start daemon session";
     await appendConversationTranscript(meta.id, `${message}\n`);

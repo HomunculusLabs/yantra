@@ -5,7 +5,10 @@ import {
 } from "../src/lib/agents/daemon-auth";
 import type { ResolvedLaunchSpec } from "../src/types/launchers";
 import type { EventBusService } from "./event-bus";
-import type { PtySessionService } from "./pty-session-service";
+import type {
+  DaemonShutdownMode,
+  PtySessionService,
+} from "./pty-session-service";
 import type { ScheduleService } from "./schedule-service";
 import type { WorkerService } from "./worker-service";
 
@@ -18,6 +21,12 @@ export interface DaemonHttpRoutesDeps {
   workerService: WorkerService;
   eventBus: EventBusService;
   tmuxAvailable: boolean;
+  beginShutdown: () => boolean;
+  isShuttingDown: () => boolean;
+  requestShutdown: (input: {
+    mode: DaemonShutdownMode;
+    reason: "desktop_restart";
+  }) => void;
 }
 
 export function extractDaemonRequestToken(
@@ -47,6 +56,15 @@ function applyCors(
 function rejectUnauthorized(res: http.ServerResponse): void {
   res.writeHead(401, { "Content-Type": "application/json" });
   res.end(JSON.stringify({ error: "Unauthorized" }));
+}
+
+function writeSseEvent(
+  res: http.ServerResponse,
+  event: string,
+  data: unknown
+): void {
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
 async function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
@@ -90,6 +108,87 @@ export function createDaemonHttpHandler(
       return;
     }
 
+    const runtimeMatch = url.pathname.match(/^\/session\/([^/]+)\/runtime$/);
+    if (runtimeMatch && req.method === "GET") {
+      const sessionId = decodeURIComponent(runtimeMatch[1] || "");
+      const snapshot = deps.sessionService.getRuntimeSnapshot(sessionId);
+      if (!snapshot) {
+        res.writeHead(404, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Structured runtime session not found" }));
+        return;
+      }
+
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(snapshot));
+      return;
+    }
+
+    const eventsMatch = url.pathname.match(/^\/session\/([^/]+)\/events$/);
+    if (eventsMatch && req.method === "GET") {
+      const sessionId = decodeURIComponent(eventsMatch[1] || "");
+      const snapshot = deps.sessionService.getRuntimeSnapshot(sessionId);
+      if (!snapshot) {
+        res.writeHead(404, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Structured runtime session not found" }));
+        return;
+      }
+
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+      });
+      res.write("retry: 2000\n\n");
+      writeSseEvent(res, "runtime_snapshot", snapshot);
+
+      if (snapshot.status !== "running") {
+        res.end();
+        return;
+      }
+
+      const unsubscribe = deps.sessionService.subscribeToRuntimeSnapshots(
+        sessionId,
+        (nextSnapshot) => {
+          writeSseEvent(res, "runtime_snapshot", nextSnapshot);
+          if (nextSnapshot.status !== "running") {
+            cleanup();
+          }
+        }
+      );
+
+      if (!unsubscribe) {
+        res.end();
+        return;
+      }
+
+      const keepalive = setInterval(() => {
+        res.write(": keepalive\n\n");
+      }, 15000);
+
+      const cleanup = () => {
+        clearInterval(keepalive);
+        unsubscribe();
+        if (!res.writableEnded) {
+          res.end();
+        }
+      };
+
+      req.on("close", cleanup);
+      req.on("aborted", cleanup);
+      return;
+    }
+
+    if (
+      deps.isShuttingDown() &&
+      ((url.pathname === "/sessions" && req.method === "POST") ||
+        (url.pathname === "/trigger" && req.method === "POST") ||
+        (url.pathname === "/reload-schedules" && req.method === "POST"))
+    ) {
+      res.writeHead(503, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Daemon is shutting down." }));
+      return;
+    }
+
     if (url.pathname === "/sessions" && req.method === "POST") {
       try {
         const {
@@ -128,6 +227,7 @@ export function createDaemonHttpHandler(
                 launchTransport: result.handle.launchTransport,
                 tmuxSessionName: result.handle.tmuxSessionName,
                 tmuxAttachCommand: result.handle.tmuxAttachCommand,
+                eventStreamFormat: result.handle.eventStreamFormat,
               })
             );
             return;
@@ -154,6 +254,44 @@ export function createDaemonHttpHandler(
       return;
     }
 
+    if (url.pathname === "/shutdown" && req.method === "POST") {
+      try {
+        const body = (await readJsonBody(req).catch(() => ({}))) as {
+          mode?: DaemonShutdownMode;
+        };
+        const mode: DaemonShutdownMode = body.mode === "soft" ? "soft" : "force";
+        const restartPlan = deps.sessionService.getRestartPlan();
+
+        if (mode === "soft" && !restartPlan.softSafe) {
+          res.writeHead(409, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: "Soft restart would interrupt active direct sessions.",
+              restartPlan,
+            })
+          );
+          return;
+        }
+
+        if (!deps.beginShutdown()) {
+          res.writeHead(409, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Daemon is already shutting down.", restartPlan }));
+          return;
+        }
+
+        res.writeHead(202, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true, accepted: true, mode, restartPlan }));
+        setImmediate(() => {
+          deps.requestShutdown({ mode, reason: "desktop_restart" });
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown error";
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: message }));
+      }
+      return;
+    }
+
     if (url.pathname === "/reload-schedules" && req.method === "POST") {
       try {
         const result = await deps.scheduleService.reloadSchedules();
@@ -170,6 +308,7 @@ export function createDaemonHttpHandler(
     if (url.pathname === "/health") {
       const counts = deps.scheduleService.getCounts();
       const workerHealth = deps.workerService.getHealthSnapshot();
+      const restartPlan = deps.sessionService.getRestartPlan();
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(
         JSON.stringify({
@@ -184,6 +323,7 @@ export function createDaemonHttpHandler(
           absurdWorkerReady: workerHealth.absurdWorkerReady,
           tmuxAvailable: deps.tmuxAvailable,
           subscribers: deps.eventBus.getSubscriberCount(),
+          restartPlan,
         })
       );
       return;

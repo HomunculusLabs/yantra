@@ -1,14 +1,15 @@
 import fs from "fs/promises";
 import path from "path";
 import type {
+  ConversationAgentProposal,
   ConversationArtifact,
   ConversationDetail,
   ConversationMeta,
   ConversationStatus,
   ConversationTrigger,
-} from "../../types/conversations";
+} from "@/types/conversations";
 import { getYantraRoots } from "@/lib/config/yantra-roots";
-import { DATA_DIR, RUNTIME_DIR, sanitizeFilename, virtualPathFromFs } from "../storage/path-utils";
+import { sanitizeFilename, virtualPathFromFs } from "../storage/path-utils";
 import {
   ensureDirectory,
   fileExists,
@@ -16,6 +17,13 @@ import {
   readFileContent,
   writeFileContent,
 } from "../storage/fs-operations";
+import {
+  makeSummaryFromOutput,
+  normalizeAgentProposal,
+  parseAgentProposalBlock,
+  parseYantraBlock,
+} from "./conversation-output-parser";
+import { buildConversationPresentation } from "./conversation-thread";
 import {
   sanitizeTranscriptForDisplay,
   sanitizeTranscriptInline,
@@ -35,6 +43,8 @@ interface CreateConversationInput {
   jobId?: string;
   jobName?: string;
   startedAt?: string;
+  userMessage?: string;
+  pagePath?: string;
 }
 
 interface ListConversationFilters {
@@ -44,10 +54,12 @@ interface ListConversationFilters {
   limit?: number;
 }
 
-interface ParsedYantraBlock {
-  summary?: string;
-  contextSummary?: string;
-  artifactPaths: string[];
+export interface ConversationReadRecord {
+  meta: ConversationMeta;
+  prompt: string;
+  transcript: string;
+  mentions: string[];
+  artifacts: ConversationArtifact[];
 }
 
 function formatTimestampSegment(date: Date): string {
@@ -82,74 +94,75 @@ function artifactsPathFs(id: string): string {
   return path.join(conversationDir(id), "artifacts.json");
 }
 
-function makeSummaryFromOutput(output: string): string | undefined {
-  const lines = sanitizeTranscriptForDisplay(output)
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .filter((line) => !line.startsWith("```"));
-  return lines[0]?.slice(0, 300);
-}
-
-function normalizeArtifactPath(rawPath: string): string | null {
-  const trimmed = sanitizeTranscriptInline(rawPath);
-  if (!trimmed) return null;
-
-  if (trimmed.startsWith("/data/")) {
-    return trimmed.replace(/^\/data\//, "");
-  }
-
-  if (trimmed.startsWith(DATA_DIR)) {
-    return virtualPathFromFs(trimmed);
-  }
-
-  if (trimmed.startsWith(RUNTIME_DIR)) {
-    return virtualPathFromFs(trimmed);
-  }
-
-  const normalized = trimmed.replace(/^\.?\//, "");
-  if (!normalized || normalized.startsWith("..")) return null;
-  return normalized;
-}
-
-export function parseYantraBlock(output: string): ParsedYantraBlock {
-  const cleanedOutput = sanitizeTranscriptForDisplay(output);
-  const match = cleanedOutput.match(/```(?:yantra|cabinet)\s*([\s\S]*?)```/i);
-  if (!match) {
-    return { artifactPaths: [] };
-  }
-
-  const lines = match[1]
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  const artifactPaths: string[] = [];
-  let summary = "";
-  let contextSummary = "";
-
-  for (const line of lines) {
-    if (line.startsWith("SUMMARY:")) {
-      summary = line.slice("SUMMARY:".length).trim();
-      continue;
-    }
-    if (line.startsWith("CONTEXT:")) {
-      contextSummary = line.slice("CONTEXT:".length).trim();
-      continue;
-    }
-    if (line.startsWith("ARTIFACT:")) {
-      const normalized = normalizeArtifactPath(line.slice("ARTIFACT:".length));
-      if (normalized && !artifactPaths.includes(normalized)) {
-        artifactPaths.push(normalized);
-      }
-    }
-  }
-
+function normalizeConversationMeta(meta: ConversationMeta): ConversationMeta {
   return {
-    summary: summary || undefined,
-    contextSummary: contextSummary || undefined,
-    artifactPaths,
+    ...meta,
+    title: sanitizeTranscriptInline(meta.title || "") || meta.title,
+    summary: meta.summary ? sanitizeTranscriptInline(meta.summary) : undefined,
+    contextSummary: meta.contextSummary
+      ? sanitizeTranscriptInline(meta.contextSummary)
+      : undefined,
+    userMessage: meta.userMessage
+      ? sanitizeTranscriptInline(meta.userMessage)
+      : undefined,
+    pagePath: meta.pagePath ? sanitizeTranscriptInline(meta.pagePath) : undefined,
+    runtimeSession: meta.runtimeSession
+      ? {
+          launchTransport: meta.runtimeSession.launchTransport,
+          startedAt:
+            sanitizeTranscriptInline(meta.runtimeSession.startedAt) ||
+            meta.runtimeSession.startedAt,
+          tmuxSessionName: meta.runtimeSession.tmuxSessionName
+            ? sanitizeTranscriptInline(meta.runtimeSession.tmuxSessionName)
+            : undefined,
+          tmuxAttachCommand: meta.runtimeSession.tmuxAttachCommand
+            ? sanitizeTranscriptInline(meta.runtimeSession.tmuxAttachCommand)
+            : undefined,
+          exitedAt: meta.runtimeSession.exitedAt
+            ? sanitizeTranscriptInline(meta.runtimeSession.exitedAt)
+            : undefined,
+          exitCode: meta.runtimeSession.exitCode ?? undefined,
+          eventStreamFormat:
+            meta.runtimeSession.eventStreamFormat === "structured_v1"
+              ? "structured_v1"
+              : undefined,
+        }
+      : undefined,
+    artifactPaths: (meta.artifactPaths || [])
+      .map((artifactPath) => sanitizeTranscriptInline(artifactPath))
+      .filter(Boolean),
+    mentionedPaths: (meta.mentionedPaths || [])
+      .map((mentionedPath) => sanitizeTranscriptInline(mentionedPath))
+      .filter(Boolean),
+    agentProposal: normalizeAgentProposal(meta.agentProposal),
   };
+}
+
+function mergeConversationProposal(
+  existing: ConversationAgentProposal | undefined,
+  parsed: ConversationAgentProposal | undefined
+): ConversationAgentProposal | undefined {
+  if (!existing) {
+    return parsed;
+  }
+
+  if (existing.status === "applied") {
+    return normalizeAgentProposal({
+      ...(parsed || existing),
+      ...existing,
+      status: "applied",
+    });
+  }
+
+  if (existing.status === "declined") {
+    return normalizeAgentProposal({
+      ...(parsed || existing),
+      ...existing,
+      status: "declined",
+    });
+  }
+
+  return parsed;
 }
 
 export function buildConversationId(input: {
@@ -191,7 +204,7 @@ export async function createConversation(
   const dir = conversationDir(id);
   await ensureDirectory(dir);
 
-  const meta: ConversationMeta = {
+  const meta = normalizeConversationMeta({
     id,
     agentSlug: input.agentSlug,
     title: input.title,
@@ -204,7 +217,9 @@ export async function createConversation(
     transcriptPath: virtualPathFromFs(transcriptPathFs(id)),
     mentionedPaths: input.mentionedPaths || [],
     artifactPaths: [],
-  };
+    userMessage: input.userMessage,
+    pagePath: input.pagePath,
+  });
 
   await Promise.all([
     writeFileContent(promptPathFs(id), input.prompt),
@@ -227,18 +242,7 @@ export async function readConversationMeta(
   if (!(await fileExists(filePath))) return null;
   try {
     const raw = await readFileContent(filePath);
-    const meta = JSON.parse(raw) as ConversationMeta;
-    return {
-      ...meta,
-      title: sanitizeTranscriptInline(meta.title || "") || meta.title,
-      summary: meta.summary ? sanitizeTranscriptInline(meta.summary) : undefined,
-      contextSummary: meta.contextSummary
-        ? sanitizeTranscriptInline(meta.contextSummary)
-        : undefined,
-      artifactPaths: (meta.artifactPaths || [])
-        .map((artifactPath) => sanitizeTranscriptInline(artifactPath))
-        .filter(Boolean),
-    };
+    return normalizeConversationMeta(JSON.parse(raw) as ConversationMeta);
   } catch {
     return null;
   }
@@ -246,7 +250,10 @@ export async function readConversationMeta(
 
 export async function writeConversationMeta(meta: ConversationMeta): Promise<void> {
   await ensureDirectory(conversationDir(meta.id));
-  await writeFileContent(metaPath(meta.id), JSON.stringify(meta, null, 2));
+  await writeFileContent(
+    metaPath(meta.id),
+    JSON.stringify(normalizeConversationMeta(meta), null, 2)
+  );
 }
 
 export async function appendConversationTranscript(
@@ -273,34 +280,116 @@ export async function finalizeConversation(
     output?: string;
   }
 ): Promise<ConversationMeta | null> {
-  const meta = await readConversationMeta(id);
-  if (!meta) return null;
+  const currentMeta = await readConversationMeta(id);
+  if (!currentMeta) return null;
 
-  const output = sanitizeTranscriptForDisplay(
-    input.output ?? (await readConversationTranscript(id))
-  );
+  const rawOutput =
+    input.output ?? (await readFileContent(transcriptPathFs(id)).catch(() => ""));
+  const output = sanitizeTranscriptForDisplay(rawOutput);
   const parsed = parseYantraBlock(output);
+  const parsedProposal = parseAgentProposalBlock(rawOutput);
   const artifacts = parsed.artifactPaths.map((artifactPath) => ({
     path: artifactPath,
   }));
 
-  meta.status = input.status;
-  meta.completedAt = new Date().toISOString();
-  meta.exitCode = input.exitCode ?? null;
-  meta.summary = sanitizeTranscriptInline(
-    parsed.summary || makeSummaryFromOutput(output) || ""
-  ) || undefined;
-  meta.contextSummary = parsed.contextSummary
-    ? sanitizeTranscriptInline(parsed.contextSummary)
-    : undefined;
-  meta.artifactPaths = artifacts.map((artifact) => artifact.path);
+  const completedAt = new Date().toISOString();
+  const nextMeta = normalizeConversationMeta({
+    ...currentMeta,
+    status: input.status,
+    completedAt,
+    exitCode: input.exitCode ?? null,
+    summary:
+      sanitizeTranscriptInline(
+        parsed.summary || makeSummaryFromOutput(output) || ""
+      ) || undefined,
+    contextSummary: parsed.contextSummary
+      ? sanitizeTranscriptInline(parsed.contextSummary)
+      : undefined,
+    artifactPaths: artifacts.map((artifact) => artifact.path),
+    agentProposal: mergeConversationProposal(currentMeta.agentProposal, parsedProposal),
+    runtimeSession: currentMeta.runtimeSession
+      ? {
+          ...currentMeta.runtimeSession,
+          exitedAt: completedAt,
+          exitCode: input.exitCode ?? null,
+        }
+      : undefined,
+  });
 
   await Promise.all([
-    writeConversationMeta(meta),
+    writeConversationMeta(nextMeta),
     writeFileContent(transcriptPathFs(id), output),
     replaceConversationArtifacts(id, artifacts),
   ]);
 
+  return nextMeta;
+}
+
+export async function markConversationAgentProposalCreated(
+  id: string,
+  input: { createdAgentSlug: string; appliedAt?: string }
+): Promise<ConversationMeta | null> {
+  const meta = await readConversationMeta(id);
+  if (!meta?.agentProposal) return null;
+
+  if (meta.agentProposal.status === "declined") {
+    throw new Error("Conversation proposal was declined and must be restored first.");
+  }
+
+  if (
+    meta.agentProposal.status === "applied" &&
+    meta.agentProposal.createdAgentSlug &&
+    meta.agentProposal.createdAgentSlug !== input.createdAgentSlug
+  ) {
+    throw new Error("Conversation proposal is already linked to a different agent.");
+  }
+
+  meta.agentProposal = {
+    ...meta.agentProposal,
+    status: "applied",
+    createdAgentSlug: input.createdAgentSlug,
+    appliedAt: input.appliedAt || new Date().toISOString(),
+    declinedAt: undefined,
+  };
+
+  await writeConversationMeta(meta);
+  return meta;
+}
+
+export async function declineConversationAgentProposal(
+  id: string,
+  input?: { declinedAt?: string }
+): Promise<ConversationMeta | null> {
+  const meta = await readConversationMeta(id);
+  if (!meta?.agentProposal || meta.agentProposal.status !== "pending") {
+    return null;
+  }
+
+  meta.agentProposal = {
+    ...meta.agentProposal,
+    status: "declined",
+    declinedAt: input?.declinedAt || new Date().toISOString(),
+  };
+
+  await writeConversationMeta(meta);
+  return meta;
+}
+
+export async function restoreConversationAgentProposal(
+  id: string
+): Promise<ConversationMeta | null> {
+  const meta = await readConversationMeta(id);
+  if (!meta?.agentProposal || meta.agentProposal.status !== "declined") {
+    return null;
+  }
+
+  meta.agentProposal = {
+    ...meta.agentProposal,
+    status: "pending",
+    declinedAt: undefined,
+  };
+
+  await writeConversationMeta(meta);
   return meta;
 }
 
@@ -310,9 +399,9 @@ export async function readConversationTranscript(id: string): Promise<string> {
   return sanitizeTranscriptForDisplay(await readFileContent(filePath));
 }
 
-export async function readConversationDetail(
+export async function readConversationRecord(
   id: string
-): Promise<ConversationDetail | null> {
+): Promise<ConversationReadRecord | null> {
   const meta = await readConversationMeta(id);
   if (!meta) return null;
 
@@ -333,7 +422,9 @@ export async function readConversationDetail(
   let artifacts: ConversationArtifact[] = [];
 
   try {
-    mentions = JSON.parse(mentionsRaw) as string[];
+    mentions = (JSON.parse(mentionsRaw) as string[])
+      .map((mentionedPath) => sanitizeTranscriptInline(mentionedPath))
+      .filter(Boolean);
   } catch {
     mentions = [];
   }
@@ -356,6 +447,18 @@ export async function readConversationDetail(
     transcript,
     mentions,
     artifacts,
+  };
+}
+
+export async function readConversationDetail(
+  id: string
+): Promise<ConversationDetail | null> {
+  const record = await readConversationRecord(id);
+  if (!record) return null;
+
+  return {
+    ...buildConversationPresentation(record),
+    prompt: record.prompt,
   };
 }
 
