@@ -56,6 +56,10 @@ type BridgeHandler = (input: {
   params: unknown;
 }) => Promise<unknown>;
 
+type BridgeMethodCapabilityDefinition = {
+  capability: PluginCapability;
+};
+
 class PluginBridgeDispatchError extends Error {
   code: PluginBridgeErrorCode;
   details?: unknown;
@@ -117,7 +121,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isPluginBridgeMethod(value: string): value is PluginBridgeMethod {
-  return value in PLUGIN_BRIDGE_METHODS;
+  return value in PLUGIN_BRIDGE_METHOD_CAPABILITIES;
 }
 
 function trustSatisfiesRequirement(
@@ -370,6 +374,15 @@ function parseSettingsWriteParams(params: unknown): Record<string, unknown> {
   return params.settings;
 }
 
+const HOST_LOCAL_PLUGIN_BRIDGE_METHODS: Record<
+  Extract<PluginBridgeMethod, "desktop.selectDirectory">,
+  BridgeMethodCapabilityDefinition
+> = {
+  "desktop.selectDirectory": {
+    capability: "desktop.selectDirectory",
+  },
+};
+
 const PLUGIN_BRIDGE_METHODS: Record<
   PluginBridgeMethod,
   {
@@ -527,13 +540,35 @@ const PLUGIN_BRIDGE_METHODS: Record<
       return pluginBridgeDependencies.buildRuntimeSettingsSummary();
     },
   },
+  "desktop.selectDirectory": {
+    capability: "desktop.selectDirectory",
+    handler: async () => {
+      throw new PluginBridgeDispatchError(
+        "runtime_blocked",
+        "Plugin bridge method 'desktop.selectDirectory' must be called through the host runtime."
+      );
+    },
+  },
 };
+
+const PLUGIN_BRIDGE_METHOD_CAPABILITIES: Record<
+  PluginBridgeMethod,
+  BridgeMethodCapabilityDefinition
+> = {
+  ...Object.fromEntries(
+    Object.entries(PLUGIN_BRIDGE_METHODS).map(([method, definition]) => [
+      method,
+      { capability: definition.capability },
+    ])
+  ),
+  ...HOST_LOCAL_PLUGIN_BRIDGE_METHODS,
+} as Record<PluginBridgeMethod, BridgeMethodCapabilityDefinition>;
 
 export function getSupportedPluginBridgeMethods(
   plugin: HostedPlugin
 ): PluginBridgeMethod[] {
-  return (Object.entries(PLUGIN_BRIDGE_METHODS) as Array<
-    [PluginBridgeMethod, (typeof PLUGIN_BRIDGE_METHODS)[PluginBridgeMethod]]
+  return (Object.entries(PLUGIN_BRIDGE_METHOD_CAPABILITIES) as Array<
+    [PluginBridgeMethod, (typeof PLUGIN_BRIDGE_METHOD_CAPABILITIES)[PluginBridgeMethod]]
   >)
     .filter(([, definition]) => pluginCanCallCapability(plugin, definition.capability))
     .map(([method]) => method);

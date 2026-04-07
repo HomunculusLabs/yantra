@@ -164,7 +164,7 @@ export const PLUGIN_CAPABILITY_DEFINITIONS = {
 
 export const PLUGIN_CAPABILITIES = Object.values(PLUGIN_CAPABILITY_DEFINITIONS);
 
-export const CURRENT_PLUGIN_CAPABILITY_PHASE: PluginCapabilityAvailability = "phase-1";
+export const CURRENT_PLUGIN_CAPABILITY_PHASE: PluginCapabilityAvailability = "phase-2";
 
 const CAPABILITY_PHASE_ORDER: PluginCapabilityAvailability[] = [
   "phase-1",

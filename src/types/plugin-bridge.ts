@@ -2,6 +2,7 @@ import type { PluginCapability } from "@/types/plugins";
 
 export type PluginBridgeMethod =
   | "tree.read"
+  | "desktop.selectDirectory"
   | "graph.read"
   | "page.read"
   | "page.create"

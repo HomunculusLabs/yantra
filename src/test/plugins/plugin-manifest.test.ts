@@ -86,6 +86,25 @@ describe("plugin manifest validation", () => {
     expect(result.issues).toEqual([]);
   });
 
+  test("accepts phase-2 desktop capabilities in plugin manifests", async () => {
+    const pluginRoot = await writePluginDir({
+      folderName: "desktop-capability-plugin",
+      manifest: baseManifest({
+        requestedCapabilities: {
+          required: ["tree.read"],
+          optional: ["desktop.selectDirectory"],
+        },
+      }),
+      files: {
+        "index.html": "<html><body>plugin</body></html>",
+      },
+    });
+
+    const result = await readValidatedPluginDirectory(pluginRoot);
+    expect(result.manifest?.requestedCapabilities.optional).toEqual(["desktop.selectDirectory"]);
+    expect(result.issues).toEqual([]);
+  });
+
   test("reports a missing plugin manifest file", async () => {
     const pluginRoot = await writePluginDir({
       folderName: "missing-manifest",

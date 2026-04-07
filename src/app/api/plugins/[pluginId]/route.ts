@@ -116,7 +116,7 @@ export async function PATCH(
       }
       if (body.trust === "trusted-local") {
         return NextResponse.json(
-          { error: "trusted-local trust is not supported in phase 1." },
+          { error: "trusted-local trust is not supported yet." },
           { status: 409 }
         );
       }

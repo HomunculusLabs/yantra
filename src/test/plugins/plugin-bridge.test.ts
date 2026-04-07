@@ -68,6 +68,7 @@ function createResolvedPlugin(
       requestedCapabilities: {
         required: ["tree.read"],
         optional: [
+          "desktop.selectDirectory",
           "graph.read",
           "page.read",
           "page.create",
@@ -255,7 +256,7 @@ beforeEach(() => {
 });
 
 describe("plugin bridge dispatcher", () => {
-  test("derives supported bridge methods from requested and granted capabilities", () => {
+      test("derives supported bridge methods from requested and granted capabilities", () => {
     const base = createResolvedPlugin();
     const methods = getSupportedPluginBridgeMethods({
       ...base,
@@ -273,6 +274,26 @@ describe("plugin bridge dispatcher", () => {
     });
 
     expect(methods).toEqual(["tree.read", "plugin.settings.read"]);
+  });
+
+  test("includes desktop.selectDirectory when it is requested, granted, and phase-supported", () => {
+    const base = createResolvedPlugin();
+    const methods = getSupportedPluginBridgeMethods({
+      ...base,
+      manifest: {
+        ...base.manifest,
+        requestedCapabilities: {
+          required: ["tree.read"],
+          optional: ["desktop.selectDirectory"],
+        },
+      },
+      state: {
+        ...base.state,
+        grantedCapabilities: ["tree.read", "desktop.selectDirectory"],
+      },
+    });
+
+    expect(methods).toEqual(["tree.read", "desktop.selectDirectory"]);
   });
 
   test("dispatches tree.read through the tree builder", async () => {

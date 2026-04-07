@@ -156,6 +156,87 @@ export async function GET(_request: Request, { params }: RouteParams) {
         runtimeFrame.contentWindow.postMessage(message, '*');
       }
 
+      function sendRpcResponse(payload) {
+        send({
+          channel: 'yantra-plugin',
+          type: 'host.rpc.response',
+          channelId: boot.channelId,
+          ...payload,
+        });
+      }
+
+      function invalidParamsResponse(requestId, message) {
+        sendRpcResponse({
+          requestId,
+          ok: false,
+          error: {
+            code: 'invalid_params',
+            message,
+          },
+        });
+      }
+
+      async function handleHostBridgeRequest(data) {
+        if (data.method !== 'desktop.selectDirectory') {
+          return false;
+        }
+
+        const desktopBridge = window.yantraDesktop;
+        if (!desktopBridge || typeof desktopBridge.selectDirectory !== 'function') {
+          sendRpcResponse({
+            requestId: data.requestId,
+            ok: false,
+            error: {
+              code: 'runtime_blocked',
+              message: 'Desktop directory picker is unavailable in this runtime.',
+            },
+          });
+          return true;
+        }
+
+        const params = data.params;
+        if (params !== undefined && (!params || typeof params !== 'object' || Array.isArray(params))) {
+          invalidParamsResponse(data.requestId, 'desktop.selectDirectory requires an object when params are provided.');
+          return true;
+        }
+
+        const options = {};
+        if (params && 'title' in params) {
+          if (typeof params.title !== 'string') {
+            invalidParamsResponse(data.requestId, 'desktop.selectDirectory title must be a string when provided.');
+            return true;
+          }
+          options.title = params.title;
+        }
+        if (params && 'defaultPath' in params) {
+          if (typeof params.defaultPath !== 'string') {
+            invalidParamsResponse(data.requestId, 'desktop.selectDirectory defaultPath must be a string when provided.');
+            return true;
+          }
+          options.defaultPath = params.defaultPath;
+        }
+
+        try {
+          const selectedPath = await desktopBridge.selectDirectory(options);
+          sendRpcResponse({
+            requestId: data.requestId,
+            ok: true,
+            result: selectedPath,
+          });
+        } catch (error) {
+          sendRpcResponse({
+            requestId: data.requestId,
+            ok: false,
+            error: {
+              code: 'internal_error',
+              message: error instanceof Error ? error.message : 'Desktop directory picker failed.',
+            },
+          });
+        }
+
+        return true;
+      }
+
       window.addEventListener('message', (event) => {
         if (!runtimeFrame || event.source !== runtimeFrame.contentWindow) {
           return;
@@ -186,10 +267,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
             return;
           }
           if (typeof data.requestId !== 'string' || typeof data.method !== 'string') {
-            send({
-              channel: 'yantra-plugin',
-              type: 'host.rpc.response',
-              channelId: boot.channelId,
+            sendRpcResponse({
               requestId: typeof data.requestId === 'string' ? data.requestId : 'invalid-request',
               ok: false,
               error: {
@@ -197,6 +275,11 @@ export async function GET(_request: Request, { params }: RouteParams) {
                 message: 'Plugin RPC requests must include string requestId and method fields.',
               },
             });
+            return;
+          }
+
+          const handledByHost = await handleHostBridgeRequest(data);
+          if (handledByHost) {
             return;
           }
 
@@ -226,10 +309,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
               });
             })
             .catch(() => {
-              send({
-                channel: 'yantra-plugin',
-                type: 'host.rpc.response',
-                channelId: boot.channelId,
+              sendRpcResponse({
                 requestId: data.requestId,
                 ok: false,
                 error: {
