@@ -24,6 +24,14 @@ export const PLUGIN_CAPABILITY_DEFINITIONS = {
     availability: "phase-1",
     desktopOnly: false,
   },
+  "graph.read": {
+    id: "graph.read",
+    label: "Read graph",
+    description: "Read the knowledge graph through the app host.",
+    requiresTrust: "sandboxed",
+    availability: "phase-1",
+    desktopOnly: false,
+  },
   "page.read": {
     id: "page.read",
     label: "Read pages",

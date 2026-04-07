@@ -8,6 +8,7 @@ export type PluginStatus = "disabled" | "enabled" | "needs_review" | "error";
 
 export type PluginCapability =
   | "tree.read"
+  | "graph.read"
   | "page.read"
   | "page.create"
   | "page.write"

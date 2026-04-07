@@ -68,6 +68,7 @@ function createResolvedPlugin(
       requestedCapabilities: {
         required: ["tree.read"],
         optional: [
+          "graph.read",
           "page.read",
           "page.create",
           "page.write",
@@ -114,6 +115,7 @@ function createResolvedPlugin(
       trust: "sandboxed",
       grantedCapabilities: [
         "tree.read",
+        "graph.read",
         "page.read",
         "page.create",
         "page.write",
@@ -150,6 +152,13 @@ beforeEach(() => {
     },
   });
   pluginBridgeDependencies.buildTree = async () => [];
+  pluginBridgeDependencies.buildKnowledgeGraph = async () => ({
+    nodes: [{ id: "notes/today.md", label: "Today" }],
+    links: [],
+    scope: { mode: "global" },
+    cache: { fullIndexReady: true },
+    stats: { nodeCount: 1, linkCount: 0, unresolvedCount: 0 },
+  } as any);
   pluginBridgeDependencies.createPage = async (parentPath: string, title: string) => {
     createPageCalls.push({ parentPath, title });
     return parentPath ? `${parentPath}/New Page.md` : "New Page.md";
@@ -314,6 +323,56 @@ describe("plugin bridge dispatcher", () => {
           ],
         },
       ],
+    });
+  });
+
+  test("dispatches graph.read through the graph builder", async () => {
+    const response = await dispatchPluginBridgeRequest({
+      entryToken: "pek_123",
+      viewId: "main",
+      request: {
+        requestId: "req-1b",
+        method: "graph.read",
+        params: {
+          path: "notes/today.md",
+          depth: 2,
+        },
+      },
+    });
+
+    expect(response).toEqual({
+      requestId: "req-1b",
+      ok: true,
+      result: {
+        nodes: [{ id: "notes/today.md", label: "Today" }],
+        links: [],
+        scope: { mode: "global" },
+        cache: { fullIndexReady: true },
+        stats: { nodeCount: 1, linkCount: 0, unresolvedCount: 0 },
+      },
+    });
+  });
+
+  test("returns invalid_params when graph.read depth is invalid", async () => {
+    const response = await dispatchPluginBridgeRequest({
+      entryToken: "pek_123",
+      viewId: "main",
+      request: {
+        requestId: "req-1c",
+        method: "graph.read",
+        params: {
+          depth: "deep",
+        },
+      },
+    });
+
+    expect(response).toEqual({
+      requestId: "req-1c",
+      ok: false,
+      error: {
+        code: "invalid_params",
+        message: "graph.read depth must be a finite number when provided.",
+      },
     });
   });
 

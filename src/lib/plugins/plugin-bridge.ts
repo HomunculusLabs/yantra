@@ -6,7 +6,13 @@ import {
   writeAgentStack,
 } from "@/lib/agents/stack-manager";
 import { autoCommit } from "@/lib/git/git-service";
-import { syncGraphCacheAfterCreate, syncGraphCacheAfterDelete, syncGraphCacheAfterWrite, markGraphCacheDirty } from "@/lib/graph/build-graph";
+import {
+  buildKnowledgeGraph,
+  markGraphCacheDirty,
+  syncGraphCacheAfterCreate,
+  syncGraphCacheAfterDelete,
+  syncGraphCacheAfterWrite,
+} from "@/lib/graph/build-graph";
 import { getFrontmatterTitle } from "@/lib/markdown/frontmatter";
 import { syncDataviewCacheAfterCreate, syncDataviewCacheAfterDelete, syncDataviewCacheAfterWrite, markDataviewCacheDirty } from "@/lib/markdown/page-index";
 import {
@@ -23,7 +29,7 @@ import { deleteNode } from "@/lib/storage/node-io";
 import { createPage, readPage, writePage } from "@/lib/storage/page-io";
 import { isRuntimeVirtualPath } from "@/lib/storage/path-utils";
 import { buildTree } from "@/lib/storage/tree-builder";
-import type { FrontMatter, PageData, TreeNode } from "@/types";
+import type { FrontMatter, GraphData, PageData, TreeNode } from "@/types";
 import type { RuntimeSettingsSummary } from "@/types/settings";
 import type { InstalledPluginSummary, PluginCapability, PluginTrust } from "@/types/plugins";
 import type {
@@ -63,6 +69,7 @@ class PluginBridgeDispatchError extends Error {
 
 export const pluginBridgeDependencies = {
   listPersonas,
+  buildKnowledgeGraph,
   buildRuntimeSettingsSummary,
   listAgentStackCatalog,
   readAgentStack,
@@ -205,6 +212,41 @@ function parseOptionalParentPath(value: unknown, method: string): string {
   return parsePagePath(value, method);
 }
 
+function parseGraphReadParams(params: unknown): {
+  centerPath: string | null;
+  depth: number;
+} {
+  if (params === undefined) {
+    return { centerPath: null, depth: 1 };
+  }
+  if (!isRecord(params)) {
+    throw new PluginBridgeDispatchError(
+      "invalid_params",
+      "graph.read requires an object when params are provided."
+    );
+  }
+
+  const centerPath =
+    typeof params.path === "string" && params.path.trim()
+      ? parsePagePath(params.path, "graph.read")
+      : null;
+  const depthValue = params.depth;
+  if (depthValue !== undefined && (typeof depthValue !== "number" || !Number.isFinite(depthValue))) {
+    throw new PluginBridgeDispatchError(
+      "invalid_params",
+      "graph.read depth must be a finite number when provided."
+    );
+  }
+
+  return {
+    centerPath,
+    depth:
+      typeof depthValue === "number"
+        ? Math.max(1, Math.min(3, Math.trunc(depthValue)))
+        : 1,
+  };
+}
+
 function parsePageReadParams(params: unknown): { path: string } {
   if (!isRecord(params) || typeof params.path !== "string") {
     throw new PluginBridgeDispatchError(
@@ -340,6 +382,16 @@ const PLUGIN_BRIDGE_METHODS: Record<
     handler: async () => {
       const tree = await pluginBridgeDependencies.buildTree();
       return tree.map((node) => mapTreeNode(node));
+    },
+  },
+  "graph.read": {
+    capability: "graph.read",
+    handler: async ({ params }): Promise<GraphData> => {
+      const { centerPath, depth } = parseGraphReadParams(params);
+      return pluginBridgeDependencies.buildKnowledgeGraph({
+        centerPath,
+        depth,
+      });
     },
   },
   "page.read": {
