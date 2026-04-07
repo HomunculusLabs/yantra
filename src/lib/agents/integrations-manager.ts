@@ -137,11 +137,18 @@ function validatePluginMcpOverlayFile(input: {
 
   const servers: Record<string, McpServerConfig> = {};
   const catalogEntries: McpCatalogEntry[] = [];
+  const seenLocalIds = new Set<string>();
   for (const [localId, rawServer] of Object.entries(input.content.mcp_servers)) {
-    if (!localId.trim() || localId.includes("/") || localId === "." || localId === "..") {
+    const normalizedLocalId = localId.trim();
+    if (!normalizedLocalId || localId.includes("/") || localId === "." || localId === "..") {
       pushIssue(`MCP overlay id '${localId}' is invalid.`);
       continue;
     }
+    if (seenLocalIds.has(normalizedLocalId)) {
+      pushIssue(`MCP overlay id '${localId}' is duplicated after normalization.`);
+      continue;
+    }
+    seenLocalIds.add(normalizedLocalId);
     if (!isRecord(rawServer)) {
       pushIssue(`MCP overlay entry '${localId}' must be an object.`);
       continue;
@@ -163,7 +170,7 @@ function validatePluginMcpOverlayFile(input: {
       continue;
     }
 
-    const effectiveId = getPluginMcpId(input.pluginId, localId.trim());
+    const effectiveId = getPluginMcpId(input.pluginId, normalizedLocalId);
     const server: McpServerConfig = {
       name: rawServer.name.trim(),
       command: rawServer.command.trim(),
@@ -186,7 +193,7 @@ function validatePluginMcpOverlayFile(input: {
         kind: "plugin",
         pluginId: input.pluginId,
         pluginName: input.pluginName,
-        localId: localId.trim(),
+        localId: normalizedLocalId,
       },
     });
   }
@@ -280,15 +287,18 @@ export function normalizeIntegrationConfig(input: unknown): IntegrationConfig {
 
   const normalizedServers: Record<string, McpServerConfig> = {};
   const inputServers = isRecord(input.mcp_servers) ? input.mcp_servers : {};
+  const ownedInputServers = Object.fromEntries(
+    Object.entries(inputServers).filter(([key]) => !isPluginMcpId(key))
+  );
   const serverKeys = new Set([
     ...Object.keys(defaults.mcp_servers),
-    ...Object.keys(inputServers),
+    ...Object.keys(ownedInputServers),
   ]);
 
   for (const key of serverKeys) {
     normalizedServers[key] = normalizeMcpServer(
       key,
-      inputServers[key],
+      ownedInputServers[key],
       defaults.mcp_servers[key]
     );
   }

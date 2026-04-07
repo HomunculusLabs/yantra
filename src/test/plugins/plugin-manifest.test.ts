@@ -322,4 +322,134 @@ describe("plugin manifest validation", () => {
       true
     );
   });
+
+  test("accepts valid bundle integrations overlays", async () => {
+    const pluginRoot = await writePluginDir({
+      folderName: "bundle-integrations-overlay",
+      manifest: baseManifest({
+        kind: "bundle",
+        requestedCapabilities: { required: [], optional: [] },
+        views: undefined,
+        bundle: {
+          overlays: {
+            integrations: "integrations.json",
+          },
+        },
+      }),
+      files: {
+        "integrations.json": JSON.stringify({ version: 1, mcp_servers: {} }, null, 2),
+      },
+    });
+
+    const result = await readValidatedPluginDirectory(pluginRoot);
+    expect(result.manifest?.bundle?.overlays).toEqual({
+      integrations: "integrations.json",
+    });
+    expect(result.issues).toEqual([]);
+  });
+
+  test("flags missing bundle integrations overlay files", async () => {
+    const pluginRoot = await writePluginDir({
+      folderName: "missing-integrations-overlay",
+      manifest: baseManifest({
+        kind: "bundle",
+        requestedCapabilities: { required: [], optional: [] },
+        views: undefined,
+        bundle: {
+          overlays: {
+            integrations: "integrations.json",
+          },
+        },
+      }),
+    });
+
+    const result = await readValidatedPluginDirectory(pluginRoot);
+    expect(result.manifest?.kind).toBe("bundle");
+    expect(result.issues.some((issue) => issue.code === "missing_bundle_overlay")).toBe(true);
+  });
+
+  test("flags absolute integration overlay paths", async () => {
+    const pluginRoot = await writePluginDir({
+      folderName: "absolute-integrations-overlay",
+      manifest: baseManifest({
+        kind: "bundle",
+        requestedCapabilities: { required: [], optional: [] },
+        views: undefined,
+        bundle: {
+          overlays: {
+            integrations: "/tmp/integrations.json",
+          },
+        },
+      }),
+    });
+
+    const result = await readValidatedPluginDirectory(pluginRoot);
+    expect(result.manifest).toBeNull();
+    expect(result.issues.some((issue) => issue.code === "invalid_bundle_overlay_path")).toBe(true);
+  });
+
+  test("flags escaping integration overlay paths", async () => {
+    const pluginRoot = await writePluginDir({
+      folderName: "escaping-integrations-overlay",
+      manifest: baseManifest({
+        kind: "bundle",
+        requestedCapabilities: { required: [], optional: [] },
+        views: undefined,
+        bundle: {
+          overlays: {
+            integrations: "../integrations.json",
+          },
+        },
+      }),
+    });
+
+    const result = await readValidatedPluginDirectory(pluginRoot);
+    expect(result.manifest).toBeNull();
+    expect(result.issues.some((issue) => issue.code === "invalid_bundle_overlay_path")).toBe(true);
+  });
+
+  test("flags non-json integration overlay paths", async () => {
+    const pluginRoot = await writePluginDir({
+      folderName: "non-json-integrations-overlay",
+      manifest: baseManifest({
+        kind: "bundle",
+        requestedCapabilities: { required: [], optional: [] },
+        views: undefined,
+        bundle: {
+          overlays: {
+            integrations: "integrations.txt",
+          },
+        },
+      }),
+      files: {
+        "integrations.txt": "not json",
+      },
+    });
+
+    const result = await readValidatedPluginDirectory(pluginRoot);
+    expect(result.manifest).toBeNull();
+    expect(result.issues.some((issue) => issue.code === "invalid_bundle_overlay_path")).toBe(true);
+  });
+
+  test("flags non-bundle plugins that declare integrations overlays", async () => {
+    const pluginRoot = await writePluginDir({
+      folderName: "ui-plugin-with-overlay",
+      manifest: baseManifest({
+        bundle: {
+          overlays: {
+            integrations: "integrations.json",
+          },
+        },
+      }),
+      files: {
+        "index.html": "<html><body>plugin</body></html>",
+        "integrations.json": JSON.stringify({ version: 1, mcp_servers: {} }, null, 2),
+      },
+    });
+
+    const result = await readValidatedPluginDirectory(pluginRoot);
+    expect(result.issues.some((issue) => issue.code === "bundle_contributions_not_supported")).toBe(
+      true
+    );
+  });
 });
