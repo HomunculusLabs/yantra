@@ -70,6 +70,7 @@ export interface PluginRuntimeCommand {
 
 export interface PluginBundleOverlays {
   launchers?: string;
+  integrations?: string;
 }
 
 export interface PluginBundleContributions {

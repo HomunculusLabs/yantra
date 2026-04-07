@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  loadIntegrationConfig,
+  getIntegrationConfigReadResponse,
   saveIntegrationConfig,
 } from "@/lib/agents/integrations-manager";
 
 export async function GET() {
-  return NextResponse.json(await loadIntegrationConfig());
+  return NextResponse.json(await getIntegrationConfigReadResponse());
 }
 
 export async function PUT(req: NextRequest) {

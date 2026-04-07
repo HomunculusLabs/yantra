@@ -77,6 +77,7 @@ function toCanonicalManifestForHash(manifest: PluginManifest): PluginManifest {
           overlays: manifest.bundle.overlays
             ? {
                 launchers: manifest.bundle.overlays.launchers,
+                integrations: manifest.bundle.overlays.integrations,
               }
             : undefined,
         }
@@ -336,7 +337,8 @@ function hasBundleContributions(bundle?: PluginBundleContributions): boolean {
     bundle?.extensions?.length ||
       bundle?.skills?.length ||
       bundle?.skillsets?.length ||
-      bundle?.overlays?.launchers
+      bundle?.overlays?.launchers ||
+      bundle?.overlays?.integrations
   );
 }
 
@@ -496,13 +498,14 @@ export function validatePluginManifest(
       addIssue(issues, "invalid_command_id", `Command #${index + 1} is missing an id.`);
       continue;
     }
-    if (commandIds.has(command.id)) {
-      addIssue(issues, "duplicate_command_id", `Command id '${command.id}' is duplicated.`);
+    const commandId = command.id.trim();
+    if (commandIds.has(commandId)) {
+      addIssue(issues, "duplicate_command_id", `Command id '${commandId}' is duplicated.`);
       continue;
     }
-    commandIds.add(command.id);
+    commandIds.add(commandId);
     if (!isNonEmptyString(command.title)) {
-      addIssue(issues, "invalid_command_title", `Command '${command.id}' is missing a title.`);
+      addIssue(issues, "invalid_command_title", `Command '${commandId}' is missing a title.`);
       continue;
     }
     const action = isRecord(command.action) ? command.action : null;
@@ -510,7 +513,7 @@ export function validatePluginManifest(
       addIssue(
         issues,
         "invalid_command_action",
-        `Command '${command.id}' must use an open_view action with a valid viewId.`
+        `Command '${commandId}' must use an open_view action with a valid viewId.`
       );
       continue;
     }
@@ -518,12 +521,12 @@ export function validatePluginManifest(
       addIssue(
         issues,
         "unknown_command_view",
-        `Command '${command.id}' references missing view '${action.viewId}'.`
+        `Command '${commandId}' references missing view '${action.viewId}'.`
       );
       continue;
     }
     commands.push({
-      id: command.id.trim(),
+      id: commandId,
       title: command.title.trim(),
       action: { type: "open_view", viewId: action.viewId.trim() },
     });
@@ -618,6 +621,7 @@ export function validatePluginManifest(
         bundle.skillsets = skillsets;
       }
       if (isRecord(input.bundle.overlays)) {
+        const normalizedOverlays: NonNullable<PluginBundleContributions["overlays"]> = {};
         const launchersPath = input.bundle.overlays.launchers;
         if (launchersPath !== undefined) {
           if (!isNonEmptyString(launchersPath)) {
@@ -635,11 +639,33 @@ export function validatePluginManifest(
                 `Plugin bundle.overlays.launchers must point to a plugin-relative JSON file. Received '${launchersPath}'.`
               );
             } else {
-              bundle.overlays = {
-                launchers: normalizedLaunchersPath,
-              };
+              normalizedOverlays.launchers = normalizedLaunchersPath;
             }
           }
+        }
+        const integrationsPath = input.bundle.overlays.integrations;
+        if (integrationsPath !== undefined) {
+          if (!isNonEmptyString(integrationsPath)) {
+            addIssue(
+              issues,
+              "invalid_bundle_overlay_path",
+              "Plugin bundle.overlays.integrations must be a non-empty relative JSON file path."
+            );
+          } else {
+            const normalizedIntegrationsPath = normalizePluginRelativePath(integrationsPath);
+            if (!normalizedIntegrationsPath || path.extname(normalizedIntegrationsPath).toLowerCase() !== ".json") {
+              addIssue(
+                issues,
+                "invalid_bundle_overlay_path",
+                `Plugin bundle.overlays.integrations must point to a plugin-relative JSON file. Received '${integrationsPath}'.`
+              );
+            } else {
+              normalizedOverlays.integrations = normalizedIntegrationsPath;
+            }
+          }
+        }
+        if (normalizedOverlays.launchers || normalizedOverlays.integrations) {
+          bundle.overlays = normalizedOverlays;
         }
       } else if (input.bundle.overlays !== undefined) {
         addIssue(
@@ -803,6 +829,19 @@ export async function validatePluginEntries(
         issues,
         "missing_bundle_overlay",
         `Plugin bundle.overlays.launchers entry '${manifest.bundle.overlays.launchers}' was not found.`
+      );
+    }
+  }
+  if (manifest.bundle?.overlays?.integrations) {
+    const integrationsOverlayPath = resolvePluginRelativePath(
+      pluginRoot,
+      manifest.bundle.overlays.integrations
+    );
+    if (!integrationsOverlayPath || !(await pathExistsAndIsFile(integrationsOverlayPath))) {
+      addIssue(
+        issues,
+        "missing_bundle_overlay",
+        `Plugin bundle.overlays.integrations entry '${manifest.bundle.overlays.integrations}' was not found.`
       );
     }
   }

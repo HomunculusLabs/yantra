@@ -51,6 +51,7 @@ export function SearchDialog() {
   const [tagFilter, setTagFilter] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [pluginCommands, setPluginCommands] = useState<PluginRuntimeCommand[]>([]);
+  const [pluginCommandsLoading, setPluginCommandsLoading] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [aiSearching, setAiSearching] = useState(false);
   const [aiResult, setAiResult] = useState("");
@@ -105,6 +106,7 @@ export function SearchDialog() {
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
+    setPluginCommandsLoading(true);
     void listPluginCommands()
       .then((response) => {
         if (!cancelled) {
@@ -114,6 +116,11 @@ export function SearchDialog() {
       .catch(() => {
         if (!cancelled) {
           setPluginCommands([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setPluginCommandsLoading(false);
         }
       });
     return () => {
@@ -245,6 +252,11 @@ export function SearchDialog() {
             {loading && items.length === 0 && !isCommandMode && (
               <div className="px-4 py-3 text-[13px] text-muted-foreground">Searching...</div>
             )}
+            {pluginCommandsLoading && items.length === 0 && isCommandMode && (
+              <div className="px-4 py-3 text-[13px] text-muted-foreground">
+                Loading plugin commands...
+              </div>
+            )}
             {items.map((item, index) =>
               item.kind === "page" ? (
                 <button
@@ -375,7 +387,7 @@ export function SearchDialog() {
           </div>
         )}
 
-        {isCommandMode && !items.length && (
+        {isCommandMode && !pluginCommandsLoading && !items.length && (
           <div className="px-4 py-6 text-center text-[13px] text-muted-foreground">
             No plugin commands found.
           </div>

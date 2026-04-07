@@ -57,6 +57,8 @@ export function SettingsPage({
     runtimeLoading,
     runtimeError,
     config,
+    availableMcpServers,
+    integrationOverlayIssues,
     roots,
     configLoading,
     rootsLoading,
@@ -279,6 +281,60 @@ export function SettingsPage({
                 <p className="mb-4 text-xs text-muted-foreground">
                   Configure tool servers that agents can use. Enable a server and provide API credentials for agents to access external services.
                 </p>
+
+                {availableMcpServers.some((server) => server.source.kind === "plugin") ? (
+                  <div className="mb-4 rounded-lg border border-border bg-card p-3">
+                    <p className="text-[12px] font-medium text-foreground">Plugin MCP catalog</p>
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      Plugin-contributed MCP servers are read-only and do not get written back into the owned integrations config.
+                    </p>
+                    <div className="mt-3 space-y-2">
+                      {availableMcpServers
+                        .filter((server) => server.source.kind === "plugin")
+                        .map((server) => (
+                          <div
+                            key={server.id}
+                            className="rounded-md border border-border/60 bg-background/60 px-3 py-2"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[12px] font-medium text-foreground">
+                                {server.name}
+                              </span>
+                              <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70">
+                                {server.source.kind === "plugin"
+                                  ? `plugin · ${server.source.pluginName}`
+                                  : "owned"}
+                              </span>
+                            </div>
+                            <code className="mt-1 block break-all text-[11px] text-muted-foreground">
+                              {server.id}
+                            </code>
+                            {server.description ? (
+                              <p className="mt-1 text-[11px] text-muted-foreground">
+                                {server.description}
+                              </p>
+                            ) : null}
+                            <p className="mt-1 text-[11px] text-muted-foreground">
+                              Command: <code>{server.command}</code>
+                            </p>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {integrationOverlayIssues.length > 0 ? (
+                  <div className="mb-4 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+                    <p className="text-[12px] font-medium text-foreground">Plugin MCP overlay issues</p>
+                    <div className="mt-2 space-y-2">
+                      {integrationOverlayIssues.map((issue, index) => (
+                        <div key={`${issue.pluginId}-${index}`} className="text-[11px] text-muted-foreground">
+                          <span className="font-medium text-foreground">{issue.pluginName}</span>: {issue.message}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
 
                 <div className="space-y-3">
                   {Object.entries(config.mcp_servers).map(([id, server]) => (

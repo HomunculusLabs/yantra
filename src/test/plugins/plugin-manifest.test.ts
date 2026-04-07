@@ -173,6 +173,39 @@ describe("plugin manifest validation", () => {
     expect(result.issues.some((issue) => issue.code === "unknown_command_view")).toBe(true);
   });
 
+  test("flags duplicate commands after id trimming", async () => {
+    const pluginRoot = await writePluginDir({
+      folderName: "command-duplicate-trimmed",
+      manifest: baseManifest({
+        commands: [
+          {
+            id: "open-main",
+            title: "Open Main View",
+            action: { type: "open_view", viewId: "main" },
+          },
+          {
+            id: "  open-main  ",
+            title: "Open Main View Again",
+            action: { type: "open_view", viewId: "main" },
+          },
+        ],
+      }),
+      files: {
+        "index.html": "<html><body>plugin</body></html>",
+      },
+    });
+
+    const result = await readValidatedPluginDirectory(pluginRoot);
+    expect(result.manifest?.commands).toEqual([
+      {
+        id: "open-main",
+        title: "Open Main View",
+        action: { type: "open_view", viewId: "main" },
+      },
+    ]);
+    expect(result.issues.some((issue) => issue.code === "duplicate_command_id")).toBe(true);
+  });
+
   test("accepts valid bundle plugins with declared contributions", async () => {
     const pluginRoot = await writePluginDir({
       folderName: "bundle-plugin",

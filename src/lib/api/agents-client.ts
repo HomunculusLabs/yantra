@@ -28,6 +28,7 @@ import type { AgentTask, SlackMessage } from "@/types/agents";
 import type {
   BrowserDaemonStatus,
   IntegrationConfig,
+  IntegrationConfigReadResponse,
   KeybindingValidationIssue,
   KeybindingsConfigResponse,
   LauncherValidationIssue,
@@ -322,8 +323,8 @@ export async function getRuntimeSettingsSummary(): Promise<RuntimeSettingsSummar
   return requestJson<RuntimeSettingsSummary>("/api/agents/config/runtime");
 }
 
-export async function getIntegrationConfig(): Promise<IntegrationConfig> {
-  return requestJson<IntegrationConfig>("/api/agents/config/integrations");
+export async function getIntegrationConfig(): Promise<IntegrationConfigReadResponse> {
+  return requestJson<IntegrationConfigReadResponse>("/api/agents/config/integrations");
 }
 
 export async function saveIntegrationConfig(

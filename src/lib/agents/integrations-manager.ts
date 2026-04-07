@@ -1,16 +1,26 @@
 import path from "path";
 import { getYantraRoots } from "@/lib/config/yantra-roots";
+import { listEnabledIntegrationOverlayPlugins } from "@/lib/plugins/plugin-manager";
+import { resolvePluginRelativePath } from "@/lib/plugins/plugin-manifest";
 import {
   ensureDirectory,
   readFileContent,
   writeFileContent,
 } from "@/lib/storage/fs-operations";
-import type { IntegrationConfig, McpServerConfig } from "@/types/settings";
+import type {
+  IntegrationConfig,
+  IntegrationConfigReadResponse,
+  IntegrationOverlayIssue,
+  McpCatalogEntry,
+  McpServerConfig,
+} from "@/types/settings";
 
 const INTEGRATIONS_FILE = path.join(
   getYantraRoots().runtimeConfigRoot,
   "integrations.json"
 );
+
+const PLUGIN_MCP_ID_PREFIX = "@plugin/";
 
 const DEFAULT_MCP_SERVERS: Record<string, McpServerConfig> = {
   reddit: {
@@ -66,6 +76,126 @@ function cloneMcpServerConfig(config: McpServerConfig): McpServerConfig {
     ...config,
     env: { ...config.env },
   };
+}
+
+function isPluginMcpId(id: string): boolean {
+  return id.startsWith(PLUGIN_MCP_ID_PREFIX);
+}
+
+function getPluginMcpId(pluginId: string, localId: string): string {
+  return `${PLUGIN_MCP_ID_PREFIX}${pluginId}/${localId}`;
+}
+
+function sortMcpCatalogEntries(entries: McpCatalogEntry[]): McpCatalogEntry[] {
+  return [...entries].sort((left, right) => {
+    if (left.source.kind !== right.source.kind) {
+      return left.source.kind === "owned" ? -1 : 1;
+    }
+    return left.name.localeCompare(right.name);
+  });
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return isRecord(value) && Object.values(value).every((entry) => typeof entry === "string");
+}
+
+function validatePluginMcpOverlayFile(input: {
+  pluginId: string;
+  pluginName: string;
+  content: unknown;
+}): {
+  servers: Record<string, McpServerConfig>;
+  catalogEntries: McpCatalogEntry[];
+  issues: IntegrationOverlayIssue[];
+} {
+  const issues: IntegrationOverlayIssue[] = [];
+  const pushIssue = (message: string) => {
+    issues.push({
+      pluginId: input.pluginId,
+      pluginName: input.pluginName,
+      message,
+    });
+  };
+
+  if (!isRecord(input.content)) {
+    pushIssue("MCP overlay must be a JSON object.");
+    return { servers: {}, catalogEntries: [], issues };
+  }
+  if (input.content.version !== 1) {
+    pushIssue("MCP overlay version must be 1.");
+  }
+  if ("notifications" in input.content) {
+    pushIssue("MCP overlays cannot declare notifications.");
+  }
+  if ("scheduling" in input.content) {
+    pushIssue("MCP overlays cannot declare scheduling.");
+  }
+  if (!isRecord(input.content.mcp_servers)) {
+    pushIssue("MCP overlay must define an mcp_servers object.");
+    return { servers: {}, catalogEntries: [], issues };
+  }
+
+  const servers: Record<string, McpServerConfig> = {};
+  const catalogEntries: McpCatalogEntry[] = [];
+  for (const [localId, rawServer] of Object.entries(input.content.mcp_servers)) {
+    if (!localId.trim() || localId.includes("/") || localId === "." || localId === "..") {
+      pushIssue(`MCP overlay id '${localId}' is invalid.`);
+      continue;
+    }
+    if (!isRecord(rawServer)) {
+      pushIssue(`MCP overlay entry '${localId}' must be an object.`);
+      continue;
+    }
+    if ("enabled" in rawServer) {
+      pushIssue(`MCP overlay entry '${localId}' cannot declare enabled.`);
+      continue;
+    }
+    if (typeof rawServer.name !== "string" || !rawServer.name.trim()) {
+      pushIssue(`MCP overlay entry '${localId}' must define a non-empty name.`);
+      continue;
+    }
+    if (typeof rawServer.command !== "string" || !rawServer.command.trim()) {
+      pushIssue(`MCP overlay entry '${localId}' must define a non-empty command.`);
+      continue;
+    }
+    if (rawServer.env !== undefined && !isStringRecord(rawServer.env)) {
+      pushIssue(`MCP overlay entry '${localId}' must use string env values.`);
+      continue;
+    }
+
+    const effectiveId = getPluginMcpId(input.pluginId, localId.trim());
+    const server: McpServerConfig = {
+      name: rawServer.name.trim(),
+      command: rawServer.command.trim(),
+      enabled: true,
+      env: rawServer.env ? { ...rawServer.env } : {},
+      ...(typeof rawServer.description === "string" && rawServer.description.trim()
+        ? { description: rawServer.description.trim() }
+        : {}),
+    };
+    servers[effectiveId] = server;
+    catalogEntries.push({
+      id: effectiveId,
+      name: server.name,
+      command: server.command,
+      enabled: true,
+      env: { ...server.env },
+      description: server.description,
+      readOnly: true,
+      source: {
+        kind: "plugin",
+        pluginId: input.pluginId,
+        pluginName: input.pluginName,
+        localId: localId.trim(),
+      },
+    });
+  }
+
+  if (issues.length > 0) {
+    return { servers: {}, catalogEntries: [], issues };
+  }
+
+  return { servers, catalogEntries, issues };
 }
 
 export function getDefaultIntegrationConfig(): IntegrationConfig {
@@ -277,6 +407,78 @@ export function getIntegrationConfigPath(): string {
   return INTEGRATIONS_FILE;
 }
 
+async function buildIntegrationConfigReadModel(
+  baseConfig?: IntegrationConfig
+): Promise<{
+  config: IntegrationConfig;
+  effectiveConfig: IntegrationConfig;
+  availableMcpServers: McpCatalogEntry[];
+  overlayIssues: IntegrationOverlayIssue[];
+}> {
+  const config = baseConfig ?? (await loadIntegrationConfig());
+  const effectiveMcpServers = Object.fromEntries(
+    Object.entries(config.mcp_servers).map(([id, server]) => [id, cloneMcpServerConfig(server)])
+  );
+  const availableMcpServers: McpCatalogEntry[] = Object.entries(config.mcp_servers).map(
+    ([id, server]) => ({
+      id,
+      name: server.name,
+      command: server.command,
+      enabled: server.enabled,
+      env: { ...server.env },
+      description: server.description,
+      readOnly: false,
+      source: { kind: "owned" },
+    })
+  );
+  const overlayIssues: IntegrationOverlayIssue[] = [];
+
+  for (const plugin of await listEnabledIntegrationOverlayPlugins()) {
+    const overlayPath = resolvePluginRelativePath(
+      plugin.source.pluginPath,
+      plugin.manifest.bundle.overlays.integrations
+    );
+    if (!overlayPath) {
+      overlayIssues.push({
+        pluginId: plugin.manifest.id,
+        pluginName: plugin.manifest.name,
+        message: `MCP overlay path '${plugin.manifest.bundle.overlays.integrations}' is invalid.`,
+      });
+      continue;
+    }
+
+    try {
+      const validated = validatePluginMcpOverlayFile({
+        pluginId: plugin.manifest.id,
+        pluginName: plugin.manifest.name,
+        content: JSON.parse(await readFileContent(overlayPath)),
+      });
+      overlayIssues.push(...validated.issues);
+      Object.assign(effectiveMcpServers, validated.servers);
+      availableMcpServers.push(...validated.catalogEntries);
+    } catch (error) {
+      overlayIssues.push({
+        pluginId: plugin.manifest.id,
+        pluginName: plugin.manifest.name,
+        message:
+          error instanceof Error
+            ? `Failed to read MCP overlay: ${error.message}`
+            : "Failed to read MCP overlay.",
+      });
+    }
+  }
+
+  return {
+    config,
+    effectiveConfig: {
+      ...config,
+      mcp_servers: effectiveMcpServers,
+    },
+    availableMcpServers: sortMcpCatalogEntries(availableMcpServers),
+    overlayIssues,
+  };
+}
+
 export async function loadIntegrationConfig(): Promise<IntegrationConfig> {
   try {
     const raw = await readFileContent(INTEGRATIONS_FILE);
@@ -286,9 +488,31 @@ export async function loadIntegrationConfig(): Promise<IntegrationConfig> {
   }
 }
 
+export async function getIntegrationConfigReadResponse(): Promise<IntegrationConfigReadResponse> {
+  const state = await buildIntegrationConfigReadModel();
+  return {
+    config: state.config,
+    availableMcpServers: state.availableMcpServers,
+    overlayIssues: state.overlayIssues,
+  };
+}
+
+export async function loadEffectiveIntegrationConfig(): Promise<IntegrationConfig> {
+  return (await buildIntegrationConfigReadModel()).effectiveConfig;
+}
+
 export async function saveIntegrationConfig(
   input: unknown
 ): Promise<IntegrationConfig> {
+  if (isRecord(input) && isRecord(input.mcp_servers)) {
+    const pluginOwnedIds = Object.keys(input.mcp_servers).filter((id) => isPluginMcpId(id));
+    if (pluginOwnedIds.length > 0) {
+      throw new Error(
+        `Plugin-contributed MCP ids are read-only and cannot be saved into the owned integrations config: ${pluginOwnedIds.join(", ")}`
+      );
+    }
+  }
+
   const normalized = normalizeIntegrationConfig(input);
   await ensureDirectory(path.dirname(INTEGRATIONS_FILE));
   await writeFileContent(

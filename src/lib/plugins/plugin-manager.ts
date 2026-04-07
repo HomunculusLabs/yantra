@@ -381,6 +381,31 @@ export async function listEnabledLauncherOverlayPlugins(): Promise<
   );
 }
 
+export async function listEnabledIntegrationOverlayPlugins(): Promise<
+  Array<
+    BundlePluginSummary & {
+      manifest: BundlePluginSummary["manifest"] & {
+        bundle: NonNullable<BundlePluginSummary["manifest"]["bundle"]> & {
+          overlays: { integrations: string };
+        };
+      };
+    }
+  >
+> {
+  const plugins = await listEnabledBundlePlugins();
+  return plugins.filter(
+    (
+      plugin
+    ): plugin is BundlePluginSummary & {
+      manifest: BundlePluginSummary["manifest"] & {
+        bundle: NonNullable<BundlePluginSummary["manifest"]["bundle"]> & {
+          overlays: { integrations: string };
+        };
+      };
+    } => typeof plugin.manifest.bundle?.overlays?.integrations === "string"
+  );
+}
+
 export async function listEnabledOpenViewCommands(): Promise<PluginRuntimeCommand[]> {
   const plugins = await listInstalledPlugins();
   return plugins

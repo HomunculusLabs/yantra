@@ -123,6 +123,31 @@ export interface IntegrationConfig {
   };
 }
 
+export interface McpCatalogEntry {
+  id: string;
+  name: string;
+  command: string;
+  enabled: boolean;
+  env: Record<string, string>;
+  description?: string;
+  readOnly: boolean;
+  source:
+    | { kind: "owned" }
+    | { kind: "plugin"; pluginId: string; pluginName: string; localId: string };
+}
+
+export interface IntegrationOverlayIssue {
+  pluginId: string;
+  pluginName: string;
+  message: string;
+}
+
+export interface IntegrationConfigReadResponse {
+  config: IntegrationConfig;
+  availableMcpServers: McpCatalogEntry[];
+  overlayIssues: IntegrationOverlayIssue[];
+}
+
 export type StorageRouteKey =
   | "agents"
   | "skills"

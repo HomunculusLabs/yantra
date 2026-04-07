@@ -31,6 +31,8 @@ import type {
   BrowserDaemonStatus,
   DesktopDaemonInfo,
   IntegrationConfig,
+  IntegrationOverlayIssue,
+  McpCatalogEntry,
   KeybindingValidationIssue,
   KeybindingsConfigResponse,
   LauncherValidationIssue,
@@ -52,6 +54,8 @@ type UseSettingsDataResult = {
   runtimeLoading: boolean;
   runtimeError: string | null;
   config: IntegrationConfig | null;
+  availableMcpServers: McpCatalogEntry[];
+  integrationOverlayIssues: IntegrationOverlayIssue[];
   roots: RootsConfig | null;
   configLoading: boolean;
   rootsLoading: boolean;
@@ -98,6 +102,8 @@ export function useSettingsData(): UseSettingsDataResult {
   const [runtimeLoading, setRuntimeLoading] = useState(true);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const [config, setConfig] = useState<IntegrationConfig | null>(null);
+  const [availableMcpServers, setAvailableMcpServers] = useState<McpCatalogEntry[]>([]);
+  const [integrationOverlayIssues, setIntegrationOverlayIssues] = useState<IntegrationOverlayIssue[]>([]);
   const [roots, setRoots] = useState<RootsConfig | null>(null);
   const [configLoading, setConfigLoading] = useState(false);
   const [rootsLoading, setRootsLoading] = useState(false);
@@ -176,9 +182,11 @@ export function useSettingsData(): UseSettingsDataResult {
     const requestId = ++configRequestRef.current;
     setConfigLoading(true);
     try {
-      const nextConfig = await getIntegrationConfig();
+      const response = await getIntegrationConfig();
       if (configRequestRef.current !== requestId) return;
-      setConfig(nextConfig);
+      setConfig(response.config);
+      setAvailableMcpServers(response.availableMcpServers);
+      setIntegrationOverlayIssues(response.overlayIssues);
     } catch {
       // preserve silent failure behavior
     } finally {
@@ -550,6 +558,8 @@ export function useSettingsData(): UseSettingsDataResult {
     runtimeLoading,
     runtimeError,
     config,
+    availableMcpServers,
+    integrationOverlayIssues,
     roots,
     configLoading,
     rootsLoading,
