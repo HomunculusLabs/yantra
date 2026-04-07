@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bridge Smoke</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      }
+      body {
+        margin: 0;
+        background: #09090b;
+        color: #e4e4e7;
+      }
+      .shell {
+        padding: 16px;
+        display: grid;
+        gap: 16px;
+      }
+      .panel {
+        border: 1px solid #27272a;
+        border-radius: 12px;
+        background: #111214;
+        padding: 14px;
+      }
+      h1, h2 {
+        margin: 0 0 8px;
+      }
+      h1 { font-size: 18px; }
+      h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: #a1a1aa; }
+      p, label, input, textarea, button, select {
+        font: inherit;
+      }
+      .grid {
+        display: grid;
+        gap: 10px;
+      }
+      .actions {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      }
+      .action {
+        display: grid;
+        gap: 6px;
+        border: 1px solid #27272a;
+        border-radius: 10px;
+        padding: 10px;
+        background: #18181b;
+      }
+      .action button {
+        appearance: none;
+        border: 0;
+        border-radius: 8px;
+        background: #2563eb;
+        color: white;
+        padding: 8px 10px;
+        cursor: pointer;
+      }
+      input, textarea, select {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid #3f3f46;
+        border-radius: 8px;
+        background: #09090b;
+        color: inherit;
+        padding: 8px 10px;
+      }
+      textarea {
+        min-height: 96px;
+        resize: vertical;
+      }
+      pre {
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .meta {
+        color: #a1a1aa;
+        font-size: 12px;
+      }
+      .ok { color: #4ade80; }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="panel grid">
+        <div>
+          <h1>Bridge Smoke</h1>
+          <p class="meta">Manual smoke target for Yantra plugin bridge methods.</p>
+        </div>
+        <div id="boot" class="meta">Waiting for host.init…</div>
+      </div>
+
+      <div class="panel grid">
+        <h2>Inputs</h2>
+        <label>
+          Notes path
+          <input id="notesPath" value="notes" />
+        </label>
+        <label>
+          Page path
+          <input id="pagePath" value="notes/Bridge Smoke.md" />
+        </label>
+        <label>
+          Page title
+          <input id="pageTitle" value="Bridge Smoke" />
+        </label>
+        <label>
+          Page content
+          <textarea id="pageContent"># Bridge Smoke
+
+Updated from plugin bridge.</textarea>
+        </label>
+        <label>
+          Agent slug
+          <input id="agentSlug" value="general" />
+        </label>
+        <label>
+          Session prompt
+          <textarea id="sessionPrompt">Say hello from the Bridge Smoke plugin and exit.</textarea>
+        </label>
+        <label>
+          Restart mode
+          <select id="restartMode">
+            <option value="soft">soft</option>
+            <option value="force">force</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="panel grid">
+        <h2>Actions</h2>
+        <div class="actions" id="actions"></div>
+      </div>
+
+      <div class="panel grid">
+        <h2>Log</h2>
+        <pre id="log">No bridge calls yet.</pre>
+      </div>
+    </div>
+
+    <script>
+      const state = {
+        channelId: null,
+        requestCounter: 0,
+        pending: new Map(),
+        init: null,
+      };
+
+      const bootEl = document.getElementById('boot');
+      const logEl = document.getElementById('log');
+      const actionsEl = document.getElementById('actions');
+
+      function getValue(id) {
+        return document.getElementById(id).value;
+      }
+
+      function appendLog(title, payload, ok = true) {
+        const prefix = ok ? '[ok]' : '[error]';
+        logEl.textContent = `${prefix} ${title}\n${JSON.stringify(payload, null, 2)}\n\n${logEl.textContent}`;
+      }
+
+      function rpc(method, params) {
+        if (!state.channelId) {
+          return Promise.reject(new Error('Plugin host is not initialized.'));
+        }
+
+        const requestId = `req-${++state.requestCounter}`;
+        return new Promise((resolve, reject) => {
+          state.pending.set(requestId, { resolve, reject, method });
+          parent.postMessage(
+            {
+              channel: 'yantra-plugin',
+              type: 'plugin.rpc.request',
+              channelId: state.channelId,
+              requestId,
+              method,
+              ...(params === undefined ? {} : { params }),
+            },
+            '*'
+          );
+        });
+      }
+
+      function addAction(label, method, getParams) {
+        const card = document.createElement('div');
+        card.className = 'action';
+        const name = document.createElement('div');
+        name.textContent = label;
+        const button = document.createElement('button');
+        button.textContent = 'Run';
+        button.addEventListener('click', async () => {
+          try {
+            const result = await rpc(method, getParams ? getParams() : undefined);
+            appendLog(label, result, true);
+          } catch (error) {
+            appendLog(label, { message: error instanceof Error ? error.message : String(error) }, false);
+          }
+        });
+        card.append(name, button);
+        actionsEl.append(card);
+      }
+
+      function registerActions() {
+        actionsEl.innerHTML = '';
+        addAction('plugin.settings.read', 'plugin.settings.read');
+        addAction('plugin.settings.write', 'plugin.settings.write', () => ({
+          settings: {
+            lastAction: 'plugin.settings.write',
+            notesPath: getValue('notesPath'),
+          },
+        }));
+        addAction('tree.read', 'tree.read');
+        addAction('graph.read', 'graph.read', () => ({
+          path: getValue('pagePath'),
+          depth: 1,
+        }));
+        addAction('page.read', 'page.read', () => ({ path: getValue('pagePath') }));
+        addAction('page.create', 'page.create', () => ({
+          parentPath: getValue('notesPath'),
+          title: getValue('pageTitle'),
+        }));
+        addAction('page.write', 'page.write', () => ({
+          path: getValue('pagePath'),
+          content: getValue('pageContent'),
+          frontmatter: { title: getValue('pageTitle') },
+        }));
+        addAction('page.delete', 'page.delete', () => ({ path: getValue('pagePath') }));
+        addAction('agents.read', 'agents.read');
+        addAction('agent.stack.read', 'agent.stack.read', () => ({ slug: getValue('agentSlug') }));
+        addAction('runtime.summary.read', 'runtime.summary.read');
+        addAction('desktop.selectDirectory', 'desktop.selectDirectory', () => ({ title: 'Select a smoke directory' }));
+        addAction('desktop.reloadKeybindings', 'desktop.reloadKeybindings');
+        addAction('daemon.health.read', 'daemon.health.read');
+        addAction('desktop.restartDaemon', 'desktop.restartDaemon', () => ({ mode: getValue('restartMode') }));
+        addAction('daemon.session.read', 'daemon.session.read');
+        addAction('daemon.session.create', 'daemon.session.create', () => ({
+          prompt: getValue('sessionPrompt'),
+          agentSlug: getValue('agentSlug'),
+          timeoutSeconds: 30,
+        }));
+      }
+
+      window.addEventListener('message', (event) => {
+        const data = event.data;
+        if (!data || typeof data !== 'object' || data.channel !== 'yantra-plugin') {
+          return;
+        }
+
+        if (data.type === 'host.init') {
+          state.channelId = data.channelId;
+          state.init = data;
+          bootEl.innerHTML = [
+            `<span class="ok">Connected</span>`,
+            `plugin=${data.plugin.id}`,
+            `view=${data.view.id}`,
+            `methods=${data.supportedMethods.join(', ') || '(none)'}`,
+          ].join(' · ');
+          registerActions();
+          appendLog('host.init', data, true);
+          return;
+        }
+
+        if (data.type === 'host.rpc.response' && typeof data.requestId === 'string') {
+          const pending = state.pending.get(data.requestId);
+          if (!pending) return;
+          state.pending.delete(data.requestId);
+          if (data.ok) {
+            pending.resolve(data.result);
+          } else {
+            pending.reject(new Error(data.error?.message || `${pending.method} failed`));
+          }
+        }
+      });
+
+      parent.postMessage({ channel: 'yantra-plugin', type: 'plugin.ready' }, '*');
+    </script>
+  </body>
+</html>

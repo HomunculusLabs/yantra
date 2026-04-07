@@ -1,0 +1,68 @@
+{
+  "id": "bridge-smoke",
+  "name": "Bridge Smoke",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "kind": "ui-sandbox",
+  "description": "Manual smoke target for the Yantra plugin bridge.",
+  "requestedCapabilities": {
+    "required": [
+      "plugin.settings.read",
+      "plugin.settings.write"
+    ],
+    "optional": [
+      "tree.read",
+      "graph.read",
+      "page.read",
+      "page.create",
+      "page.write",
+      "page.delete",
+      "agents.read",
+      "agent.stack.read",
+      "agent.stack.write",
+      "runtime.summary.read",
+      "desktop.selectDirectory",
+      "desktop.reloadKeybindings",
+      "daemon.health.read",
+      "desktop.restartDaemon",
+      "daemon.session.read",
+      "daemon.session.create"
+    ]
+  },
+  "views": [
+    {
+      "id": "main",
+      "title": "Bridge Smoke",
+      "slot": "workspace",
+      "entry": "index.html"
+    }
+  ],
+  "commands": [
+    {
+      "id": "open-main",
+      "title": "Open Bridge Smoke",
+      "action": {
+        "type": "open_view",
+        "viewId": "main"
+      }
+    }
+  ],
+  "settings": {
+    "schema": {
+      "fields": [
+        {
+          "key": "lastAction",
+          "label": "Last action",
+          "type": "text",
+          "default": "idle"
+        },
+        {
+          "key": "notesPath",
+          "label": "Notes path",
+          "type": "text",
+          "default": "notes"
+        }
+      ]
+    }
+  }
+}
