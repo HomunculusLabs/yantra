@@ -48,6 +48,7 @@ const { getPluginCatalogEntryKey, getPluginCatalogEntryToken } = await import(
 const {
   hashPluginManifest,
   listEnabledBundlePlugins,
+  listEnabledOpenViewCommands,
   listInstalledPlugins,
   resolveBundlePluginAsset,
   resolveHostedPluginAsset,
@@ -157,6 +158,86 @@ afterAll(async () => {
 });
 
 describe("plugin-manager runtime resolution", () => {
+  test("lists enabled plugin open_view commands with namespaced ids and entry keys", async () => {
+    const manifest = baseManifest({
+      commands: [
+        {
+          id: "open-main",
+          title: "Open Main View",
+          action: { type: "open_view", viewId: "main" },
+        },
+      ],
+    });
+    await writePluginFixture({
+      source: "local-install",
+      folderName: "sample-plugin",
+      manifest,
+      files: {
+        "index.html": "<html><body>plugin</body></html>",
+      },
+    });
+    await writeStateFile({
+      [manifest.id]: approvedState(manifest),
+    });
+
+    const commands = await listEnabledOpenViewCommands();
+
+    expect(commands.length).toBe(1);
+    expect(commands[0]?.id).toBe("@plugin/sample-plugin/commands/open-main");
+    expect(commands[0]?.title).toBe("Open Main View");
+    expect(commands[0]?.pluginId).toBe("sample-plugin");
+    expect(commands[0]?.pluginName).toBe("Sample Plugin");
+    expect(commands[0]?.viewId).toBe("main");
+    expect(typeof commands[0]?.pluginEntryKey).toBe("string");
+  });
+
+  test("excludes commands from disabled or non-ui plugins", async () => {
+    const uiManifest = baseManifest({
+      id: "disabled-plugin",
+      commands: [
+        {
+          id: "open-main",
+          title: "Open Main View",
+          action: { type: "open_view", viewId: "main" },
+        },
+      ],
+    });
+    const bundleManifest = baseManifest({
+      id: "bundle-plugin",
+      kind: "bundle",
+      requestedCapabilities: { required: [], optional: [] },
+      views: undefined,
+      commands: undefined,
+      bundle: {
+        skills: ["skills/release/SKILL.md"],
+      },
+    });
+
+    await writePluginFixture({
+      source: "local-install",
+      folderName: "disabled-plugin",
+      manifest: uiManifest,
+      files: {
+        "index.html": "<html><body>plugin</body></html>",
+      },
+    });
+    await writePluginFixture({
+      source: "local-install",
+      folderName: "bundle-plugin",
+      manifest: bundleManifest,
+      files: {
+        "skills/release/SKILL.md": "# Skill\n",
+      },
+    });
+    await writeStateFile({
+      [uiManifest.id]: approvedState(uiManifest, { enabled: false }),
+      [bundleManifest.id]: approvedState(bundleManifest),
+    });
+
+    const commands = await listEnabledOpenViewCommands();
+    expect(commands).toEqual([]);
+  });
+
   test("resolves an enabled approved html workspace view and its asset path", async () => {
     const manifest = baseManifest();
     const { pluginRoot } = await writePluginFixture({

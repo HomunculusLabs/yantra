@@ -122,6 +122,57 @@ describe("plugin manifest validation", () => {
     expect(result.issues.some((issue) => issue.code === "missing_view_entry")).toBe(true);
   });
 
+  test("accepts valid open_view commands for declared views", async () => {
+    const pluginRoot = await writePluginDir({
+      folderName: "command-plugin",
+      manifest: baseManifest({
+        commands: [
+          {
+            id: "open-main",
+            title: "Open Main View",
+            action: { type: "open_view", viewId: "main" },
+          },
+        ],
+      }),
+      files: {
+        "index.html": "<html><body>plugin</body></html>",
+      },
+    });
+
+    const result = await readValidatedPluginDirectory(pluginRoot);
+    expect(result.manifest?.commands).toEqual([
+      {
+        id: "open-main",
+        title: "Open Main View",
+        action: { type: "open_view", viewId: "main" },
+      },
+    ]);
+    expect(result.issues).toEqual([]);
+  });
+
+  test("flags commands that reference missing views", async () => {
+    const pluginRoot = await writePluginDir({
+      folderName: "command-missing-view",
+      manifest: baseManifest({
+        commands: [
+          {
+            id: "open-secondary",
+            title: "Open Secondary View",
+            action: { type: "open_view", viewId: "secondary" },
+          },
+        ],
+      }),
+      files: {
+        "index.html": "<html><body>plugin</body></html>",
+      },
+    });
+
+    const result = await readValidatedPluginDirectory(pluginRoot);
+    expect(result.manifest?.id).toBe("sample-plugin");
+    expect(result.manifest?.commands).toBeUndefined();
+    expect(result.issues.some((issue) => issue.code === "unknown_command_view")).toBe(true);
+  });
+
   test("accepts valid bundle plugins with declared contributions", async () => {
     const pluginRoot = await writePluginDir({
       folderName: "bundle-plugin",

@@ -59,6 +59,15 @@ export interface PluginManifestCommand {
   action: { type: "open_view"; viewId: string };
 }
 
+export interface PluginRuntimeCommand {
+  id: string;
+  title: string;
+  pluginId: string;
+  pluginName: string;
+  pluginEntryKey: string;
+  viewId: string;
+}
+
 export interface PluginBundleOverlays {
   launchers?: string;
 }

@@ -3,7 +3,12 @@ import {
   requestJson,
   type RequestJsonError,
 } from "@/lib/api/request-json";
-import type { InstalledPluginSummary, PluginCapability, PluginIssue } from "@/types/plugins";
+import type {
+  InstalledPluginSummary,
+  PluginCapability,
+  PluginIssue,
+  PluginRuntimeCommand,
+} from "@/types/plugins";
 
 export interface PluginSettingsResponse {
   pluginId: string;
@@ -47,6 +52,10 @@ export async function savePluginSettings(
       body: JSON.stringify(settings),
     }
   );
+}
+
+export async function listPluginCommands(): Promise<{ commands: PluginRuntimeCommand[] }> {
+  return requestJson<{ commands: PluginRuntimeCommand[] }>("/api/plugins/commands");
 }
 
 export function getPluginValidationIssues(error: unknown): PluginIssue[] {

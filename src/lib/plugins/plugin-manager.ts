@@ -33,6 +33,7 @@ import type {
   InstalledPluginSummary,
   PluginIssue,
   PluginManifest,
+  PluginRuntimeCommand,
   PluginSettingsField,
   PluginSourceInfo,
   PluginStateRecord,
@@ -378,6 +379,43 @@ export async function listEnabledLauncherOverlayPlugins(): Promise<
       };
     } => typeof plugin.manifest.bundle?.overlays?.launchers === "string"
   );
+}
+
+export async function listEnabledOpenViewCommands(): Promise<PluginRuntimeCommand[]> {
+  const plugins = await listInstalledPlugins();
+  return plugins
+    .filter(
+      (plugin): plugin is InstalledPluginSummary & {
+        manifest: PluginManifest & {
+          kind: "ui-sandbox";
+          commands: NonNullable<PluginManifest["commands"]>;
+        };
+      } => {
+        if (plugin.status !== "enabled" || plugin.issues.some((issue) => issue.severity === "error")) {
+          return false;
+        }
+        if (!plugin.manifest || plugin.manifest.kind !== "ui-sandbox") {
+          return false;
+        }
+        return Array.isArray(plugin.manifest.commands) && plugin.manifest.commands.length > 0;
+      }
+    )
+    .flatMap((plugin) => {
+      const entryKey = getPluginCatalogEntryKey(plugin);
+      return (plugin.manifest.commands ?? []).map((command) => ({
+        id: `@plugin/${plugin.manifest.id}/commands/${command.id}`,
+        title: command.title,
+        pluginId: plugin.manifest.id,
+        pluginName: plugin.manifest.name,
+        pluginEntryKey: entryKey,
+        viewId: command.action.viewId,
+      }));
+    })
+    .sort((left, right) => {
+      const pluginCompare = left.pluginName.localeCompare(right.pluginName);
+      if (pluginCompare !== 0) return pluginCompare;
+      return left.title.localeCompare(right.title);
+    });
 }
 
 export async function getInstalledPluginByEntryKey(
