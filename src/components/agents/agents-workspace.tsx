@@ -13,6 +13,7 @@ import {
   Zap,
 } from "lucide-react";
 import { AgentLaunchCommandCard } from "@/components/agents/agent-launch-command-card";
+import { BasicLauncherFields } from "@/components/agents/basic-launcher-fields";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -20,12 +21,12 @@ import { AgentAvatar } from "@/components/agents/agent-avatar";
 import { AgentJobsEditor } from "@/components/agents/agent-jobs-editor";
 import { AgentsConversationList } from "@/components/agents/agents-conversation-list";
 import { AgentsWorkspaceComposer } from "@/components/agents/agents-workspace-composer";
+import { SchedulePicker } from "@/components/mission-control/schedule-picker";
 import { WebTerminal } from "@/components/terminal/web-terminal";
 import { useAgentsWorkspaceData } from "@/components/agents/use-agents-workspace-data";
 import {
   collectContextOptions,
   flattenTree,
-  slugify,
   togglePath,
   TRIGGER_LABELS,
   type StatusFilter,
@@ -38,6 +39,7 @@ import {
   deleteAgentJob,
   deleteAgentPersona,
   getAgentStack,
+  isRequestJsonError,
   runAgentJob,
   runAgentPersona,
   saveAgentJob,
@@ -48,9 +50,16 @@ import {
 import { replacePastedTextNotice } from "@/lib/agents/transcript-format";
 import { useTreeStore } from "@/stores/tree-store";
 import { useAppStore } from "@/stores/app-store";
-import type { CreateAgentPersonaRequest } from "@/types/agent-api";
+import { useAgentCreationDraftStore } from "@/stores/agent-creation-draft-store";
+import type { AgentPersonaDraft } from "@/types/agent-api";
 import type { AgentStackPayload, StackCatalogEntry } from "@/types/agent-stack";
 import type { JobConfig } from "@/types/jobs";
+import type { AgentLaunchConfig } from "@/types/launchers";
+import {
+  buildCreateAgentPersonaRequestFromDraft,
+  createDefaultAgentPersonaDraft,
+  slugifyAgentName,
+} from "@/lib/agents/agent-persona-draft";
 
 type MainPanelMode = "composer" | "conversation" | "settings";
 type NonSettingsMode = Exclude<MainPanelMode, "settings">;
@@ -58,31 +67,39 @@ type SettingsTarget = "directory" | "__new__" | string | null;
 type AgentSettingsTab = "definition" | "stack" | "jobs";
 type StackEditorTab = "context" | "extensions" | "skills";
 
-interface NewAgentDraft {
-  name: string;
-  slug: string;
-  emoji: string;
-  role: string;
-  heartbeat: string;
-  department: string;
-  type: string;
-  workspace: string;
-  body: string;
-  active: boolean;
-}
+type NewAgentDraft = AgentPersonaDraft;
 
-const DEFAULT_NEW_AGENT: NewAgentDraft = {
-  name: "",
-  slug: "",
-  emoji: "",
-  role: "",
-  heartbeat: "0 */4 * * *",
-  department: "general",
-  type: "specialist",
-  workspace: "workspace",
-  body: "",
-  active: true,
-};
+const DEFAULT_NEW_AGENT: NewAgentDraft = createDefaultAgentPersonaDraft();
+
+function normalizeLauncherConfig(
+  launcher?: AgentLaunchConfig | null
+): AgentLaunchConfig | null {
+  if (!launcher) return null;
+
+  const normalized: AgentLaunchConfig = {
+    launcherId: launcher.launcherId?.trim() || undefined,
+    model: launcher.model !== undefined ? launcher.model.trim() : undefined,
+    directCommand: launcher.directCommand?.trim() || undefined,
+    cwd: launcher.cwd?.trim() || undefined,
+    vars:
+      launcher.vars && Object.keys(launcher.vars).length > 0
+        ? launcher.vars
+        : undefined,
+    env:
+      launcher.env && Object.keys(launcher.env).length > 0
+        ? launcher.env
+        : undefined,
+  };
+
+  return normalized.launcherId ||
+    normalized.model ||
+    normalized.directCommand ||
+    normalized.cwd ||
+    normalized.vars ||
+    normalized.env
+    ? normalized
+    : null;
+}
 
 function AgentSettingsTabButton({
   active,
@@ -177,6 +194,7 @@ function StackOptionChecklist({
   options,
   selected,
   onToggle,
+  onOpen,
   filterText = "",
   emptyText = "No options found.",
 }: {
@@ -184,6 +202,7 @@ function StackOptionChecklist({
   options: StackCatalogEntry[];
   selected: string[];
   onToggle: (path: string) => void;
+  onOpen?: (path: string) => void;
   filterText?: string;
   emptyText?: string;
 }) {
@@ -221,7 +240,7 @@ function StackOptionChecklist({
           </p>
         ) : (
           filteredOptions.map((option) => (
-            <label
+            <div
               key={option.path}
               className="flex items-start gap-2 rounded-lg px-2 py-2 hover:bg-muted/40"
             >
@@ -231,7 +250,7 @@ function StackOptionChecklist({
                 onChange={() => onToggle(option.path)}
                 className="mt-0.5"
               />
-              <span className="min-w-0">
+              <span className="min-w-0 flex-1">
                 <span className="block text-[12px] text-foreground">
                   {option.label}
                 </span>
@@ -242,7 +261,18 @@ function StackOptionChecklist({
                   {option.source}
                 </span>
               </span>
-            </label>
+              {onOpen ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-[10px]"
+                  onClick={() => onOpen(option.path)}
+                >
+                  Open
+                </Button>
+              ) : null}
+            </div>
           ))
         )}
       </div>
@@ -256,6 +286,7 @@ function AgentStackSettingsCard({
   slug: string;
 }) {
   const nodes = useTreeStore((s) => s.nodes);
+  const openPath = useTreeStore((s) => s.openPath);
   const [payload, setPayload] = useState<AgentStackPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -518,6 +549,9 @@ function AgentStackSettingsCard({
                     togglePath(payload.stack?.extraExtensions || [], path)
                   )
                 }
+                onOpen={(path) => {
+                  void openPath(path);
+                }}
               />
             </div>
           ) : null}
@@ -550,6 +584,9 @@ function AgentStackSettingsCard({
                   onToggle={(path) =>
                     updateList("skills", togglePath(payload.stack?.skills || [], path))
                   }
+                  onOpen={(path) => {
+                    void openPath(path);
+                  }}
                 />
               </div>
 
@@ -582,6 +619,9 @@ function AgentStackSettingsCard({
                       togglePath(payload.stack?.skillsets || [], path)
                     )
                   }
+                  onOpen={(path) => {
+                    void openPath(path);
+                  }}
                 />
               </div>
             </div>
@@ -626,6 +666,10 @@ export function AgentsWorkspace({
   const [creatingAgent, setCreatingAgent] = useState(false);
   const [deletingAgent, setDeletingAgent] = useState(false);
   const [newAgentDraft, setNewAgentDraft] = useState<NewAgentDraft>(DEFAULT_NEW_AGENT);
+  const [newAgentSourceConversationId, setNewAgentSourceConversationId] = useState<string | null>(null);
+  const [createAgentFeedback, setCreateAgentFeedback] = useState<
+    { kind: "error" | "warning"; message: string } | null
+  >(null);
   const treeNodes = useTreeStore((state) => state.nodes);
   const selectedPath = useTreeStore((state) => state.selectedPath);
   const selectedNode = useTreeStore((state) =>
@@ -640,6 +684,13 @@ export function AgentsWorkspace({
   const setAgentSettingsReturnSection = useAppStore(
     (state) => state.setAgentSettingsReturnSection
   );
+  const seedAgentCreationDraft = useAgentCreationDraftStore(
+    (state) => state.seedFromConversation
+  );
+  const consumeAgentCreationDraft = useAgentCreationDraftStore(
+    (state) => state.consume
+  );
+  const clearAgentCreationDraft = useAgentCreationDraftStore((state) => state.clear);
 
   const settingsAgentSlug =
     settingsTarget && settingsTarget !== "directory" && settingsTarget !== "__new__"
@@ -659,6 +710,7 @@ export function AgentsWorkspace({
     settingsJobs,
     refreshAgents,
     refreshConversations,
+    refreshSelectedConversation,
     refreshSettings,
   } = useAgentsWorkspaceData({
     activeAgentSlug,
@@ -695,6 +747,16 @@ export function AgentsWorkspace({
     setShowCompletedTranscript(false);
   }, [selectedConversationId]);
 
+  useEffect(() => {
+    if (settingsTarget !== "__new__") return;
+    const seeded = consumeAgentCreationDraft();
+    if (!seeded.draft) return;
+    setNewAgentDraft(seeded.draft);
+    setNewAgentSourceConversationId(seeded.sourceConversationId);
+    setCreateAgentFeedback(null);
+    setActiveSettingsTab("definition");
+  }, [consumeAgentCreationDraft, settingsTarget]);
+
   function selectAgent(agentSlug: string | null, nextMode: MainPanelMode = "composer") {
     setActiveAgentSlug(agentSlug);
     setSelectedConversationId(null);
@@ -718,6 +780,13 @@ export function AgentsWorkspace({
     setJobDraft(null);
   }
 
+  function resetNewAgentDraftState() {
+    clearAgentCreationDraft();
+    setNewAgentDraft(createDefaultAgentPersonaDraft());
+    setNewAgentSourceConversationId(null);
+    setCreateAgentFeedback(null);
+  }
+
   function openAgentSettings(agentSlug: string) {
     if (mode !== "settings") {
       setPreviousMode(mode === "conversation" ? "conversation" : "composer");
@@ -727,6 +796,8 @@ export function AgentsWorkspace({
     setActiveSettingsTab("definition");
     setSelectedJobId(null);
     setJobDraft(null);
+    setNewAgentSourceConversationId(null);
+    setCreateAgentFeedback(null);
   }
 
   function startNewAgentDraft() {
@@ -738,7 +809,20 @@ export function AgentsWorkspace({
     setActiveSettingsTab("definition");
     setSelectedJobId(null);
     setJobDraft(null);
-    setNewAgentDraft(DEFAULT_NEW_AGENT);
+    resetNewAgentDraftState();
+  }
+
+  function reviewConversationAgentProposal(conversationId: string, draft: AgentPersonaDraft) {
+    if (mode !== "settings") {
+      setPreviousMode(mode === "conversation" ? "conversation" : "composer");
+    }
+    seedAgentCreationDraft(draft, conversationId);
+    setMode("settings");
+    setSettingsTarget("__new__");
+    setActiveSettingsTab("definition");
+    setSelectedJobId(null);
+    setJobDraft(null);
+    setCreateAgentFeedback(null);
   }
 
   function exitSettings() {
@@ -750,6 +834,8 @@ export function AgentsWorkspace({
     setSettingsTarget(null);
     setSelectedJobId(null);
     setJobDraft(null);
+    setNewAgentSourceConversationId(null);
+    setCreateAgentFeedback(null);
     setMode(selectedConversationId && previousMode === "conversation" ? "conversation" : "composer");
   }
 
@@ -784,8 +870,8 @@ export function AgentsWorkspace({
         department: settingsPersona.department,
         type: settingsPersona.type,
         heartbeat: settingsPersona.heartbeat,
-        workspace: settingsPersona.workspace,
         body: settingsBody,
+        launcher: normalizeLauncherConfig(settingsPersona.launcher),
       }).catch(() => null);
       if (result === null) return;
       await refreshAgents();
@@ -885,40 +971,45 @@ export function AgentsWorkspace({
   }
 
   async function createAgent() {
-    const slug = slugify(newAgentDraft.slug || newAgentDraft.name);
-    if (!newAgentDraft.name.trim() || !newAgentDraft.role.trim() || !slug) return;
+    const payload = buildCreateAgentPersonaRequestFromDraft(newAgentDraft);
+    if (!payload) return;
 
     setCreatingAgent(true);
     try {
-      const payload: CreateAgentPersonaRequest = {
-        slug,
-        name: newAgentDraft.name.trim(),
-        role: newAgentDraft.role.trim(),
-        emoji: newAgentDraft.emoji,
-        department: newAgentDraft.department,
-        type: newAgentDraft.type,
-        heartbeat: newAgentDraft.heartbeat,
-        workspace: newAgentDraft.workspace || "workspace",
-        provider: "claude-code",
-        budget: 100,
-        active: newAgentDraft.active,
-        workdir: "/data",
-        focus: [],
-        tags: [newAgentDraft.department],
-        channels:
-          newAgentDraft.department === "general"
-            ? ["general"]
-            : [newAgentDraft.department, "general"],
-        body:
-          newAgentDraft.body.trim() ||
-          `You are ${newAgentDraft.name.trim()}. ${newAgentDraft.role.trim()}`,
-      };
-      const result = await createAgentPersona(payload).catch(() => null);
-      if (result === null) return;
+      const result = await createAgentPersona(payload, {
+        sourceConversationId: newAgentSourceConversationId || undefined,
+      });
+      const slug = result.slug || payload.slug;
+      const warning =
+        result.proposalLinked === false
+          ? {
+              kind: "warning" as const,
+              message:
+                "Agent created, but the source conversation could not be marked as applied.",
+            }
+          : null;
+
       await refreshAgents();
+      await refreshConversations();
+      if (newAgentSourceConversationId) {
+        await refreshSelectedConversation(newAgentSourceConversationId);
+      }
       setSettingsTarget(slug);
-      setNewAgentDraft(DEFAULT_NEW_AGENT);
+      resetNewAgentDraftState();
+      if (warning) {
+        setCreateAgentFeedback(warning);
+      }
       await refreshSettings(slug);
+    } catch (error) {
+      setCreateAgentFeedback({
+        kind: "error",
+        message:
+          isRequestJsonError(error) && error.status === 409
+            ? error.message
+            : error instanceof Error
+              ? error.message
+              : "Failed to create agent.",
+      });
     } finally {
       setCreatingAgent(false);
     }
@@ -954,11 +1045,13 @@ export function AgentsWorkspace({
   const settingsAgent = settingsAgentSlug
     ? agents.find((agent) => agent.slug === settingsAgentSlug) || null
     : null;
-  const nextAgentSlug = slugify(newAgentDraft.slug || newAgentDraft.name);
-  const canCreateAgent =
-    Boolean(newAgentDraft.name.trim()) &&
-    Boolean(newAgentDraft.role.trim()) &&
-    Boolean(nextAgentSlug);
+  const canCreateAgent = Boolean(buildCreateAgentPersonaRequestFromDraft(newAgentDraft));
+  const selectedConversationProposal =
+    selectedConversationMeta?.agentProposal?.status === "applied"
+      ? selectedConversationMeta.agentProposal
+      : selectedConversation?.meta.agentProposal?.status === "applied"
+        ? selectedConversation.meta.agentProposal
+        : selectedConversationMeta?.agentProposal || selectedConversation?.meta.agentProposal;
   const settingsReturnLabel =
     section.view === "settings"
       ? agentSettingsReturnSection?.type === "page"
@@ -1055,6 +1148,93 @@ export function AgentsWorkspace({
               ) : selectedConversation ? (
                 <ScrollArea className="h-full bg-card/70">
                   <div className="space-y-4 p-5">
+                    {selectedConversationProposal ? (
+                      <div className="rounded-xl border border-border bg-background/80 p-4 shadow-sm">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                              Proposed agent
+                            </p>
+                            <p className="mt-2 text-[13px] font-medium text-foreground">
+                              {selectedConversationProposal.draft?.name || "Unnamed agent proposal"}
+                            </p>
+                            <p className="mt-1 text-[12px] text-muted-foreground">
+                              {selectedConversationProposal.draft?.slug || "missing-slug"}
+                              {selectedConversationProposal.draft?.role
+                                ? ` · ${selectedConversationProposal.draft.role}`
+                                : ""}
+                            </p>
+                          </div>
+                          {selectedConversationProposal.status === "pending" &&
+                          selectedConversationProposal.draft ? (
+                            <Button
+                              size="sm"
+                              className="h-8 text-xs"
+                              onClick={() =>
+                                reviewConversationAgentProposal(
+                                  selectedConversationMeta.id,
+                                  selectedConversationProposal.draft!
+                                )
+                              }
+                            >
+                              Review draft
+                            </Button>
+                          ) : selectedConversationProposal.status === "applied" &&
+                            selectedConversationProposal.createdAgentSlug ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 text-xs"
+                              onClick={() =>
+                                openAgentSettings(
+                                  selectedConversationProposal.createdAgentSlug!
+                                )
+                              }
+                            >
+                              Open settings
+                            </Button>
+                          ) : null}
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                          {selectedConversationProposal.draft?.heartbeat ? (
+                            <span className="rounded-full bg-muted px-2 py-1">
+                              {selectedConversationProposal.draft.heartbeat}
+                            </span>
+                          ) : null}
+                          {selectedConversationProposal.draft?.launcher?.launcherId ? (
+                            <span className="rounded-full bg-muted px-2 py-1">
+                              {selectedConversationProposal.draft.launcher.launcherId}
+                              {selectedConversationProposal.draft.launcher.model
+                                ? ` · ${selectedConversationProposal.draft.launcher.model}`
+                                : ""}
+                            </span>
+                          ) : null}
+                          <span className="rounded-full bg-muted px-2 py-1 capitalize">
+                            {selectedConversationProposal.status.replace(/_/g, " ")}
+                          </span>
+                        </div>
+                        {selectedConversationProposal.status === "applied" &&
+                        selectedConversationProposal.createdAgentSlug ? (
+                          <p className="mt-3 text-[12px] text-muted-foreground">
+                            Created as {selectedConversationProposal.createdAgentSlug}.
+                          </p>
+                        ) : selectedConversationProposal.status === "pending" ? (
+                          <p className="mt-3 text-[12px] text-muted-foreground">
+                            This proposal has not created anything yet. Review and confirm it in agent settings.
+                          </p>
+                        ) : null}
+                        {selectedConversationProposal.issues.length > 0 ? (
+                          <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-[12px] text-amber-100">
+                            <p className="font-medium text-amber-200">Proposal issues</p>
+                            <ul className="mt-2 list-disc space-y-1 pl-4">
+                              {selectedConversationProposal.issues.map((issue) => (
+                                <li key={issue}>{issue}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
                     <div className="rounded-xl border border-border bg-background/80 p-4 shadow-sm">
                       <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
                         Summary
@@ -1212,6 +1392,11 @@ export function AgentsWorkspace({
             </div>
             <ScrollArea className="h-full">
               <div className="space-y-6 p-5">
+                {createAgentFeedback?.kind === "warning" ? (
+                  <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-[12px] text-amber-100">
+                    {createAgentFeedback.message}
+                  </div>
+                ) : null}
                 {settingsTarget === "directory" || !settingsTarget ? (
                   <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                     {agents.map((agent) => (
@@ -1322,12 +1507,30 @@ export function AgentsWorkspace({
                       </div>
                     </div>
 
+                    {newAgentSourceConversationId ? (
+                      <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-[12px] text-blue-100">
+                        This draft came from conversation {newAgentSourceConversationId}. Review it before creating the agent.
+                      </div>
+                    ) : null}
+                    {createAgentFeedback ? (
+                      <div
+                        className={cn(
+                          "rounded-xl border px-4 py-3 text-[12px]",
+                          createAgentFeedback.kind === "error"
+                            ? "border-destructive/30 bg-destructive/10 text-destructive"
+                            : "border-amber-500/30 bg-amber-500/10 text-amber-100"
+                        )}
+                      >
+                        {createAgentFeedback.message}
+                      </div>
+                    ) : null}
+
                     {activeSettingsTab === "definition" ? (
                       <div className="rounded-xl border border-border p-5">
                         <div className="mb-4">
                           <h4 className="text-[13px] font-semibold">Definition</h4>
                           <p className="text-[11px] text-muted-foreground">
-                            Identity, cadence, workspace, and base instructions for the new agent.
+                            Identity, cadence, and base instructions for the new agent.
                           </p>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
@@ -1338,13 +1541,13 @@ export function AgentsWorkspace({
                               onChange={(event) =>
                                 setNewAgentDraft((current) => {
                                   const nextName = event.target.value;
-                                  const currentDerivedSlug = slugify(current.name);
+                                  const currentDerivedSlug = slugifyAgentName(current.name);
                                   return {
                                     ...current,
                                     name: nextName,
                                     slug:
                                       !current.slug || current.slug === currentDerivedSlug
-                                        ? slugify(nextName)
+                                        ? slugifyAgentName(nextName)
                                         : current.slug,
                                   };
                                 })
@@ -1360,7 +1563,7 @@ export function AgentsWorkspace({
                               onChange={(event) =>
                                 setNewAgentDraft({
                                   ...newAgentDraft,
-                                  slug: slugify(event.target.value),
+                                  slug: slugifyAgentName(event.target.value),
                                 })
                               }
                               className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground"
@@ -1378,42 +1581,18 @@ export function AgentsWorkspace({
                               placeholder="Product writing agent"
                             />
                           </label>
-                          <label className="space-y-1.5 text-[11px] text-muted-foreground">
-                            <span>Heartbeat</span>
-                            <input
+                          <div className="space-y-1.5 text-[11px] text-muted-foreground">
+                            <span className="block">Heartbeat</span>
+                            <SchedulePicker
                               value={newAgentDraft.heartbeat}
-                              onChange={(event) =>
+                              onChange={(heartbeat) =>
                                 setNewAgentDraft({
                                   ...newAgentDraft,
-                                  heartbeat: event.target.value,
+                                  heartbeat,
                                 })
                               }
-                              className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground"
                             />
-                          </label>
-                          <label className="space-y-1.5 text-[11px] text-muted-foreground">
-                            <span>Department</span>
-                            <input
-                              value={newAgentDraft.department}
-                              onChange={(event) =>
-                                setNewAgentDraft({
-                                  ...newAgentDraft,
-                                  department: event.target.value,
-                                })
-                              }
-                              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
-                            />
-                          </label>
-                          <label className="space-y-1.5 text-[11px] text-muted-foreground">
-                            <span>Type</span>
-                            <input
-                              value={newAgentDraft.type}
-                              onChange={(event) =>
-                                setNewAgentDraft({ ...newAgentDraft, type: event.target.value })
-                              }
-                              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
-                            />
-                          </label>
+                          </div>
                           <label className="space-y-1.5 text-[11px] text-muted-foreground">
                             <span>Avatar</span>
                             <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/20 px-3 py-2">
@@ -1434,20 +1613,23 @@ export function AgentsWorkspace({
                             />
                             Start active
                           </label>
-                          <label className="col-span-2 space-y-1.5 text-[11px] text-muted-foreground">
-                            <span>Workspace</span>
-                            <input
-                              value={newAgentDraft.workspace}
-                              onChange={(event) =>
+                          <div className="col-span-2 rounded-xl border border-border bg-muted/20 p-4">
+                            <div className="mb-3">
+                              <h5 className="text-[12px] font-medium text-foreground">Runtime</h5>
+                              <p className="mt-1 text-[11px] text-muted-foreground">
+                                Pick the launcher and model for this agent. PI-backed agents keep their stack linked through the generated pi-stack.json.
+                              </p>
+                            </div>
+                            <BasicLauncherFields
+                              value={newAgentDraft.launcher}
+                              onChange={(launcher) =>
                                 setNewAgentDraft({
                                   ...newAgentDraft,
-                                  workspace: event.target.value,
+                                  launcher,
                                 })
                               }
-                              className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground"
-                              placeholder="workspace"
                             />
-                          </label>
+                          </div>
                           <label className="col-span-2 space-y-1.5 text-[11px] text-muted-foreground">
                             <span>Instructions</span>
                             <textarea
@@ -1616,46 +1798,32 @@ export function AgentsWorkspace({
                               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
                             />
                           </label>
-                          <label className="space-y-1.5 text-[11px] text-muted-foreground">
-                            <span>Heartbeat</span>
-                            <input
+                          <div className="space-y-1.5 text-[11px] text-muted-foreground">
+                            <span className="block">Heartbeat</span>
+                            <SchedulePicker
                               value={settingsPersona.heartbeat || ""}
-                              onChange={(event) =>
-                                setSettingsPersona({ ...settingsPersona, heartbeat: event.target.value })
+                              onChange={(heartbeat) =>
+                                setSettingsPersona({ ...settingsPersona, heartbeat })
                               }
-                              className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground"
                             />
-                          </label>
-                          <label className="space-y-1.5 text-[11px] text-muted-foreground">
-                            <span>Department</span>
-                            <input
-                              value={settingsPersona.department || ""}
-                              onChange={(event) =>
-                                setSettingsPersona({ ...settingsPersona, department: event.target.value })
+                          </div>
+                          <div className="col-span-2 rounded-xl border border-border bg-muted/20 p-4">
+                            <div className="mb-3">
+                              <h5 className="text-[12px] font-medium text-foreground">Runtime</h5>
+                              <p className="mt-1 text-[11px] text-muted-foreground">
+                                Launcher selection controls how this agent starts. If you choose PI, the stack editor below continues to write the linked pi-stack.json.
+                              </p>
+                            </div>
+                            <BasicLauncherFields
+                              value={settingsPersona.launcher}
+                              onChange={(launcher) =>
+                                setSettingsPersona({
+                                  ...settingsPersona,
+                                  launcher,
+                                })
                               }
-                              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
                             />
-                          </label>
-                          <label className="space-y-1.5 text-[11px] text-muted-foreground">
-                            <span>Type</span>
-                            <input
-                              value={settingsPersona.type || ""}
-                              onChange={(event) =>
-                                setSettingsPersona({ ...settingsPersona, type: event.target.value })
-                              }
-                              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground"
-                            />
-                          </label>
-                          <label className="col-span-2 space-y-1.5 text-[11px] text-muted-foreground">
-                            <span>Workspace</span>
-                            <input
-                              value={settingsPersona.workspace || ""}
-                              onChange={(event) =>
-                                setSettingsPersona({ ...settingsPersona, workspace: event.target.value })
-                              }
-                              className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground"
-                            />
-                          </label>
+                          </div>
                           <label className="col-span-2 space-y-1.5 text-[11px] text-muted-foreground">
                             <span>Instructions</span>
                             <textarea

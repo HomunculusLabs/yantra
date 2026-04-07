@@ -28,6 +28,7 @@ import {
   readValidatedPluginDirectory,
   resolvePluginRelativePath,
 } from "@/lib/plugins/plugin-manifest";
+import { parsePluginVirtualPath } from "@/lib/storage/path-utils";
 import { fileExists, listDirectory } from "@/lib/storage/fs-operations";
 import type {
   InstalledPluginSummary,
@@ -519,6 +520,20 @@ export type HostedPluginViewResolution =
       status: 404 | 409;
       message: string;
     };
+
+export async function resolveBundlePluginAssetByVirtualPath(input: {
+  virtualPath: string;
+}): Promise<BundlePluginAssetResolution> {
+  const parsed = parsePluginVirtualPath(input.virtualPath);
+  if (!parsed) {
+    return { ok: false, status: 404, message: "Plugin bundle asset path is invalid." };
+  }
+
+  return resolveBundlePluginAsset({
+    pluginId: parsed.pluginId,
+    relativePath: parsed.relativePath,
+  });
+}
 
 export async function resolveBundlePluginAsset(input: {
   pluginId: string;

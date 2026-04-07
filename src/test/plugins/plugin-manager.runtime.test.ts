@@ -29,6 +29,12 @@ mock.module("@/lib/config/yantra-roots", () => ({
   }),
   resolveConfiguredVaultPath: (relativePath: string, root: string) =>
     path.resolve(root, relativePath),
+  isWithinRuntimeRoot: (fsPath: string) => fsPath.startsWith(runtimeRoot),
+  resolveVaultPath: (relativePath: string) => path.resolve(vaultRoot, relativePath),
+  resolveRuntimePath: (relativePath: string) => path.resolve(runtimeRoot, relativePath),
+  toVaultRelative: (fsPath: string) => path.relative(vaultRoot, fsPath).split(path.sep).join("/"),
+  toRuntimeRelative: (fsPath: string) =>
+    path.relative(runtimeRoot, fsPath).split(path.sep).join("/"),
   ensureVaultRootExists: () => {},
 }));
 
@@ -51,6 +57,7 @@ const {
   listEnabledOpenViewCommands,
   listInstalledPlugins,
   resolveBundlePluginAsset,
+  resolveBundlePluginAssetByVirtualPath,
   resolveHostedPluginAsset,
   resolveHostedPluginView,
 } = pluginManager;
@@ -519,6 +526,50 @@ describe("plugin-manager runtime resolution", () => {
     expect(missing.ok).toBe(false);
     if (missing.ok) throw new Error("Expected missing bundle asset rejection");
     expect(missing.status).toBe(409);
+  });
+
+  test("resolves declared bundle assets by canonical @plugin virtual path", async () => {
+    const manifest: PluginManifest = {
+      id: "sample-plugin",
+      name: "Sample Plugin",
+      version: "1.0.0",
+      apiVersion: 1,
+      kind: "bundle",
+      requestedCapabilities: { required: [], optional: [] },
+      bundle: {
+        skills: ["skills/release/SKILL.md"],
+      },
+    };
+    const { pluginRoot } = await writePluginFixture({
+      source: "local-install",
+      folderName: "sample-plugin",
+      manifest,
+      files: {
+        "skills/release/SKILL.md": "# Skill",
+      },
+    });
+    await writeStateFile({
+      [manifest.id]: approvedState(manifest, { grantedCapabilities: [] }),
+    });
+
+    const resolved = await resolveBundlePluginAssetByVirtualPath({
+      virtualPath: "@plugin/sample-plugin/skills/release/SKILL.md",
+    });
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) throw new Error("Expected canonical plugin virtual path resolution");
+    expect(resolved.absolutePath).toBe(path.join(pluginRoot, "skills/release/SKILL.md"));
+    expect(resolved.relativePath).toBe("skills/release/SKILL.md");
+    expect(resolved.contributionKind).toBe("skills");
+  });
+
+  test("rejects invalid plugin virtual bundle asset paths", async () => {
+    const resolved = await resolveBundlePluginAssetByVirtualPath({
+      virtualPath: "@plugin/sample-plugin",
+    });
+    expect(resolved.ok).toBe(false);
+    if (resolved.ok) throw new Error("Expected invalid virtual path rejection");
+    expect(resolved.status).toBe(404);
+    expect(resolved.message).toBe("Plugin bundle asset path is invalid.");
   });
 
   test("rejects bundle asset resolution when the plugin is disabled", async () => {

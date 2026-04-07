@@ -217,11 +217,13 @@ function OptionChecklist({
   options,
   selected,
   onToggle,
+  onOpen,
 }: {
   label: string;
   options: StackCatalogEntry[];
   selected: string[];
   onToggle: (path: string) => void;
+  onOpen?: (path: string) => void;
 }) {
   return (
     <div className="space-y-2">
@@ -233,7 +235,7 @@ function OptionChecklist({
           <p className="text-[11px] text-muted-foreground">No options found.</p>
         ) : (
           options.map((option) => (
-            <label
+            <div
               key={option.path}
               className="flex items-start gap-2 rounded-md px-2 py-1.5 hover:bg-muted/40"
             >
@@ -243,7 +245,7 @@ function OptionChecklist({
                 onChange={() => onToggle(option.path)}
                 className="mt-0.5"
               />
-              <span className="min-w-0">
+              <span className="min-w-0 flex-1">
                 <span className="block text-[12px] text-foreground">
                   {option.label}
                 </span>
@@ -254,7 +256,18 @@ function OptionChecklist({
                   {option.source}
                 </span>
               </span>
-            </label>
+              {onOpen ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-[10px]"
+                  onClick={() => onOpen(option.path)}
+                >
+                  Open
+                </Button>
+              ) : null}
+            </div>
           ))
         )}
       </div>
@@ -275,6 +288,7 @@ function StackConfigCard({
   slug: string;
   onSaved: () => void | Promise<void>;
 }) {
+  const openPath = useTreeStore((state) => state.openPath);
   const [payload, setPayload] = useState<AgentStackPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -465,6 +479,9 @@ function StackConfigCard({
                   togglePath(payload.stack?.extraExtensions || [], path)
                 )
               }
+              onOpen={(path) => {
+                void openPath(path);
+              }}
             />
             <OptionChecklist
               label="Skills"
@@ -473,6 +490,9 @@ function StackConfigCard({
               onToggle={(path) =>
                 updateList("skills", togglePath(payload.stack?.skills || [], path))
               }
+              onOpen={(path) => {
+                void openPath(path);
+              }}
             />
             <OptionChecklist
               label="Skillsets"
@@ -484,6 +504,9 @@ function StackConfigCard({
                   togglePath(payload.stack?.skillsets || [], path)
                 )
               }
+              onOpen={(path) => {
+                void openPath(path);
+              }}
             />
           </div>
         </>
