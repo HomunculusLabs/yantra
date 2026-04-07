@@ -7,13 +7,18 @@ import {
   resolveRuntimePath,
   resolveVaultPath,
 } from "@/lib/config/yantra-roots";
+import { listEnabledLauncherOverlayPlugins } from "@/lib/plugins/plugin-manager";
+import { resolvePluginRelativePath } from "@/lib/plugins/plugin-manifest";
 import type { JobConfig } from "@/types/jobs";
 import type {
   AgentLaunchConfig,
   CliLauncherDefinition,
   CliLauncherPromptDelivery,
   JobExecutionConfig,
+  LauncherCatalogEntry,
+  LauncherOverlayIssue,
   LauncherRegistryConfig,
+  LauncherRegistryReadResponse,
   ResolvedLaunchPreview,
   ResolvedLaunchSpec,
 } from "@/types/launchers";
@@ -21,6 +26,15 @@ import type { AgentPersona } from "@/types/personas";
 
 const DEFAULT_LAUNCHER_ID = "claude-code";
 const PI_AGENT_STACK_LAUNCHER_ID = "pi-agent-stack";
+const CODEX_LAUNCHER_ID = "codex";
+const PLUGIN_LAUNCHER_ID_PREFIX = "@plugin/";
+
+interface EffectiveLauncherRegistryState {
+  baseRegistry: LauncherRegistryConfig;
+  effectiveRegistry: LauncherRegistryConfig;
+  availableLaunchers: LauncherCatalogEntry[];
+  overlayIssues: LauncherOverlayIssue[];
+}
 
 export type LaunchSelectionSource =
   | "job.execution.launcherId"
@@ -38,6 +52,14 @@ export interface LaunchSelectionResult {
   mergedVars: Record<string, string>;
   agentLaunch?: AgentLaunchConfig;
   execution?: JobExecutionConfig;
+}
+
+function isPluginLauncherId(value: string): boolean {
+  return value.startsWith(PLUGIN_LAUNCHER_ID_PREFIX);
+}
+
+function getPluginLauncherId(pluginId: string, localLauncherId: string): string {
+  return `${PLUGIN_LAUNCHER_ID_PREFIX}${pluginId}/${localLauncherId}`;
 }
 
 function quoteShellArg(value: string): string {
@@ -223,11 +245,31 @@ function defaultLauncherRegistry(): LauncherRegistryConfig {
           submit: true,
         },
       },
+      [CODEX_LAUNCHER_ID]: {
+        id: CODEX_LAUNCHER_ID,
+        label: "Codex CLI",
+        description:
+          "Launches Codex CLI directly and injects the initial prompt as an argv argument.",
+        command: process.env.YANTRA_CODEX_COMMAND?.trim() || "codex",
+        args: ["--dangerously-bypass-approvals-and-sandbox"],
+        cwdBase: "vault",
+        promptDelivery: {
+          method: "argv",
+          promptArgs: ["{{prompt}}"],
+        },
+        healthcheck: {
+          command: process.env.YANTRA_CODEX_COMMAND?.trim() || "codex",
+          args: ["--version"],
+        },
+      },
     },
   };
 }
 
-export function validateLauncherRegistryConfig(input: unknown): {
+export function validateLauncherRegistryConfig(
+  input: unknown,
+  options?: { allowPluginLauncherIds?: boolean }
+): {
   config: LauncherRegistryConfig;
   issues: Array<{ path: string; message: string }>;
 } {
@@ -247,13 +289,22 @@ export function validateLauncherRegistryConfig(input: unknown): {
     issues.push({ path: "version", message: "Only version 1 launcher registries are supported." });
   }
 
-  const defaultLauncherId =
+  const requestedDefaultLauncherId =
     typeof raw.defaultLauncherId === "string" && raw.defaultLauncherId.trim()
       ? raw.defaultLauncherId.trim()
       : defaults.defaultLauncherId;
+  const defaultLauncherId =
+    !options?.allowPluginLauncherIds && isPluginLauncherId(requestedDefaultLauncherId)
+      ? defaults.defaultLauncherId
+      : requestedDefaultLauncherId;
 
   if (!(typeof raw.defaultLauncherId === "string" && raw.defaultLauncherId.trim())) {
     issues.push({ path: "defaultLauncherId", message: "defaultLauncherId must be a non-empty string." });
+  } else if (!options?.allowPluginLauncherIds && isPluginLauncherId(requestedDefaultLauncherId)) {
+    issues.push({
+      path: "defaultLauncherId",
+      message: "defaultLauncherId cannot reference a plugin-contributed launcher.",
+    });
   }
 
   const defaultTransport =
@@ -267,9 +318,21 @@ export function validateLauncherRegistryConfig(input: unknown): {
     issues.push({ path: "defaultTransport", message: "defaultTransport must be \"direct\" or \"tmux\"." });
   }
 
-  const rawLaunchers = isPlainObject(raw.launchers) ? raw.launchers : {};
+  const rawLaunchersInput = isPlainObject(raw.launchers) ? raw.launchers : {};
   if (!isPlainObject(raw.launchers)) {
     issues.push({ path: "launchers", message: "launchers must be an object keyed by launcher id." });
+  }
+
+  const rawLaunchers: Record<string, unknown> = {};
+  for (const [launcherId, launcherValue] of Object.entries(rawLaunchersInput)) {
+    if (!options?.allowPluginLauncherIds && isPluginLauncherId(launcherId)) {
+      issues.push({
+        path: `launchers.${launcherId}`,
+        message: "Plugin-contributed launcher ids are read-only and cannot be saved into the owned launcher registry.",
+      });
+      continue;
+    }
+    rawLaunchers[launcherId] = launcherValue;
   }
 
   const launcherIds = new Set<string>([
@@ -459,6 +522,219 @@ export async function saveLauncherRegistry(
   await fs.writeFile(configPath, JSON.stringify(normalized, null, 2), "utf-8");
 }
 
+function sortLauncherCatalogEntries(
+  entries: LauncherCatalogEntry[],
+  defaultLauncherId: string
+): LauncherCatalogEntry[] {
+  return [...entries].sort((left, right) => {
+    if (left.id === defaultLauncherId) return -1;
+    if (right.id === defaultLauncherId) return 1;
+    if (left.source.kind !== right.source.kind) {
+      return left.source.kind === "owned" ? -1 : 1;
+    }
+    return left.label.localeCompare(right.label);
+  });
+}
+
+function validatePluginLauncherOverlayFile(input: {
+  pluginId: string;
+  pluginName: string;
+  content: unknown;
+}): {
+  launchers: Record<string, CliLauncherDefinition>;
+  catalogEntries: LauncherCatalogEntry[];
+  issues: LauncherOverlayIssue[];
+} {
+  const issues: LauncherOverlayIssue[] = [];
+  const pushIssue = (message: string) => {
+    issues.push({
+      pluginId: input.pluginId,
+      pluginName: input.pluginName,
+      message,
+    });
+  };
+
+  if (!isPlainObject(input.content)) {
+    pushIssue("Launcher overlay must be a JSON object.");
+    return { launchers: {}, catalogEntries: [], issues };
+  }
+
+  if (input.content.version !== 1) {
+    pushIssue("Launcher overlay version must be 1.");
+  }
+  if ("defaultLauncherId" in input.content) {
+    pushIssue("Launcher overlays cannot declare defaultLauncherId.");
+  }
+  if ("defaultTransport" in input.content) {
+    pushIssue("Launcher overlays cannot declare defaultTransport.");
+  }
+  if (!isPlainObject(input.content.launchers)) {
+    pushIssue("Launcher overlay must define a launchers object.");
+    return { launchers: {}, catalogEntries: [], issues };
+  }
+
+  const overlayLaunchers = input.content.launchers as Record<string, unknown>;
+  const normalizedLaunchers: Record<string, unknown> = {};
+  const localLauncherIds: Array<{ localId: string; effectiveId: string }> = [];
+
+  for (const [localId, launcherValue] of Object.entries(overlayLaunchers)) {
+    if (!localId.trim() || localId.includes("/") || localId === "." || localId === "..") {
+      pushIssue(`Launcher overlay id '${localId}' is invalid.`);
+      continue;
+    }
+    const effectiveId = getPluginLauncherId(input.pluginId, localId.trim());
+    normalizedLaunchers[effectiveId] = {
+      ...(isPlainObject(launcherValue) ? launcherValue : {}),
+      id: effectiveId,
+    };
+    localLauncherIds.push({ localId: localId.trim(), effectiveId });
+  }
+
+  const validated = validateLauncherRegistryConfig(
+    {
+      version: 1,
+      defaultLauncherId: DEFAULT_LAUNCHER_ID,
+      defaultTransport: "direct",
+      launchers: normalizedLaunchers,
+    },
+    { allowPluginLauncherIds: true }
+  );
+
+  for (const issue of validated.issues) {
+    if (issue.path === "defaultLauncherId" || issue.path === "defaultTransport") {
+      continue;
+    }
+    if (issue.path.startsWith("launchers.claude-code") || issue.path.startsWith("launchers.pi-agent-stack") || issue.path.startsWith("launchers.codex")) {
+      continue;
+    }
+    pushIssue(`${issue.path}: ${issue.message}`);
+  }
+
+  if (issues.length > 0) {
+    return { launchers: {}, catalogEntries: [], issues };
+  }
+
+  const launchers = Object.fromEntries(
+    localLauncherIds
+      .map(({ effectiveId }) => {
+        const launcher = validated.config.launchers[effectiveId];
+        return launcher ? [effectiveId, launcher] : null;
+      })
+      .filter((entry): entry is [string, CliLauncherDefinition] => Boolean(entry))
+  );
+
+  const catalogEntries: LauncherCatalogEntry[] = [];
+  for (const { localId, effectiveId } of localLauncherIds) {
+    const launcher = launchers[effectiveId];
+    if (!launcher) continue;
+    catalogEntries.push({
+      id: effectiveId,
+      label: launcher.label,
+      description: launcher.description,
+      readOnly: true,
+      source: {
+        kind: "plugin",
+        pluginId: input.pluginId,
+        pluginName: input.pluginName,
+        localId,
+      },
+    });
+  }
+
+  return { launchers, catalogEntries, issues };
+}
+
+async function buildEffectiveLauncherRegistryState(
+  baseRegistry?: LauncherRegistryConfig
+): Promise<EffectiveLauncherRegistryState> {
+  const resolvedBaseRegistry = baseRegistry ?? (await loadLauncherRegistry());
+  const effectiveLaunchers: Record<string, CliLauncherDefinition> = {
+    ...resolvedBaseRegistry.launchers,
+  };
+  const overlayIssues: LauncherOverlayIssue[] = [];
+  const availableLaunchers: LauncherCatalogEntry[] = Object.values(
+    resolvedBaseRegistry.launchers
+  ).map(
+    (launcher) => ({
+      id: launcher.id,
+      label: launcher.label,
+      description: launcher.description,
+      readOnly: false,
+      source: { kind: "owned" },
+    })
+  );
+
+  const overlayPlugins = await listEnabledLauncherOverlayPlugins();
+  for (const plugin of overlayPlugins) {
+    const overlayPath = resolvePluginRelativePath(
+      plugin.source.pluginPath,
+      plugin.manifest.bundle.overlays.launchers
+    );
+    if (!overlayPath) {
+      overlayIssues.push({
+        pluginId: plugin.manifest.id,
+        pluginName: plugin.manifest.name,
+        message: `Launcher overlay path '${plugin.manifest.bundle.overlays.launchers}' is invalid.`,
+      });
+      continue;
+    }
+
+    try {
+      const rawOverlay = JSON.parse(await fs.readFile(overlayPath, "utf-8"));
+      const validated = validatePluginLauncherOverlayFile({
+        pluginId: plugin.manifest.id,
+        pluginName: plugin.manifest.name,
+        content: rawOverlay,
+      });
+      overlayIssues.push(...validated.issues);
+      Object.assign(effectiveLaunchers, validated.launchers);
+      availableLaunchers.push(...validated.catalogEntries);
+    } catch (error) {
+      overlayIssues.push({
+        pluginId: plugin.manifest.id,
+        pluginName: plugin.manifest.name,
+        message:
+          error instanceof Error
+            ? `Failed to read launcher overlay: ${error.message}`
+            : "Failed to read launcher overlay.",
+      });
+    }
+  }
+
+  return {
+    baseRegistry: resolvedBaseRegistry,
+    effectiveRegistry: {
+      ...resolvedBaseRegistry,
+      launchers: effectiveLaunchers,
+    },
+    availableLaunchers: sortLauncherCatalogEntries(
+      availableLaunchers,
+      resolvedBaseRegistry.defaultLauncherId
+    ),
+    overlayIssues,
+  };
+}
+
+export async function getLauncherRegistryReadResponse(): Promise<LauncherRegistryReadResponse> {
+  const state = await buildEffectiveLauncherRegistryState();
+  return {
+    registry: state.baseRegistry,
+    availableLaunchers: state.availableLaunchers,
+    overlayIssues: state.overlayIssues,
+  };
+}
+
+export async function loadEffectiveLauncherRegistry(): Promise<LauncherRegistryConfig> {
+  return (await buildEffectiveLauncherRegistryState()).effectiveRegistry;
+}
+
+function formatMissingLauncherMessage(launcherId: string): string {
+  if (isPluginLauncherId(launcherId)) {
+    return `Plugin-contributed launcher not found or unavailable: ${launcherId}`;
+  }
+  return `Launcher not found: ${launcherId}`;
+}
+
 function resolveBaseCwd(
   launcher: CliLauncherDefinition,
   cwdOverride: string | undefined
@@ -610,6 +886,24 @@ function createTemplateContext(input: {
   };
 }
 
+function resolveBuiltInModelArgs(
+  launcherId: string,
+  model: string | undefined
+): string[] {
+  const cleaned = model?.trim();
+  if (!cleaned) return [];
+
+  if (
+    launcherId === DEFAULT_LAUNCHER_ID ||
+    launcherId === PI_AGENT_STACK_LAUNCHER_ID ||
+    launcherId === CODEX_LAUNCHER_ID
+  ) {
+    return ["--model", cleaned];
+  }
+
+  return [];
+}
+
 function resolveBaseLaunchCommand(input: {
   launcher: CliLauncherDefinition;
   agentLaunch?: AgentLaunchConfig;
@@ -644,7 +938,10 @@ function resolveBaseLaunchCommand(input: {
 
   return {
     command: expandTemplate(input.launcher.command, input.templateContext),
-    args: input.launcher.args.map((arg) => expandTemplate(arg, input.templateContext)),
+    args: [
+      ...input.launcher.args.map((arg) => expandTemplate(arg, input.templateContext)),
+      ...resolveBuiltInModelArgs(input.launcher.id, input.agentLaunch?.model),
+    ],
     usesDirectCommand: false,
   };
 }
@@ -795,7 +1092,7 @@ export async function resolveLaunchSelection(input: {
   job?: JobConfig;
   registry?: LauncherRegistryConfig;
 }): Promise<LaunchSelectionResult> {
-  const registry = input.registry || (await loadLauncherRegistry());
+  const registry = input.registry || (await loadEffectiveLauncherRegistry());
   const { launcherId, source } = resolveLauncherId(registry, input.persona, input.job);
   const launcher = registry.launchers[launcherId] || null;
   const agentLaunch = input.persona?.launcher;
@@ -827,7 +1124,7 @@ export async function resolveLaunchSpec(input: {
   });
 
   if (!selection.launcher) {
-    throw new Error(`Launcher not found: ${selection.launcherId}`);
+    throw new Error(formatMissingLauncherMessage(selection.launcherId));
   }
 
   const agentLaunch = selection.shouldInheritAgent
@@ -899,7 +1196,7 @@ export async function resolveLaunchPreview(input: {
   });
 
   if (!selection.launcher) {
-    throw new Error(`Launcher not found: ${selection.launcherId}`);
+    throw new Error(formatMissingLauncherMessage(selection.launcherId));
   }
 
   const agentLaunch = selection.shouldInheritAgent

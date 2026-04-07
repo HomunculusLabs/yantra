@@ -1,9 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
-import path from "path";
-import { resolveContentPath } from "@/lib/storage/path-utils";
-import { fileExists } from "@/lib/storage/fs-operations";
-import { autoCommit } from "@/lib/git/git-service";
 import fs from "fs/promises";
+import path from "path";
+import { NextRequest, NextResponse } from "next/server";
+import { autoCommit } from "@/lib/git/git-service";
+import { fileExists } from "@/lib/storage/fs-operations";
+import { resolveVirtualContentPath } from "@/lib/storage/virtual-content-paths";
 
 const MIME_TYPES: Record<string, string> = {
   ".png": "image/png",
@@ -28,14 +28,20 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
   try {
     const { path: segments } = await params;
     const virtualPath = segments.join("/");
-    const resolved = resolveContentPath(virtualPath);
+    const resolved = await resolveVirtualContentPath({
+      virtualPath,
+      access: "read",
+    });
+    if (!resolved.ok) {
+      return NextResponse.json({ error: resolved.message }, { status: resolved.status });
+    }
 
-    if (!(await fileExists(resolved))) {
+    if (!(await fileExists(resolved.absolutePath))) {
       return NextResponse.json({ error: "File not found" }, { status: 404 });
     }
 
-    const buffer = await fs.readFile(resolved);
-    const ext = path.extname(resolved).toLowerCase();
+    const buffer = await fs.readFile(resolved.absolutePath);
+    const ext = path.extname(resolved.absolutePath).toLowerCase();
     const contentType = MIME_TYPES[ext] || "application/octet-stream";
 
     return new NextResponse(buffer, {
@@ -54,9 +60,16 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
   try {
     const { path: segments } = await params;
     const virtualPath = segments.join("/");
-    const resolved = resolveContentPath(virtualPath);
+    const resolved = await resolveVirtualContentPath({
+      virtualPath,
+      access: "write",
+    });
+    if (!resolved.ok) {
+      return NextResponse.json({ error: resolved.message }, { status: resolved.status });
+    }
+
     const body = await req.text();
-    await fs.writeFile(resolved, body, "utf-8");
+    await fs.writeFile(resolved.absolutePath, body, "utf-8");
     autoCommit(virtualPath, "Update");
     return NextResponse.json({ ok: true });
   } catch (error) {

@@ -11,6 +11,7 @@ import {
 export const DATA_DIR = getYantraRoots().vaultRoot;
 export const RUNTIME_DIR = getYantraRoots().runtimeRoot;
 export const RUNTIME_VIRTUAL_PREFIX = "@runtime";
+export const PLUGIN_VIRTUAL_PREFIX = "@plugin";
 
 const EXCLUDED_ENTRIES = new Set([
   ".git",
@@ -23,6 +24,19 @@ const EXCLUDED_ENTRIES = new Set([
   "coverage",
   ".DS_Store",
 ]);
+
+function normalizePluginVirtualRelativePath(relativePath: string): string | null {
+  if (typeof relativePath !== "string") return null;
+  const trimmed = relativePath.trim();
+  if (!trimmed || path.isAbsolute(trimmed)) return null;
+  const normalized = path.posix
+    .normalize(trimmed.replace(/\\/g, "/").replace(/^\.\//, ""))
+    .replace(/^\/+/, "");
+  if (!normalized || normalized === "." || normalized === ".." || normalized.startsWith("../")) {
+    return null;
+  }
+  return normalized;
+}
 
 export function resolveContentPath(virtualPath: string): string {
   if (isRuntimeVirtualPath(virtualPath)) {
@@ -44,6 +58,39 @@ export function isRuntimeVirtualPath(virtualPath: string): boolean {
     virtualPath === RUNTIME_VIRTUAL_PREFIX ||
     virtualPath.startsWith(`${RUNTIME_VIRTUAL_PREFIX}/`)
   );
+}
+
+export function isPluginVirtualPath(virtualPath: string): boolean {
+  return (
+    virtualPath === PLUGIN_VIRTUAL_PREFIX ||
+    virtualPath.startsWith(`${PLUGIN_VIRTUAL_PREFIX}/`)
+  );
+}
+
+export function parsePluginVirtualPath(
+  virtualPath: string
+): { pluginId: string; relativePath: string } | null {
+  if (!isPluginVirtualPath(virtualPath)) return null;
+  const stripped = virtualPath.slice(PLUGIN_VIRTUAL_PREFIX.length).replace(/^\/+/, "");
+  const [pluginId, ...relativeSegments] = stripped.split("/").filter(Boolean);
+  if (!pluginId || /[\\/]/.test(pluginId) || relativeSegments.length === 0) {
+    return null;
+  }
+
+  const relativePath = normalizePluginVirtualRelativePath(relativeSegments.join("/"));
+  if (!relativePath) return null;
+  return { pluginId, relativePath };
+}
+
+export function buildPluginVirtualPath(pluginId: string, relativePath: string): string | null {
+  if (typeof pluginId !== "string" || !pluginId.trim() || /[\\/]/.test(pluginId)) {
+    return null;
+  }
+  const normalizedRelativePath = normalizePluginVirtualRelativePath(relativePath);
+  if (!normalizedRelativePath) {
+    return null;
+  }
+  return `${PLUGIN_VIRTUAL_PREFIX}/${pluginId.trim()}/${normalizedRelativePath}`;
 }
 
 export function stripRuntimePrefix(virtualPath: string): string {

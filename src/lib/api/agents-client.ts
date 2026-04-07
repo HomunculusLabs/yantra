@@ -1,3 +1,10 @@
+import {
+  isRequestJsonError,
+  RequestJsonError,
+  requestJson,
+} from "@/lib/api/request-json";
+
+export { isRequestJsonError, RequestJsonError };
 import type {
   AgentDetailResponse,
   AgentExportBundle,
@@ -8,6 +15,7 @@ import type {
   AgentWorkspaceFile,
   CompanyConfigSummary,
   CreateAgentPersonaRequest,
+  CreateAgentPersonaResponse,
   CreateDaemonSessionRequest,
   CreateDaemonSessionResponse,
   SaveAgentPersonaRequest,
@@ -15,6 +23,7 @@ import type {
   SchedulerStatusResponse,
 } from "@/types/agent-api";
 import type { AgentStackConfig, AgentStackPayload } from "@/types/agent-stack";
+import type { LauncherRegistryConfig, LauncherRegistryReadResponse } from "@/types/launchers";
 import type { AgentTask, SlackMessage } from "@/types/agents";
 import type {
   BrowserDaemonStatus,
@@ -35,41 +44,6 @@ import type {
   ConversationTrigger,
 } from "@/types/conversations";
 import type { CreateJobPayload, JobConfig, JobRun, UpdateJobPayload } from "@/types/jobs";
-
-export class RequestJsonError extends Error {
-  status: number;
-  payload: unknown;
-
-  constructor(message: string, status: number, payload: unknown) {
-    super(message);
-    this.name = "RequestJsonError";
-    this.status = status;
-    this.payload = payload;
-  }
-}
-
-export function isRequestJsonError(error: unknown): error is RequestJsonError {
-  return error instanceof RequestJsonError;
-}
-
-async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init);
-  const data = await response.json().catch(() => null);
-
-  if (!response.ok) {
-    const fallback =
-      response.statusText || `Request failed with status ${response.status}`;
-    throw new RequestJsonError(
-      typeof data === "object" && data && "error" in data
-        ? String(data.error)
-        : fallback,
-      response.status,
-      data
-    );
-  }
-
-  return data as T;
-}
 
 function withSearchParams(
   path: string,
@@ -107,7 +81,6 @@ function normalizeAgentDetail(detail: AgentDetailResponse): AgentDetailResponse 
       heartbeat: detail.persona.heartbeat,
       department: detail.persona.department || "general",
       type: detail.persona.type || "specialist",
-      workspace: detail.persona.workspace || "workspace",
       body: detail.persona.body || "",
       tags: detail.persona.tags || [],
       focus: detail.persona.focus || [],
@@ -143,11 +116,20 @@ export async function getAgentDetail(
 }
 
 export async function createAgentPersona(
-  payload: CreateAgentPersonaRequest
-): Promise<void> {
-  await requestJson("/api/agents/personas", {
+  payload: CreateAgentPersonaRequest,
+  options?: { sourceConversationId?: string }
+): Promise<CreateAgentPersonaResponse> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  if (options?.sourceConversationId?.trim()) {
+    headers["X-Yantra-Source-Conversation"] = options.sourceConversationId.trim();
+  }
+
+  return requestJson<CreateAgentPersonaResponse>("/api/agents/personas", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(payload),
   });
 }
@@ -384,11 +366,13 @@ export async function saveRootsConfig(payload: {
   });
 }
 
-export async function getLauncherRegistry(): Promise<unknown> {
-  return requestJson<unknown>("/api/agents/config/launchers");
+export async function getLauncherRegistry(): Promise<LauncherRegistryReadResponse> {
+  return requestJson<LauncherRegistryReadResponse>("/api/agents/config/launchers");
 }
 
-export async function saveLauncherRegistry(payload: unknown): Promise<void> {
+export async function saveLauncherRegistry(
+  payload: LauncherRegistryConfig | { registry: LauncherRegistryConfig }
+): Promise<void> {
   await requestJson("/api/agents/config/launchers", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -547,6 +531,17 @@ export async function getConversationDetail(
   id: string
 ): Promise<ConversationDetail> {
   return requestJson<ConversationDetail>(`/api/agents/conversations/${id}`);
+}
+
+export async function patchConversationProposal(
+  id: string,
+  action: "decline_agent_proposal" | "restore_agent_proposal"
+): Promise<ConversationDetail> {
+  return requestJson<ConversationDetail>(`/api/agents/conversations/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action }),
+  });
 }
 
 export async function createManualConversation(payload: {

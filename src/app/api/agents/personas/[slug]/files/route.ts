@@ -1,51 +1,30 @@
 import fs from "fs/promises";
 import path from "path";
 import { NextResponse } from "next/server";
-import { getYantraRoots } from "@/lib/config/yantra-roots";
 import { readPersona } from "@/lib/agents/persona-manager";
-import { toRuntimeVirtualPath } from "@/lib/storage/path-utils";
+import { normalizeVaultRelativePath } from "@/lib/agents/stack-manager";
+import { getYantraRoots } from "@/lib/config/yantra-roots";
+import { resolveBundlePluginAsset } from "@/lib/plugins/plugin-manager";
+import {
+  buildPluginVirtualPath,
+  parsePluginVirtualPath,
+  toRuntimeVirtualPath,
+} from "@/lib/storage/path-utils";
+import type { AgentRelatedFile } from "@/types/agent-api";
 
 type RouteParams = { params: Promise<{ slug: string }> };
 
-type AgentRelatedFile = {
-  label: string;
-  path: string;
-  scope: "vault" | "runtime";
-  kind:
-    | "persona"
-    | "stack"
-    | "context"
-    | "instruction"
-    | "extension"
-    | "skill";
-  description?: string;
-  exists: boolean;
-  creatable?: boolean;
-};
-
-function toPosix(relativePath: string): string {
-  return relativePath.split(path.sep).join("/");
-}
-
-function normalizeVaultRelativePath(input: unknown, vaultRoot: string): string | null {
+function normalizeContributionPath(input: unknown, vaultRoot: string): string | null {
   if (typeof input !== "string") return null;
   const trimmed = input.trim();
   if (!trimmed) return null;
 
-  const withoutDot = trimmed.replace(/^\.\//, "");
-  if (path.isAbsolute(withoutDot)) {
-    const resolved = path.resolve(withoutDot);
-    const normalizedVaultRoot = path.resolve(vaultRoot);
-    if (
-      resolved !== normalizedVaultRoot &&
-      !resolved.startsWith(`${normalizedVaultRoot}${path.sep}`)
-    ) {
-      return null;
-    }
-    return toPosix(path.relative(normalizedVaultRoot, resolved));
+  const parsedPluginPath = parsePluginVirtualPath(trimmed);
+  if (parsedPluginPath) {
+    return buildPluginVirtualPath(parsedPluginPath.pluginId, parsedPluginPath.relativePath);
   }
 
-  return withoutDot.split(path.sep).join("/");
+  return normalizeVaultRelativePath(trimmed, vaultRoot);
 }
 
 async function exists(absPath: string): Promise<boolean> {
@@ -74,9 +53,21 @@ export async function GET(_req: Request, { params }: RouteParams) {
       if (resolvedExists === undefined) {
         if (file.scope === "vault") {
           resolvedExists = await exists(path.join(roots.vaultRoot, file.path));
-        } else {
+        } else if (file.scope === "runtime") {
           const runtimeRelative = file.path.replace(/^@runtime\/?/, "");
           resolvedExists = await exists(path.join(roots.runtimeRoot, runtimeRelative));
+        } else {
+          const parsedPluginPath = parsePluginVirtualPath(file.path);
+          if (!parsedPluginPath) {
+            resolvedExists = false;
+          } else {
+            resolvedExists = (
+              await resolveBundlePluginAsset({
+                pluginId: parsedPluginPath.pluginId,
+                relativePath: parsedPluginPath.relativePath,
+              })
+            ).ok;
+          }
         }
       }
 
@@ -167,13 +158,13 @@ export async function GET(_req: Request, { params }: RouteParams) {
           if (!Array.isArray(values)) return;
           let index = 0;
           for (const value of values) {
-            const normalized = normalizeVaultRelativePath(value, roots.vaultRoot);
+            const normalized = normalizeContributionPath(value, roots.vaultRoot);
             if (!normalized) continue;
             index += 1;
             await addFile({
               label: `${prefix} ${index}`,
               path: normalized,
-              scope: "vault",
+              scope: parsePluginVirtualPath(normalized) ? "plugin" : "vault",
               kind,
               description,
             });
@@ -204,12 +195,22 @@ export async function GET(_req: Request, { params }: RouteParams) {
           "Skillset",
           "Configured skillset file"
         );
-        await addPathArray(
-          stack.contextFiles,
-          "context",
-          "Context file",
-          "Injected context file"
-        );
+
+        if (Array.isArray(stack.contextFiles)) {
+          let index = 0;
+          for (const value of stack.contextFiles) {
+            const normalized = normalizeVaultRelativePath(value, roots.vaultRoot);
+            if (!normalized) continue;
+            index += 1;
+            await addFile({
+              label: `Context file ${index}`,
+              path: normalized,
+              scope: "vault",
+              kind: "context",
+              description: "Injected context file",
+            });
+          }
+        }
       }
     }
 

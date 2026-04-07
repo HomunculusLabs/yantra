@@ -141,6 +141,7 @@ export async function PUT(req: NextRequest) {
         agents?: { path?: string; recursive?: boolean };
         skills?: { path?: string; recursive?: boolean };
         extensions?: { path?: string; recursive?: boolean };
+        plugins?: { path?: string; recursive?: boolean };
         mcp?: { path?: string; recursive?: boolean };
         todo?: { path?: string; recursive?: boolean };
         tasks?: { path?: string; recursive?: boolean };

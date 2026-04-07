@@ -45,8 +45,40 @@ export interface LauncherRegistryConfig {
   launchers: Record<string, CliLauncherDefinition>;
 }
 
+export interface LauncherCatalogOwnedSource {
+  kind: "owned";
+}
+
+export interface LauncherCatalogPluginSource {
+  kind: "plugin";
+  pluginId: string;
+  pluginName: string;
+  localId: string;
+}
+
+export interface LauncherCatalogEntry {
+  id: string;
+  label: string;
+  description?: string;
+  readOnly: boolean;
+  source: LauncherCatalogOwnedSource | LauncherCatalogPluginSource;
+}
+
+export interface LauncherOverlayIssue {
+  pluginId: string;
+  pluginName: string;
+  message: string;
+}
+
+export interface LauncherRegistryReadResponse {
+  registry: LauncherRegistryConfig;
+  availableLaunchers: LauncherCatalogEntry[];
+  overlayIssues: LauncherOverlayIssue[];
+}
+
 export interface AgentLaunchConfig {
   launcherId?: string;
+  model?: string;
   directCommand?: string;
   cwd?: string;
   vars?: Record<string, string>;

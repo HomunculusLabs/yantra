@@ -14,6 +14,7 @@ export type AgentStackConfig = {
     tertiary?: string;
   };
   contextFiles?: string[];
+  // skills/skillsets/extraExtensions may contain vault-relative paths or @plugin/<pluginId>/<relativePath>.
   skills?: string[];
   skillsets?: string[];
   workflows?: Array<{ command: string; description: string }>;

@@ -15,6 +15,7 @@ import {
   Play,
   Pause,
 } from "lucide-react";
+import { LauncherIdSelect } from "@/components/agents/launcher-id-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -452,11 +453,14 @@ export function JobsManager() {
             </div>
             <div>
               <label className="text-[11px] text-muted-foreground uppercase tracking-wide">Launcher ID</label>
-              <Input
+              <LauncherIdSelect
                 value={form.executionLauncherId}
-                onChange={(e) => setForm((f) => ({ ...f, executionLauncherId: e.target.value }))}
-                placeholder="inherit agent launcher"
-                className="mt-1 h-8 text-[13px]"
+                onChange={(executionLauncherId) =>
+                  setForm((f) => ({ ...f, executionLauncherId }))
+                }
+                includeEmpty
+                emptyLabel="Inherit agent launcher"
+                className="mt-1 h-8 w-full rounded-md border border-input bg-background px-3 py-2 text-[13px] ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
               />
             </div>
             <div>
@@ -505,6 +509,27 @@ export function JobsManager() {
                 onChange={(e) => setForm((f) => ({ ...f, prompt: e.target.value }))}
                 rows={4}
                 className="mt-1 w-full px-3 py-2 text-[13px] rounded-md border border-border bg-background focus:outline-none focus:ring-1 focus:ring-ring resize-none"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] text-muted-foreground uppercase tracking-wide">Launcher ID</label>
+              <LauncherIdSelect
+                value={form.executionLauncherId}
+                onChange={(executionLauncherId) =>
+                  setForm((f) => ({ ...f, executionLauncherId }))
+                }
+                includeEmpty
+                emptyLabel="Inherit agent launcher"
+                className="mt-1 h-8 w-full rounded-md border border-input bg-background px-3 py-2 text-[13px] ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] text-muted-foreground uppercase tracking-wide">Working Directory</label>
+              <Input
+                value={form.executionCwd}
+                onChange={(e) => setForm((f) => ({ ...f, executionCwd: e.target.value }))}
+                placeholder="relative to configured vault"
+                className="mt-1 h-8 text-[13px]"
               />
             </div>
           </div>

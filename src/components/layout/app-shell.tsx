@@ -7,14 +7,17 @@ import { KBEditor } from "@/components/editor/editor";
 import { WebsiteViewer } from "@/components/editor/website-viewer";
 import { PdfViewer } from "@/components/editor/pdf-viewer";
 import { CsvViewer } from "@/components/editor/csv-viewer";
+import { GraphView } from "@/components/graph/graph-view";
 import { AgentsWorkspace } from "@/components/agents/agents-workspace";
 import { JobsManager } from "@/components/jobs/jobs-manager";
 import { SettingsPage } from "@/components/settings/settings-page";
+import { PluginSurfaceHost } from "@/components/plugins/plugin-surface-host";
 import { TerminalTabs } from "@/components/terminal/terminal-tabs";
 import { AIPanel } from "@/components/ai-panel/ai-panel";
 import { SearchDialog } from "@/components/search/search-dialog";
 import { KeyboardShortcuts } from "@/components/shortcuts/keyboard-shortcuts";
 import { StatusBar } from "@/components/layout/status-bar";
+import { shouldRememberPreviousSection } from "@/components/layout/app-shell-state";
 import { OnboardingWizard } from "@/components/onboarding/onboarding-wizard";
 import { useTreeStore } from "@/stores/tree-store";
 import { useAppStore } from "@/stores/app-store";
@@ -28,6 +31,8 @@ export function AppShell() {
   );
   const section = useAppStore((s) => s.section);
   const setSection = useAppStore((s) => s.setSection);
+  const closePluginView = useAppStore((s) => s.closePluginView);
+  const pluginReturnSection = useAppStore((s) => s.pluginReturnSection);
   const terminalOpen = useAppStore((s) => s.terminalOpen);
   const setSidebarCollapsed = useAppStore((s) => s.setSidebarCollapsed);
   const setAiPanelCollapsed = useAppStore((s) => s.setAiPanelCollapsed);
@@ -36,6 +41,7 @@ export function AppShell() {
   const openAgentPanel = useAIPanelStore((s) => s.openAgentPanel);
 
   const [showWizard, setShowWizard] = useState<boolean | null>(null);
+  const previousSectionRef = useRef(section);
 
   useEffect(() => {
     void loadTree();
@@ -66,6 +72,12 @@ export function AppShell() {
     setSection({ type: "agents" });
     void loadTree();
   }, [loadTree, setSection]);
+
+  useEffect(() => {
+    if (shouldRememberPreviousSection(section, pluginReturnSection)) {
+      previousSectionRef.current = section;
+    }
+  }, [pluginReturnSection, section]);
 
   useEffect(() => {
     if (section.type === "agents" && section.view !== "settings") {
@@ -107,7 +119,24 @@ export function AppShell() {
   };
 
   const renderContent = () => {
-    if (section.type === "settings") return <SettingsPage />;
+    if (section.type === "settings") {
+      return (
+        <SettingsPage
+          initialTab={section.settingsTab}
+          onExit={() => setSection(previousSectionRef.current || { type: "page" })}
+        />
+      );
+    }
+    if (section.type === "plugin" && section.pluginEntryKey && section.pluginViewId) {
+      return (
+        <PluginSurfaceHost
+          entryKey={section.pluginEntryKey}
+          viewId={section.pluginViewId}
+          onBack={closePluginView}
+        />
+      );
+    }
+    if (section.type === "graph") return <GraphView />;
     if (section.type === "jobs") return <JobsManager />;
     if (section.type === "agent" && section.view === "settings") {
       return (
@@ -201,7 +230,7 @@ export function AppShell() {
     <div className="flex h-screen bg-background text-foreground">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
-        <main className="flex-1 flex flex-col overflow-hidden">{renderContent()}</main>
+        <main className="min-h-0 flex-1 flex flex-col overflow-hidden">{renderContent()}</main>
         {terminalOpen && <TerminalTabs />}
         <StatusBar />
       </div>

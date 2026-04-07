@@ -12,7 +12,6 @@ export interface AgentSummary {
   running?: boolean;
   department?: string;
   type?: string;
-  workspace?: string;
   body?: string;
   goals?: GoalMetric[];
   channels?: string[];
@@ -27,7 +26,6 @@ export interface AgentDetailPersona extends AgentSummary {
   heartbeat: string;
   department: string;
   type: string;
-  workspace: string;
   body: string;
   tags: string[];
   focus: string[];
@@ -130,7 +128,7 @@ export interface SchedulerActionRequest {
 export interface AgentRelatedFile {
   label: string;
   path: string;
-  scope: "vault" | "runtime";
+  scope: "vault" | "runtime" | "plugin";
   kind:
     | "persona"
     | "stack"
@@ -158,7 +156,18 @@ export interface CreateDaemonSessionResponse {
   tmuxAttachCommand?: string | null;
 }
 
-export interface AgentLaunchPreviewResponse extends ResolvedLaunchPreview {}
+export interface AgentPersonaDraft {
+  name: string;
+  slug: string;
+  emoji: string;
+  role: string;
+  heartbeat: string;
+  body: string;
+  active: boolean;
+  launcher?: AgentLaunchConfig | null;
+}
+
+export type AgentLaunchPreviewResponse = ResolvedLaunchPreview;
 
 export interface CreateAgentPersonaRequest {
   slug: string;
@@ -168,7 +177,6 @@ export interface CreateAgentPersonaRequest {
   department: string;
   type: string;
   heartbeat: string;
-  workspace: string;
   provider: string;
   budget: number;
   active: boolean;
@@ -177,6 +185,7 @@ export interface CreateAgentPersonaRequest {
   tags: string[];
   channels: string[];
   body: string;
+  launcher?: AgentLaunchConfig | null;
 }
 
 export interface SaveAgentPersonaRequest {
@@ -184,7 +193,12 @@ export interface SaveAgentPersonaRequest {
   department?: string;
   type?: string;
   heartbeat?: string;
-  workspace?: string;
   body?: string;
   launcher?: AgentLaunchConfig | null;
+}
+
+export interface CreateAgentPersonaResponse {
+  ok: true;
+  slug?: string;
+  proposalLinked?: boolean;
 }

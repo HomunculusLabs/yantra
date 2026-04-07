@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Briefcase, Loader2, Play, Plus, Save, Trash2 } from "lucide-react";
+import { LauncherIdSelect } from "@/components/agents/launcher-id-select";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { type CreateJobPayload, type JobConfig, type UpdateJobPayload } from "@/types/jobs";
@@ -139,10 +140,11 @@ export function JobsTab({ slug }: JobsTabProps) {
           </div>
           <div>
             <p className="mb-1.5 text-[10px] text-muted-foreground">Launcher ID</p>
-            <input
+            <LauncherIdSelect
               value={newLauncherId}
-              onChange={(event) => setNewLauncherId(event.target.value)}
-              placeholder="inherit agent launcher"
+              onChange={setNewLauncherId}
+              includeEmpty
+              emptyLabel="Inherit agent launcher"
               className="w-full rounded border border-border bg-background px-2 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-primary/50"
             />
           </div>
@@ -269,10 +271,11 @@ export function JobsTab({ slug }: JobsTabProps) {
               </div>
               <div>
                 <p className="mb-1.5 text-[10px] text-muted-foreground">Launcher ID</p>
-                <input
+                <LauncherIdSelect
                   value={editLauncherId}
-                  onChange={(event) => setEditLauncherId(event.target.value)}
-                  placeholder="inherit agent launcher"
+                  onChange={setEditLauncherId}
+                  includeEmpty
+                  emptyLabel="Inherit agent launcher"
                   className="w-full rounded border border-border bg-background px-2 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-primary/50"
                 />
               </div>

@@ -1,3 +1,5 @@
+import type { YantraKeybindingAction } from "@/lib/keybindings";
+
 export type RuntimeIssueCode =
   | "daemon_unreachable"
   | "launcher_missing"
@@ -125,6 +127,7 @@ export type StorageRouteKey =
   | "agents"
   | "skills"
   | "extensions"
+  | "plugins"
   | "mcp"
   | "todo"
   | "tasks";
@@ -209,12 +212,19 @@ export type ThemeVarKey =
   | "--sidebar-border"
   | "--sidebar-ring";
 
+export interface ThemeCustomFont {
+  family: string;
+  importUrl?: string | null;
+}
+
 export interface EditableThemeDefinition {
   name: string;
   label: string;
   type: ThemeMode;
   bodyFontId: string | null;
   headingFontId: string | null;
+  bodyFontCustom?: ThemeCustomFont | null;
+  headingFontCustom?: ThemeCustomFont | null;
   vars: Record<ThemeVarKey, string>;
 }
 
@@ -228,10 +238,23 @@ export interface ThemeValidationIssue {
   message: string;
 }
 
+export interface KeybindingsConfigResponse {
+  version: 1;
+  bindings: Record<YantraKeybindingAction, { accelerators: string[] }>;
+  configPath: string;
+}
+
+export interface KeybindingValidationIssue {
+  path: string;
+  message: string;
+}
+
 export type SettingsTab =
   | "runtime"
   | "launchers"
+  | "keybindings"
   | "integrations"
   | "notifications"
   | "storage"
-  | "themes";
+  | "themes"
+  | "plugins";

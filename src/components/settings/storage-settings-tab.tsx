@@ -50,6 +50,11 @@ const ROUTE_META: Record<
     description: "Runtime extensions, wrappers, and helper code loaded into agent stacks.",
     icon: Puzzle,
   },
+  plugins: {
+    label: "Plugin development folder",
+    description: "Optional vault-backed source folder for developing and testing plugin packages.",
+    icon: Puzzle,
+  },
   mcp: {
     label: "MCP folder",
     description: "MCP server notes, configs, and supporting files for tool integrations.",
@@ -119,6 +124,7 @@ export function StorageSettingsTab({
       agents: clearIndexedPreview(storageRoutes.agents),
       skills: clearIndexedPreview(storageRoutes.skills),
       extensions: clearIndexedPreview(storageRoutes.extensions),
+      plugins: clearIndexedPreview(storageRoutes.plugins),
       mcp: clearIndexedPreview(storageRoutes.mcp),
       todo: clearIndexedPreview(storageRoutes.todo),
       tasks: clearIndexedPreview(storageRoutes.tasks),
@@ -226,10 +232,11 @@ export function StorageSettingsTab({
 
       <div className="space-y-2">
         <div>
-          <h3 className="text-[14px] font-semibold">Agent-building folders</h3>
+          <h3 className="text-[14px] font-semibold">Configurable vault folders</h3>
           <p className="mt-1 text-xs text-muted-foreground">
-            These routes are resolved inside the current vault root. Turn recursive indexing on
-            when the folder contains nested packages or grouped subfolders.
+            These routes are resolved inside the current vault root. Use them for agent-building
+            assets and plugin development packages. Turn recursive indexing on when a folder
+            contains nested packages or grouped subfolders.
           </p>
         </div>
 

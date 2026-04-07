@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, Pencil, Save } from "lucide-react";
 import { AgentLaunchCommandCard } from "@/components/agents/agent-launch-command-card";
+import { LauncherIdSelect } from "@/components/agents/launcher-id-select";
 import { Button } from "@/components/ui/button";
 import { useAppStore } from "@/stores/app-store";
 import { useTreeStore } from "@/stores/tree-store";
@@ -12,7 +13,6 @@ import {
   renderMarkdownPreview,
   saveAgentStack,
 } from "@/lib/api/agents-client";
-import { cn } from "@/lib/utils";
 import type {
   AgentDetailPersona,
   AgentRelatedFile,
@@ -28,67 +28,6 @@ type DefinitionTabProps = {
   onSavePersona: (patch: SaveAgentPersonaRequest) => Promise<boolean>;
   onRefresh: () => Promise<void>;
 };
-
-function EditableField({
-  label,
-  value,
-  mono,
-  onSave,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-  onSave: (value: string) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
-
-  const handleSave = () => {
-    if (draft.trim() !== value) onSave(draft.trim());
-    setEditing(false);
-  };
-
-  return (
-    <div
-      className="group cursor-pointer rounded-lg bg-muted/30 p-3 transition-colors hover:bg-muted/50"
-      onClick={() => {
-        if (!editing) {
-          setDraft(value);
-          setEditing(true);
-        }
-      }}
-    >
-      <p className="flex items-center justify-between text-[10px] uppercase tracking-wider text-muted-foreground">
-        {label}
-        {!editing && (
-          <Pencil className="h-2.5 w-2.5 opacity-0 transition-opacity group-hover:opacity-50" />
-        )}
-      </p>
-      {editing ? (
-        <div className="mt-1 flex gap-1">
-          <input
-            autoFocus
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") handleSave();
-              if (event.key === "Escape") setEditing(false);
-            }}
-            onBlur={handleSave}
-            className={cn(
-              "flex-1 rounded border border-border bg-background px-2 py-0.5 text-[13px] focus:outline-none focus:ring-1 focus:ring-primary/50",
-              mono && "font-mono"
-            )}
-          />
-        </div>
-      ) : (
-        <p className={cn("mt-0.5 text-[13px] font-medium", mono && "font-mono")}>
-          {value || "—"}
-        </p>
-      )}
-    </div>
-  );
-}
 
 function HeartbeatField({
   value,
@@ -221,10 +160,11 @@ function LauncherConfigCard({
       <div className="grid grid-cols-2 gap-3">
         <div>
           <p className="mb-1.5 text-[10px] text-muted-foreground">Launcher ID</p>
-          <input
+          <LauncherIdSelect
             value={launcherId}
-            onChange={(event) => setLauncherId(event.target.value)}
-            placeholder="Optional — falls back to registry default"
+            onChange={setLauncherId}
+            includeEmpty
+            emptyLabel="Use registry default"
             className="w-full rounded border border-border bg-background px-2 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-primary/50"
           />
         </div>
@@ -663,32 +603,10 @@ export function DefinitionTab({
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
-        <EditableField
-          label="Department"
-          value={persona.department}
-          onSave={(value) => {
-            void savePersonaPatch({ department: value });
-          }}
-        />
-        <EditableField
-          label="Type"
-          value={persona.type}
-          onSave={(value) => {
-            void savePersonaPatch({ type: value });
-          }}
-        />
         <HeartbeatField
           value={persona.heartbeat}
           onSave={(value) => {
             void savePersonaPatch({ heartbeat: value });
-          }}
-        />
-        <EditableField
-          label="Workspace"
-          value={persona.workspace || "/"}
-          mono
-          onSave={(value) => {
-            void savePersonaPatch({ workspace: value });
           }}
         />
       </div>

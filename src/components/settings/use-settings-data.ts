@@ -10,26 +10,42 @@ import {
 } from "react";
 import {
   getIntegrationConfig,
+  getKeybindingValidationIssues,
+  getKeybindingsConfig,
   getLauncherRegistry,
   getLauncherValidationIssues,
   getRootsConfig,
   getRuntimeSettingsSummary,
+  getThemeValidationIssues,
+  getThemesConfig,
   probeBrowserDaemonHealth,
   saveIntegrationConfig,
+  saveKeybindingsConfig,
   saveLauncherRegistry,
   saveRootsConfig,
+  saveThemesConfig,
   sendTestNotification,
 } from "@/lib/api/agents-client";
+import { useThemeCatalog } from "@/components/theme-provider";
 import type {
   BrowserDaemonStatus,
   DesktopDaemonInfo,
   IntegrationConfig,
+  KeybindingValidationIssue,
+  KeybindingsConfigResponse,
   LauncherValidationIssue,
   NotificationTestResponse,
   RootsConfig,
   RuntimeSettingsSummary,
   SettingsTab,
+  ThemeValidationIssue,
+  ThemesConfigResponse,
 } from "@/types/settings";
+import type {
+  LauncherCatalogEntry,
+  LauncherOverlayIssue,
+  LauncherRegistryConfig,
+} from "@/types/launchers";
 
 type UseSettingsDataResult = {
   runtimeSummary: RuntimeSettingsSummary | null;
@@ -40,6 +56,8 @@ type UseSettingsDataResult = {
   configLoading: boolean;
   rootsLoading: boolean;
   launchersJson: string;
+  availableLaunchers: LauncherCatalogEntry[];
+  launcherOverlayIssues: LauncherOverlayIssue[];
   launchersLoading: boolean;
   saving: boolean;
   saved: boolean;
@@ -50,6 +68,14 @@ type UseSettingsDataResult = {
   restartingDaemonMode: "soft" | "force" | null;
   daemonActionError: string | null;
   launcherValidationIssues: LauncherValidationIssue[];
+  keybindingsConfig: KeybindingsConfigResponse | null;
+  keybindingsLoading: boolean;
+  keybindingsError: string | null;
+  keybindingValidationIssues: KeybindingValidationIssue[];
+  themesConfig: ThemesConfigResponse | null;
+  themesLoading: boolean;
+  themesError: string | null;
+  themeValidationIssues: ThemeValidationIssue[];
   revealedKeys: Set<string>;
   refreshAll: () => Promise<void>;
   saveCurrentTab: (tab: SettingsTab) => Promise<void>;
@@ -62,6 +88,8 @@ type UseSettingsDataResult = {
   updateNotif: (path: string, value: unknown) => void;
   updateScheduling: (field: string, value: unknown) => void;
   setRoots: Dispatch<SetStateAction<RootsConfig | null>>;
+  setKeybindingsDraft: Dispatch<SetStateAction<KeybindingsConfigResponse | null>>;
+  setThemesConfig: Dispatch<SetStateAction<ThemesConfigResponse | null>>;
   setLaunchersJsonDraft: (value: string) => void;
 };
 
@@ -74,7 +102,15 @@ export function useSettingsData(): UseSettingsDataResult {
   const [configLoading, setConfigLoading] = useState(false);
   const [rootsLoading, setRootsLoading] = useState(false);
   const [launchersJson, setLaunchersJson] = useState("");
+  const [availableLaunchers, setAvailableLaunchers] = useState<LauncherCatalogEntry[]>([]);
+  const [launcherOverlayIssues, setLauncherOverlayIssues] = useState<LauncherOverlayIssue[]>([]);
   const [launchersLoading, setLaunchersLoading] = useState(false);
+  const [keybindingsConfig, setKeybindingsConfig] = useState<KeybindingsConfigResponse | null>(null);
+  const [keybindingsLoading, setKeybindingsLoading] = useState(false);
+  const [keybindingsError, setKeybindingsError] = useState<string | null>(null);
+  const [themesConfig, setThemesConfig] = useState<ThemesConfigResponse | null>(null);
+  const [themesLoading, setThemesLoading] = useState(false);
+  const [themesError, setThemesError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -84,12 +120,18 @@ export function useSettingsData(): UseSettingsDataResult {
   const [restartingDaemonMode, setRestartingDaemonMode] = useState<"soft" | "force" | null>(null);
   const [daemonActionError, setDaemonActionError] = useState<string | null>(null);
   const [launcherValidationIssues, setLauncherValidationIssues] = useState<LauncherValidationIssue[]>([]);
+  const [keybindingValidationIssues, setKeybindingValidationIssues] = useState<KeybindingValidationIssue[]>([]);
+  const [themeValidationIssues, setThemeValidationIssues] = useState<ThemeValidationIssue[]>([]);
   const [revealedKeys, setRevealedKeys] = useState<Set<string>>(new Set());
+
+  const { replaceCustomThemes } = useThemeCatalog();
 
   const runtimeRequestRef = useRef(0);
   const configRequestRef = useRef(0);
   const rootsRequestRef = useRef(0);
   const launchersRequestRef = useRef(0);
+  const keybindingsRequestRef = useRef(0);
+  const themesRequestRef = useRef(0);
   const desktopRequestRef = useRef(0);
   const savedTimeoutRef = useRef<number | null>(null);
 
@@ -105,6 +147,8 @@ export function useSettingsData(): UseSettingsDataResult {
     setSaved(false);
     setSaveError(null);
     setLauncherValidationIssues([]);
+    setKeybindingValidationIssues([]);
+    setThemeValidationIssues([]);
     setDaemonActionError(null);
   }, [clearSavedTimeout]);
 
@@ -148,9 +192,11 @@ export function useSettingsData(): UseSettingsDataResult {
     const requestId = ++launchersRequestRef.current;
     setLaunchersLoading(true);
     try {
-      const registry = await getLauncherRegistry();
+      const response = await getLauncherRegistry();
       if (launchersRequestRef.current !== requestId) return;
-      setLaunchersJson(JSON.stringify(registry, null, 2));
+      setLaunchersJson(JSON.stringify(response.registry, null, 2));
+      setAvailableLaunchers(response.availableLaunchers);
+      setLauncherOverlayIssues(response.overlayIssues);
     } catch {
       // preserve silent failure behavior
     } finally {
@@ -176,6 +222,43 @@ export function useSettingsData(): UseSettingsDataResult {
     }
   }, []);
 
+  const loadKeybindings = useCallback(async () => {
+    const requestId = ++keybindingsRequestRef.current;
+    setKeybindingsLoading(true);
+    setKeybindingsError(null);
+    try {
+      const nextKeybindings = await getKeybindingsConfig();
+      if (keybindingsRequestRef.current !== requestId) return;
+      setKeybindingsConfig(nextKeybindings);
+    } catch (error) {
+      if (keybindingsRequestRef.current !== requestId) return;
+      setKeybindingsError(error instanceof Error ? error.message : "Failed to load keybindings");
+    } finally {
+      if (keybindingsRequestRef.current === requestId) {
+        setKeybindingsLoading(false);
+      }
+    }
+  }, []);
+
+  const loadThemes = useCallback(async () => {
+    const requestId = ++themesRequestRef.current;
+    setThemesLoading(true);
+    setThemesError(null);
+    try {
+      const nextThemes = await getThemesConfig();
+      if (themesRequestRef.current !== requestId) return;
+      setThemesConfig(nextThemes);
+      replaceCustomThemes(nextThemes.themes, nextThemes.configPath);
+    } catch (error) {
+      if (themesRequestRef.current !== requestId) return;
+      setThemesError(error instanceof Error ? error.message : "Failed to load themes config");
+    } finally {
+      if (themesRequestRef.current === requestId) {
+        setThemesLoading(false);
+      }
+    }
+  }, [replaceCustomThemes]);
+
   const loadDesktopDaemonInfo = useCallback(async () => {
     const requestId = ++desktopRequestRef.current;
     if (typeof window === "undefined" || !window.yantraDesktop?.getDaemonControlInfo) {
@@ -200,9 +283,20 @@ export function useSettingsData(): UseSettingsDataResult {
       loadConfig(),
       loadLaunchers(),
       loadRoots(),
+      loadKeybindings(),
+      loadThemes(),
       loadDesktopDaemonInfo(),
     ]);
-  }, [loadConfig, loadDesktopDaemonInfo, loadLaunchers, loadRoots, loadRuntime, resetFeedback]);
+  }, [
+    loadConfig,
+    loadDesktopDaemonInfo,
+    loadKeybindings,
+    loadLaunchers,
+    loadRoots,
+    loadRuntime,
+    loadThemes,
+    resetFeedback,
+  ]);
 
   const saveCurrentTab = useCallback(
     async (tab: SettingsTab) => {
@@ -233,7 +327,9 @@ export function useSettingsData(): UseSettingsDataResult {
           }
 
           try {
-            await saveLauncherRegistry(parsed);
+            await saveLauncherRegistry(
+              parsed as LauncherRegistryConfig | { registry: LauncherRegistryConfig }
+            );
           } catch (error) {
             const issues = getLauncherValidationIssues(error);
             setSaveError(
@@ -248,6 +344,60 @@ export function useSettingsData(): UseSettingsDataResult {
           await Promise.allSettled([loadLaunchers(), loadRuntime()]);
         }
 
+        if (tab === "keybindings") {
+          if (!keybindingsConfig) {
+            setSaveError("Keybindings have not loaded yet.");
+            return;
+          }
+
+          try {
+            const savedKeybindings = await saveKeybindingsConfig({
+              version: keybindingsConfig.version,
+              bindings: keybindingsConfig.bindings,
+            });
+            setKeybindingsConfig(savedKeybindings);
+
+            if (window.yantraDesktop?.reloadKeybindings) {
+              try {
+                await window.yantraDesktop.reloadKeybindings();
+              } catch (error) {
+                setSaveError(
+                  error instanceof Error
+                    ? `Saved keybindings, but menus could not be reloaded: ${error.message}`
+                    : "Saved keybindings, but menus could not be reloaded. Restart Yantra."
+                );
+              }
+            }
+          } catch (error) {
+            const issues = getKeybindingValidationIssues(error);
+            setSaveError(
+              error instanceof Error ? error.message : "Failed to save keybindings."
+            );
+            setKeybindingValidationIssues(issues);
+            return;
+          }
+        }
+
+        if (tab === "themes") {
+          if (!themesConfig) {
+            setSaveError("Theme settings have not loaded yet.");
+            return;
+          }
+
+          try {
+            const savedThemes = await saveThemesConfig(themesConfig);
+            setThemesConfig(savedThemes);
+            replaceCustomThemes(savedThemes.themes, savedThemes.configPath);
+          } catch (error) {
+            const issues = getThemeValidationIssues(error);
+            setSaveError(
+              error instanceof Error ? error.message : "Failed to save themes config."
+            );
+            setThemeValidationIssues(issues);
+            return;
+          }
+        }
+
         setSaved(true);
         clearSavedTimeout();
         savedTimeoutRef.current = window.setTimeout(() => setSaved(false), 2000);
@@ -257,7 +407,18 @@ export function useSettingsData(): UseSettingsDataResult {
         setSaving(false);
       }
     },
-    [clearSavedTimeout, config, launchersJson, loadLaunchers, loadRuntime, resetFeedback, roots]
+    [
+      clearSavedTimeout,
+      config,
+      keybindingsConfig,
+      launchersJson,
+      loadLaunchers,
+      loadRuntime,
+      replaceCustomThemes,
+      resetFeedback,
+      roots,
+      themesConfig,
+    ]
   );
 
   const restartDaemon = useCallback(async (mode: "soft" | "force") => {
@@ -361,15 +522,26 @@ export function useSettingsData(): UseSettingsDataResult {
     setLauncherValidationIssues([]);
   }, []);
 
+  const setKeybindingsDraft = useCallback(
+    (value: SetStateAction<KeybindingsConfigResponse | null>) => {
+      setKeybindingsConfig(value);
+      setSaveError(null);
+      setKeybindingValidationIssues([]);
+    },
+    []
+  );
+
   useEffect(() => {
     void Promise.allSettled([
       loadRuntime(),
       loadConfig(),
       loadLaunchers(),
       loadRoots(),
+      loadKeybindings(),
+      loadThemes(),
       loadDesktopDaemonInfo(),
     ]);
-  }, [loadConfig, loadDesktopDaemonInfo, loadLaunchers, loadRoots, loadRuntime]);
+  }, [loadConfig, loadDesktopDaemonInfo, loadKeybindings, loadLaunchers, loadRoots, loadRuntime, loadThemes]);
 
   useEffect(() => clearSavedTimeout, [clearSavedTimeout]);
 
@@ -382,7 +554,11 @@ export function useSettingsData(): UseSettingsDataResult {
     configLoading,
     rootsLoading,
     launchersJson,
+    availableLaunchers,
+    launcherOverlayIssues,
     launchersLoading,
+    keybindingsConfig,
+    keybindingsLoading,
     saving,
     saved,
     saveError,
@@ -392,6 +568,12 @@ export function useSettingsData(): UseSettingsDataResult {
     restartingDaemonMode,
     daemonActionError,
     launcherValidationIssues,
+    keybindingsError,
+    keybindingValidationIssues,
+    themesConfig,
+    themesLoading,
+    themesError,
+    themeValidationIssues,
     revealedKeys,
     refreshAll,
     saveCurrentTab,
@@ -404,6 +586,8 @@ export function useSettingsData(): UseSettingsDataResult {
     updateNotif,
     updateScheduling,
     setRoots,
+    setKeybindingsDraft,
+    setThemesConfig,
     setLaunchersJsonDraft,
   };
 }

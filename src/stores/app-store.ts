@@ -1,12 +1,24 @@
 import { create } from "zustand";
+import type { PluginCatalogEntryKey } from "@/lib/plugins/plugin-entry-key";
+import type { SettingsTab } from "@/types/settings";
 
-export type SectionType = "page" | "agents" | "agent" | "jobs" | "settings";
+export type SectionType =
+  | "page"
+  | "graph"
+  | "agents"
+  | "agent"
+  | "jobs"
+  | "settings"
+  | "plugin";
 
 export interface SelectedSection {
   type: SectionType;
   slug?: string; // agent slug when type === "agent"
   view?: "settings";
   settingsTarget?: string | null;
+  settingsTab?: SettingsTab;
+  pluginEntryKey?: PluginCatalogEntryKey | null;
+  pluginViewId?: string | null;
 }
 
 interface TerminalTab {
@@ -18,6 +30,7 @@ interface TerminalTab {
 interface AppState {
   section: SelectedSection;
   agentSettingsReturnSection: SelectedSection | null;
+  pluginReturnSection: SelectedSection | null;
   terminalOpen: boolean;
   terminalTabs: TerminalTab[];
   activeTerminalTab: string | null;
@@ -25,6 +38,12 @@ interface AppState {
   aiPanelCollapsed: boolean;
   setSection: (section: SelectedSection) => void;
   setAgentSettingsReturnSection: (section: SelectedSection | null) => void;
+  openPluginView: (input: {
+    entryKey: PluginCatalogEntryKey;
+    viewId: string;
+    returnSection?: SelectedSection;
+  }) => void;
+  closePluginView: () => void;
   toggleTerminal: () => void;
   closeTerminal: () => void;
   addTerminalTab: (label?: string, prompt?: string) => void;
@@ -38,6 +57,7 @@ interface AppState {
 export const useAppStore = create<AppState>((set, get) => ({
   section: { type: "page" },
   agentSettingsReturnSection: null,
+  pluginReturnSection: null,
   terminalOpen: false,
   terminalTabs: [],
   activeTerminalTab: null,
@@ -47,6 +67,24 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSection: (section) => set({ section }),
   setAgentSettingsReturnSection: (agentSettingsReturnSection) =>
     set({ agentSettingsReturnSection }),
+  openPluginView: ({ entryKey, viewId, returnSection }) => {
+    const currentSection = get().section;
+    set({
+      pluginReturnSection: returnSection ?? currentSection,
+      section: {
+        type: "plugin",
+        pluginEntryKey: entryKey,
+        pluginViewId: viewId,
+      },
+    });
+  },
+  closePluginView: () => {
+    const { pluginReturnSection } = get();
+    set({
+      section: pluginReturnSection ?? { type: "settings", settingsTab: "plugins" },
+      pluginReturnSection: null,
+    });
+  },
 
   toggleTerminal: () => {
     const { terminalOpen, terminalTabs } = get();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowLeft,
   Bell,
@@ -9,11 +9,14 @@ import {
   Eye,
   EyeOff,
   FolderOpen,
+  Keyboard,
   Loader2,
   MessageSquare,
   Cloud,
   Mail,
+  Palette,
   Plug,
+  Puzzle,
   RefreshCw,
   Save,
   Send,
@@ -24,13 +27,31 @@ import {
 import { Button } from "@/components/ui/button";
 import { LauncherRegistryTab } from "@/components/settings/launcher-registry-tab";
 import { RuntimeSettingsTab } from "@/components/settings/runtime-settings-tab";
+import { KeybindingsSettingsTab } from "@/components/settings/keybindings-settings-tab";
 import { StorageSettingsTab } from "@/components/settings/storage-settings-tab";
+import { ThemeBuilderTab } from "@/components/settings/theme-builder-tab";
+import { PluginsSettingsTab } from "@/components/settings/plugins-settings-tab";
 import { useSettingsData } from "@/components/settings/use-settings-data";
+import { usePluginStore } from "@/stores/plugin-store";
 import { cn } from "@/lib/utils";
 import type { SettingsTab } from "@/types/settings";
 
-export function SettingsPage({ onExit }: { onExit?: () => void } = {}) {
-  const [tab, setTab] = useState<SettingsTab>("runtime");
+export function SettingsPage({
+  onExit,
+  initialTab,
+}: {
+  onExit?: () => void;
+  initialTab?: SettingsTab;
+} = {}) {
+  const [tab, setTab] = useState<SettingsTab>(initialTab ?? "runtime");
+  const refreshPlugins = usePluginStore((state) => state.loadCatalog);
+
+  useEffect(() => {
+    if (initialTab) {
+      setTab(initialTab);
+    }
+  }, [initialTab]);
+
   const {
     runtimeSummary,
     runtimeLoading,
@@ -40,6 +61,8 @@ export function SettingsPage({ onExit }: { onExit?: () => void } = {}) {
     configLoading,
     rootsLoading,
     launchersJson,
+    availableLaunchers,
+    launcherOverlayIssues,
     launchersLoading,
     saving,
     saved,
@@ -50,6 +73,14 @@ export function SettingsPage({ onExit }: { onExit?: () => void } = {}) {
     restartingDaemonMode,
     daemonActionError,
     launcherValidationIssues,
+    keybindingsConfig,
+    keybindingsLoading,
+    keybindingsError,
+    keybindingValidationIssues,
+    themesConfig,
+    themesLoading,
+    themesError,
+    themeValidationIssues,
     revealedKeys,
     refreshAll,
     saveCurrentTab,
@@ -62,6 +93,8 @@ export function SettingsPage({ onExit }: { onExit?: () => void } = {}) {
     updateNotif,
     updateScheduling,
     setRoots,
+    setKeybindingsDraft,
+    setThemesConfig,
     setLaunchersJsonDraft,
   } = useSettingsData();
 
@@ -72,13 +105,22 @@ export function SettingsPage({ onExit }: { onExit?: () => void } = {}) {
       label: "Launcher Registry",
       icon: <Sparkles className="h-3.5 w-3.5" />,
     },
+    {
+      id: "keybindings",
+      label: "Keybindings",
+      icon: <Keyboard className="h-3.5 w-3.5" />,
+    },
     { id: "storage", label: "Storage", icon: <FolderOpen className="h-3.5 w-3.5" /> },
+    { id: "themes", label: "Themes", icon: <Palette className="h-3.5 w-3.5" /> },
+    { id: "plugins", label: "Plugins", icon: <Puzzle className="h-3.5 w-3.5" /> },
     { id: "integrations", label: "Integrations", icon: <Plug className="h-3.5 w-3.5" /> },
     { id: "notifications", label: "Notifications", icon: <Bell className="h-3.5 w-3.5" /> },
   ];
 
   const showSaveButton =
     tab === "storage" ||
+    tab === "keybindings" ||
+    tab === "themes" ||
     tab === "integrations" ||
     tab === "notifications" ||
     tab === "launchers";
@@ -127,7 +169,13 @@ export function SettingsPage({ onExit }: { onExit?: () => void } = {}) {
             variant="ghost"
             size="sm"
             className="h-7 gap-1.5 text-[12px]"
-            onClick={() => void refreshAll()}
+            onClick={() => {
+              if (tab === "plugins") {
+                void refreshPlugins();
+                return;
+              }
+              void refreshAll();
+            }}
           >
             <RefreshCw className="h-3.5 w-3.5" />
             Refresh
@@ -187,6 +235,8 @@ export function SettingsPage({ onExit }: { onExit?: () => void } = {}) {
               onChange={(value) => {
                 setLaunchersJsonDraft(value);
               }}
+              availableLaunchers={availableLaunchers}
+              overlayIssues={launcherOverlayIssues}
               error={saveError}
               validationIssues={launcherValidationIssues}
             />
@@ -199,6 +249,28 @@ export function SettingsPage({ onExit }: { onExit?: () => void } = {}) {
               onChange={(nextRoots) => setRoots(nextRoots)}
             />
           )}
+
+          {tab === "themes" ? (
+            <ThemeBuilderTab
+              loading={themesLoading}
+              config={themesConfig}
+              error={themesError || saveError}
+              validationIssues={themeValidationIssues}
+              onChange={(nextThemes) => setThemesConfig(nextThemes)}
+            />
+          ) : null}
+
+          {tab === "plugins" ? <PluginsSettingsTab /> : null}
+
+          {tab === "keybindings" ? (
+            <KeybindingsSettingsTab
+              keybindings={keybindingsConfig}
+              loading={keybindingsLoading}
+              error={keybindingsError || saveError}
+              validationIssues={keybindingValidationIssues}
+              onChange={setKeybindingsDraft}
+            />
+          ) : null}
 
           {tab === "integrations" && config && (
             <>

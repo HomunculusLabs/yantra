@@ -1,14 +1,14 @@
 import { TerminalSquare } from "lucide-react";
-import type {
-  LauncherValidationIssue,
-  RuntimeSettingsSummary,
-} from "@/types/settings";
+import type { RuntimeSettingsSummary, LauncherValidationIssue } from "@/types/settings";
+import type { LauncherCatalogEntry, LauncherOverlayIssue } from "@/types/launchers";
 
 export function LauncherRegistryTab({
   loading,
   runtimeSummary,
   value,
   onChange,
+  availableLaunchers,
+  overlayIssues,
   error,
   validationIssues,
 }: {
@@ -16,6 +16,8 @@ export function LauncherRegistryTab({
   runtimeSummary: RuntimeSettingsSummary | null;
   value: string;
   onChange: (value: string) => void;
+  availableLaunchers: LauncherCatalogEntry[];
+  overlayIssues: LauncherOverlayIssue[];
   error?: string | null;
   validationIssues?: LauncherValidationIssue[];
 }) {
@@ -75,6 +77,59 @@ export function LauncherRegistryTab({
           ) : null}
         </div>
       ) : null}
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        <div className="rounded-xl border border-border bg-card p-4 text-[12px] text-muted-foreground">
+          <p className="font-medium text-foreground">Effective launcher catalog</p>
+          <p className="mt-1">
+            {availableLaunchers.length} launcher{availableLaunchers.length === 1 ? "" : "s"} available at runtime.
+          </p>
+          <div className="mt-3 max-h-56 space-y-2 overflow-auto">
+            {availableLaunchers.length === 0 ? (
+              <p>No launchers loaded.</p>
+            ) : (
+              availableLaunchers.map((launcher) => (
+                <div key={launcher.id} className="rounded-lg border border-border/60 bg-background/60 px-3 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <code className="break-all text-[11px] text-foreground">{launcher.id}</code>
+                    <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground/70">
+                      {launcher.source.kind === "plugin"
+                        ? `plugin · ${launcher.source.pluginName}`
+                        : launcher.readOnly
+                          ? "read-only"
+                          : "owned"}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-foreground">{launcher.label}</p>
+                  {launcher.description ? (
+                    <p className="mt-1 text-[11px] text-muted-foreground">{launcher.description}</p>
+                  ) : null}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-border bg-card p-4 text-[12px] text-muted-foreground">
+          <p className="font-medium text-foreground">Plugin overlay issues</p>
+          <p className="mt-1">Read-only plugin launcher overlays that failed validation or loading appear here.</p>
+          <div className="mt-3 max-h-56 space-y-2 overflow-auto">
+            {overlayIssues.length === 0 ? (
+              <p>No overlay issues.</p>
+            ) : (
+              overlayIssues.map((issue, index) => (
+                <div key={`${issue.pluginId}-${index}`} className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-foreground">{issue.pluginName}</span>
+                    <code className="text-[11px] text-muted-foreground">{issue.pluginId}</code>
+                  </div>
+                  <p className="mt-1 text-[11px] text-muted-foreground">{issue.message}</p>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
 
       {loading ? (
         <p className="text-[13px] text-muted-foreground">Loading launcher registry...</p>

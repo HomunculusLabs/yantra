@@ -7,6 +7,7 @@ export type StorageRouteKey =
   | "agents"
   | "skills"
   | "extensions"
+  | "plugins"
   | "mcp"
   | "todo"
   | "tasks";
@@ -20,6 +21,7 @@ export interface YantraStorageRoutes {
   agents: YantraStorageRouteConfig;
   skills: YantraStorageRouteConfig;
   extensions: YantraStorageRouteConfig;
+  plugins: YantraStorageRouteConfig;
   mcp: YantraStorageRouteConfig;
   todo: YantraStorageRouteConfig;
   tasks: YantraStorageRouteConfig;
@@ -47,6 +49,7 @@ const DEFAULT_STORAGE_ROUTES: YantraStorageRoutes = {
   agents: { path: ".agents", recursive: true },
   skills: { path: ".agents/skills", recursive: true },
   extensions: { path: ".agents/extensions", recursive: true },
+  plugins: { path: ".plugins", recursive: false },
   mcp: { path: ".agents/mcp", recursive: true },
   todo: { path: "TODO", recursive: true },
   tasks: { path: "tasks", recursive: true },
@@ -192,6 +195,15 @@ export function getYantraStorageRoutes(
       recursive:
         config.storageRoutes?.extensions?.recursive ??
         DEFAULT_STORAGE_ROUTES.extensions.recursive,
+    },
+    plugins: {
+      path: normalizeVaultScopedPath(
+        config.storageRoutes?.plugins?.path,
+        vaultRoot,
+        DEFAULT_STORAGE_ROUTES.plugins.path
+      ),
+      recursive:
+        config.storageRoutes?.plugins?.recursive ?? DEFAULT_STORAGE_ROUTES.plugins.recursive,
     },
     mcp: {
       path: normalizeVaultScopedPath(

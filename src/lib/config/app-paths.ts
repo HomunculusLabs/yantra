@@ -8,6 +8,8 @@ export interface YantraAppPaths {
   projectRoot: string;
   configRoot: string;
   rootsConfigPath: string;
+  pluginsInstallDir: string;
+  pluginsStatePath: string;
   migrationsDir: string;
   envFiles: string[];
 }
@@ -42,7 +44,7 @@ export function getYantraAppPaths(): YantraAppPaths {
   const cwd = normalize(process.cwd());
   const projectRoot = normalize(
     process.env.YANTRA_PROJECT_ROOT?.trim() ||
-      (mode === "desktop" ? process.resourcesPath : cwd)
+      (mode === "desktop" ? process.resourcesPath || cwd : cwd)
   );
   const configRoot = normalize(
     process.env.YANTRA_APP_CONFIG_DIR?.trim() ||
@@ -52,6 +54,13 @@ export function getYantraAppPaths(): YantraAppPaths {
   const rootsConfigPath = normalize(
     process.env.YANTRA_ROOTS_CONFIG_PATH?.trim() ||
       path.join(configRoot, "yantra-roots.json")
+  );
+  const pluginsInstallDir = normalize(
+    process.env.YANTRA_PLUGINS_INSTALL_DIR?.trim() || path.join(configRoot, "plugins")
+  );
+  const pluginsStatePath = normalize(
+    process.env.YANTRA_PLUGINS_STATE_PATH?.trim() ||
+      path.join(configRoot, "plugins-state.json")
   );
   const migrationsDir = normalize(
     process.env.YANTRA_MIGRATIONS_DIR?.trim() ||
@@ -69,6 +78,8 @@ export function getYantraAppPaths(): YantraAppPaths {
     projectRoot,
     configRoot,
     rootsConfigPath,
+    pluginsInstallDir,
+    pluginsStatePath,
     migrationsDir,
     envFiles: envFiles.filter((filePath, index, array) => {
       return array.indexOf(filePath) === index;
