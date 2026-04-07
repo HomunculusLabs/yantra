@@ -172,8 +172,33 @@ describe("/api/agents/conversations/[id]", () => {
       },
       assistant: {
         summary: "Working on it",
-        body: "Visible progress line",
-        artifacts: [{ path: "data/notes.md" }],
+        parts: [
+          {
+            kind: "status",
+            id: "runtime:conversation-1:status",
+            label: "Live update",
+            tone: "neutral",
+            detail: "Live tmux session.",
+          },
+          {
+            kind: "markdown",
+            id: "runtime:conversation-1:markdown",
+            text: "Visible progress line",
+          },
+          {
+            kind: "artifact_list",
+            id: "runtime:conversation-1:artifacts",
+            artifacts: [{ path: "data/notes.md" }],
+          },
+          {
+            kind: "tool_call",
+            id: "runtime:conversation-1:agent_proposal",
+            toolName: "Agent draft",
+            state: "pending",
+            inputSummary: "Preparing a proposed Yantra agent draft.",
+            outputSummary: "Builder (builder)",
+          },
+        ],
       },
     };
 
@@ -185,6 +210,21 @@ describe("/api/agents/conversations/[id]", () => {
     expect(response.status).toBe(200);
     expect(body.thread.source).toBe("structured_session");
     expect(body.thread.streamingItem.summary).toBe("Working on it");
+    expect(body.thread.streamingItem.parts[0]).toEqual({
+      kind: "status",
+      id: "runtime:conversation-1:status",
+      label: "Live update",
+      tone: "neutral",
+      detail: "Live tmux session.",
+    });
+    expect(body.thread.streamingItem.parts.at(-1)).toEqual({
+      kind: "tool_call",
+      id: "runtime:conversation-1:agent_proposal",
+      toolName: "Agent draft",
+      state: "pending",
+      inputSummary: "Preparing a proposed Yantra agent draft.",
+      outputSummary: "Builder (builder)",
+    });
     expect(body.meta.runtimeSession.eventStreamFormat).toBe("structured_v1");
   });
 

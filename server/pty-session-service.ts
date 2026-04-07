@@ -3,6 +3,7 @@ import path from "path";
 import * as pty from "node-pty";
 import { WebSocket } from "ws";
 import type {
+  ConversationAssistantPart,
   ConversationRuntimeSnapshot,
   ConversationStatus,
 } from "../src/types/conversations";
@@ -15,6 +16,7 @@ import {
 import {
   buildLiveOutputExcerpt,
   makeSummaryFromOutput,
+  parseAgentProposalBlock,
   parseYantraBlock,
 } from "../src/lib/agents/conversation-output-parser";
 import {
@@ -243,6 +245,77 @@ export function createPtySessionService(
       : excerptLines.length > 1
         ? excerptLines.slice(1).join("\n")
         : undefined;
+    const parts: ConversationAssistantPart[] = [];
+    const proposal = parseAgentProposalBlock(output);
+    const statusDetail =
+      status === "running"
+        ? `Live ${session.launchTransport} session.`
+        : status === "completed"
+          ? `Run completed${session.exitCode != null ? ` with exit code ${session.exitCode}.` : "."}`
+          : `Run failed${session.exitCode != null ? ` with exit code ${session.exitCode}.` : "."}`;
+
+    parts.push({
+      kind: "status",
+      id: `runtime:${session.id}:status`,
+      label:
+        status === "running"
+          ? excerptLines.length > 0 || parsed.summary
+            ? "Live update"
+            : "Waiting"
+          : status === "completed"
+            ? "Completed"
+            : "Failed",
+      tone:
+        status === "running"
+          ? "neutral"
+          : status === "completed"
+            ? "success"
+            : "error",
+      detail: statusDetail,
+    });
+
+    if (body) {
+      parts.push({
+        kind: "markdown",
+        id: `runtime:${session.id}:markdown`,
+        text: body,
+      });
+    }
+
+    if (parsed.contextSummary) {
+      parts.push({
+        kind: "context",
+        id: `runtime:${session.id}:context`,
+        text: parsed.contextSummary,
+      });
+    }
+
+    if (parsed.artifactPaths.length > 0) {
+      parts.push({
+        kind: "artifact_list",
+        id: `runtime:${session.id}:artifacts`,
+        artifacts: parsed.artifactPaths.map((artifactPath) => ({
+          path: artifactPath,
+        })),
+      });
+    }
+
+    if (proposal) {
+      parts.push({
+        kind: "tool_call",
+        id: `runtime:${session.id}:agent_proposal`,
+        toolName: "Agent draft",
+        state: proposal.status === "parse_error" ? "failed" : "pending",
+        inputSummary: "Preparing a proposed Yantra agent draft.",
+        outputSummary:
+          proposal.status === "parse_error"
+            ? proposal.issues[0] || "Invalid yantra-create-agent JSON."
+            : proposal.draft
+              ? `${proposal.draft.name} (${proposal.draft.slug})`
+              : "Draft proposal detected.",
+        isError: proposal.status === "parse_error",
+      });
+    }
 
     return {
       sessionId: session.id,
@@ -258,11 +331,7 @@ export function createPtySessionService(
       },
       assistant: {
         summary,
-        body,
-        contextSummary: parsed.contextSummary,
-        artifacts: parsed.artifactPaths.map((artifactPath) => ({
-          path: artifactPath,
-        })),
+        parts,
       },
     };
   }

@@ -86,6 +86,20 @@ function buildAssistantParts(input: {
   return parts;
 }
 
+function collectArtifactsFromAssistantParts(
+  parts: ConversationAssistantPart[]
+): ConversationArtifact[] {
+  return parts.flatMap((part) =>
+    part.kind === "artifact_list" ? part.artifacts : []
+  );
+}
+
+function findContextSummaryInAssistantParts(
+  parts: ConversationAssistantPart[]
+): string | undefined {
+  return parts.find((part) => part.kind === "context")?.text;
+}
+
 function makeAssistantBody(output: string): string | undefined {
   const stripped = stripYantraPresentationBlocks(output);
   const excerpt = stripped
@@ -189,12 +203,7 @@ function buildStructuredSessionThread(
     id: itemId,
     state: assistantState,
     summary: makeRuntimeSnapshotSummary(runtimeSnapshot),
-    parts: buildAssistantParts({
-      itemId,
-      body: runtimeSnapshot.assistant.body,
-      contextSummary: runtimeSnapshot.assistant.contextSummary,
-      artifacts: runtimeSnapshot.assistant.artifacts,
-    }),
+    parts: runtimeSnapshot.assistant.parts,
   };
 
   if (runtimeSnapshot.status === "running") {
@@ -333,11 +342,11 @@ export function buildConversationPresentation(
               input.meta.summary ||
               undefined,
             contextSummary:
-              runtimeSnapshot.assistant.contextSummary ||
+              findContextSummaryInAssistantParts(runtimeSnapshot.assistant.parts) ||
               input.meta.contextSummary,
-            artifactPaths:
-              runtimeSnapshot.assistant.artifacts.map((artifact) => artifact.path) ||
-              input.meta.artifactPaths,
+            artifactPaths: collectArtifactsFromAssistantParts(
+              runtimeSnapshot.assistant.parts
+            ).map((artifact) => artifact.path),
             runtimeSession: runtimeSnapshot.runtimeSession,
           }
         : {
@@ -349,7 +358,9 @@ export function buildConversationPresentation(
     },
     transcript: input.transcript,
     mentions: input.mentions,
-    artifacts: runtimeSnapshot?.assistant.artifacts || input.artifacts,
+    artifacts: runtimeSnapshot
+      ? collectArtifactsFromAssistantParts(runtimeSnapshot.assistant.parts)
+      : input.artifacts,
     thread,
   };
 }

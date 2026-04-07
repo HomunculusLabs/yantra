@@ -42,9 +42,7 @@ export type ConversationRuntimeEventStreamFormat = "structured_v1";
 
 export interface ConversationRuntimeAssistantSnapshot {
   summary?: string;
-  body?: string;
-  contextSummary?: string;
-  artifacts: ConversationArtifact[];
+  parts: ConversationAssistantPart[];
 }
 
 export interface ConversationRuntimeSnapshot {
@@ -120,6 +118,13 @@ export type ConversationAssistantPart =
       kind: "artifact_list";
       id: string;
       artifacts: ConversationArtifact[];
+    }
+  | {
+      kind: "status";
+      id: string;
+      label: string;
+      tone: "neutral" | "success" | "warning" | "error";
+      detail?: string;
     }
   | {
       kind: "tool_call";

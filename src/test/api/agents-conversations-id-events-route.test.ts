@@ -204,9 +204,38 @@ describe("/api/agents/conversations/[id]/events", () => {
       },
       assistant: {
         summary: "Building the draft",
-        body: "Visible progress line",
-        contextSummary: "Using the referenced note.",
-        artifacts: [{ path: "data/notes.md" }],
+        parts: [
+          {
+            kind: "status",
+            id: "runtime:conversation-1:status",
+            label: "Live update",
+            tone: "neutral",
+            detail: "Live tmux session.",
+          },
+          {
+            kind: "markdown",
+            id: "runtime:conversation-1:markdown",
+            text: "Visible progress line",
+          },
+          {
+            kind: "context",
+            id: "runtime:conversation-1:context",
+            text: "Using the referenced note.",
+          },
+          {
+            kind: "artifact_list",
+            id: "runtime:conversation-1:artifacts",
+            artifacts: [{ path: "data/notes.md" }],
+          },
+          {
+            kind: "tool_call",
+            id: "runtime:conversation-1:agent_proposal",
+            toolName: "Agent draft",
+            state: "pending",
+            inputSummary: "Preparing a proposed Yantra agent draft.",
+            outputSummary: "Builder (builder)",
+          },
+        ],
       },
     };
     runtimeSnapshotStream = [runtimeSnapshot];
@@ -253,19 +282,34 @@ describe("/api/agents/conversations/[id]/events", () => {
       summary: "Building the draft",
       parts: [
         {
+          kind: "status",
+          id: "runtime:conversation-1:status",
+          label: "Live update",
+          tone: "neutral",
+          detail: "Live tmux session.",
+        },
+        {
           kind: "markdown",
-          id: "assistant:conversation-1:streaming:markdown",
+          id: "runtime:conversation-1:markdown",
           text: "Visible progress line",
         },
         {
           kind: "context",
-          id: "assistant:conversation-1:streaming:context",
+          id: "runtime:conversation-1:context",
           text: "Using the referenced note.",
         },
         {
           kind: "artifact_list",
-          id: "assistant:conversation-1:streaming:artifacts",
+          id: "runtime:conversation-1:artifacts",
           artifacts: [{ path: "data/notes.md" }],
+        },
+        {
+          kind: "tool_call",
+          id: "runtime:conversation-1:agent_proposal",
+          toolName: "Agent draft",
+          state: "pending",
+          inputSummary: "Preparing a proposed Yantra agent draft.",
+          outputSummary: "Builder (builder)",
         },
       ],
     });

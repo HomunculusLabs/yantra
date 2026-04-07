@@ -37,9 +37,38 @@ function makeRuntimeSnapshot(
     },
     assistant: {
       summary: "Building the draft",
-      body: "Visible progress line",
-      contextSummary: "Using the referenced note.",
-      artifacts: [{ path: "data/notes.md" }],
+      parts: [
+        {
+          kind: "status",
+          id: "runtime:conversation-1:status",
+          label: "Live update",
+          tone: "neutral",
+          detail: "Live tmux session.",
+        },
+        {
+          kind: "markdown",
+          id: "runtime:conversation-1:markdown",
+          text: "Visible progress line",
+        },
+        {
+          kind: "context",
+          id: "runtime:conversation-1:context",
+          text: "Using the referenced note.",
+        },
+        {
+          kind: "artifact_list",
+          id: "runtime:conversation-1:artifacts",
+          artifacts: [{ path: "data/notes.md" }],
+        },
+        {
+          kind: "tool_call",
+          id: "runtime:conversation-1:agent_proposal",
+          toolName: "Agent draft",
+          state: "pending",
+          inputSummary: "Preparing a proposed Yantra agent draft.",
+          outputSummary: "Builder (builder)",
+        },
+      ],
     },
     ...overrides,
   };
@@ -309,19 +338,34 @@ describe("buildConversationPresentation", () => {
       summary: "Building the draft",
       parts: [
         {
+          kind: "status",
+          id: "runtime:conversation-1:status",
+          label: "Live update",
+          tone: "neutral",
+          detail: "Live tmux session.",
+        },
+        {
           kind: "markdown",
-          id: "assistant:conversation-1:streaming:markdown",
+          id: "runtime:conversation-1:markdown",
           text: "Visible progress line",
         },
         {
           kind: "context",
-          id: "assistant:conversation-1:streaming:context",
+          id: "runtime:conversation-1:context",
           text: "Using the referenced note.",
         },
         {
           kind: "artifact_list",
-          id: "assistant:conversation-1:streaming:artifacts",
+          id: "runtime:conversation-1:artifacts",
           artifacts: [{ path: "data/notes.md" }],
+        },
+        {
+          kind: "tool_call",
+          id: "runtime:conversation-1:agent_proposal",
+          toolName: "Agent draft",
+          state: "pending",
+          inputSummary: "Preparing a proposed Yantra agent draft.",
+          outputSummary: "Builder (builder)",
         },
       ],
     });
@@ -356,8 +400,25 @@ describe("buildConversationPresentation", () => {
         },
         assistant: {
           summary: "Draft created",
-          body: "Created the librarian draft.",
-          artifacts: [{ path: "data/agents/librarian.md" }],
+          parts: [
+            {
+              kind: "status",
+              id: "runtime:conversation-1:status",
+              label: "Completed",
+              tone: "success",
+              detail: "Run completed with exit code 0.",
+            },
+            {
+              kind: "markdown",
+              id: "runtime:conversation-1:markdown",
+              text: "Created the librarian draft.",
+            },
+            {
+              kind: "artifact_list",
+              id: "runtime:conversation-1:artifacts",
+              artifacts: [{ path: "data/agents/librarian.md" }],
+            },
+          ],
         },
       }),
     });
@@ -371,16 +432,69 @@ describe("buildConversationPresentation", () => {
       summary: "Draft created",
       parts: [
         {
+          kind: "status",
+          id: "runtime:conversation-1:status",
+          label: "Completed",
+          tone: "success",
+          detail: "Run completed with exit code 0.",
+        },
+        {
           kind: "markdown",
-          id: "assistant:conversation-1:markdown",
+          id: "runtime:conversation-1:markdown",
           text: "Created the librarian draft.",
         },
         {
           kind: "artifact_list",
-          id: "assistant:conversation-1:artifacts",
+          id: "runtime:conversation-1:artifacts",
           artifacts: [{ path: "data/agents/librarian.md" }],
         },
       ],
     });
+  });
+
+  test("preserves failed runtime tool parts from structured snapshots", () => {
+    const presentation = buildConversationPresentation({
+      meta: baseMeta({
+        status: "running",
+        userMessage: "Build a draft",
+        runtimeSession: {
+          launchTransport: "direct",
+          startedAt: "2026-04-07T12:00:00.000Z",
+          eventStreamFormat: "structured_v1",
+        },
+      }),
+      prompt: "User request:\nBuild a draft",
+      transcript: "",
+      mentions: [],
+      artifacts: [],
+      runtimeSnapshot: makeRuntimeSnapshot({
+        assistant: {
+          summary: "Validating the draft",
+          parts: [
+            {
+              kind: "tool_call",
+              id: "runtime:conversation-1:agent_proposal",
+              toolName: "Agent draft",
+              state: "failed",
+              inputSummary: "Preparing a proposed Yantra agent draft.",
+              outputSummary: "Invalid yantra-create-agent JSON.",
+              isError: true,
+            },
+          ],
+        },
+      }),
+    });
+
+    expect(presentation.thread.streamingItem?.parts).toEqual([
+      {
+        kind: "tool_call",
+        id: "runtime:conversation-1:agent_proposal",
+        toolName: "Agent draft",
+        state: "failed",
+        inputSummary: "Preparing a proposed Yantra agent draft.",
+        outputSummary: "Invalid yantra-create-agent JSON.",
+        isError: true,
+      },
+    ]);
   });
 });
