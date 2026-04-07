@@ -8,6 +8,16 @@ import type { InstalledPluginSummary, PluginIssue } from "@/types/plugins";
 
 const originalPluginBridgeDependencies = { ...pluginBridgeDependencies };
 const savePluginStateRecordCalls: Array<{ pluginId: string; record: unknown }> = [];
+const createPageCalls: Array<{ parentPath: string; title: string }> = [];
+const writePageCalls: Array<{
+  path: string;
+  content: string;
+  frontmatter: Record<string, unknown>;
+}> = [];
+const deleteNodeCalls: string[] = [];
+const autoCommitCalls: Array<{ path: string; action: string }> = [];
+const readAgentStackCalls: string[] = [];
+const writeAgentStackCalls: Array<{ slug: string; stack: Record<string, unknown> }> = [];
 
 function defaultSettingsValidation(
   manifest: NonNullable<InstalledPluginSummary["manifest"]>,
@@ -59,6 +69,12 @@ function createResolvedPlugin(
         required: ["tree.read"],
         optional: [
           "page.read",
+          "page.create",
+          "page.write",
+          "page.delete",
+          "agents.read",
+          "agent.stack.read",
+          "agent.stack.write",
           "plugin.settings.read",
           "plugin.settings.write",
           "runtime.summary.read",
@@ -99,6 +115,12 @@ function createResolvedPlugin(
       grantedCapabilities: [
         "tree.read",
         "page.read",
+        "page.create",
+        "page.write",
+        "page.delete",
+        "agents.read",
+        "agent.stack.read",
+        "agent.stack.write",
         "plugin.settings.read",
         "plugin.settings.write",
         "runtime.summary.read",
@@ -128,6 +150,10 @@ beforeEach(() => {
     },
   });
   pluginBridgeDependencies.buildTree = async () => [];
+  pluginBridgeDependencies.createPage = async (parentPath: string, title: string) => {
+    createPageCalls.push({ parentPath, title });
+    return parentPath ? `${parentPath}/New Page.md` : "New Page.md";
+  };
   pluginBridgeDependencies.readPage = async (path: string) => ({
     path,
     requestedPath: path,
@@ -137,6 +163,16 @@ beforeEach(() => {
     content: "hello",
     frontmatter: {},
   });
+  pluginBridgeDependencies.writePage = async (
+    path: string,
+    content: string,
+    frontmatter: Record<string, unknown>
+  ) => {
+    writePageCalls.push({ path, content, frontmatter });
+  };
+  pluginBridgeDependencies.deleteNode = async (path: string) => {
+    deleteNodeCalls.push(path);
+  };
   pluginBridgeDependencies.buildRuntimeSettingsSummary = async () => ({ runtime: "ok" } as any);
   pluginBridgeDependencies.mergePluginSettingsWithDefaults = (
     manifest,
@@ -147,12 +183,66 @@ beforeEach(() => {
     ),
     ...settings,
   });
+  pluginBridgeDependencies.listPersonas = async () => [
+    {
+      slug: "editor",
+      name: "Editor",
+      role: "editor",
+      active: true,
+    },
+  ] as any;
+  pluginBridgeDependencies.listAgentStackCatalog = async () => ({
+    extensions: [{ label: "Plugin Extension", path: "@plugin/sample-plugin/ext/index.ts", source: "plugin" }],
+    skills: [],
+    skillsets: [],
+  });
+  pluginBridgeDependencies.readAgentStack = async (slug: string) => {
+    readAgentStackCalls.push(slug);
+    return {
+      stackPath: `agents/${slug}/stack.json`,
+      stack: {
+        paths: { primary: "notes" },
+        skills: ["skills/release/SKILL.md"],
+      },
+    } as any;
+  };
+  pluginBridgeDependencies.writeAgentStack = async (
+    slug: string,
+    stack: Record<string, unknown>
+  ) => {
+    writeAgentStackCalls.push({ slug, stack });
+    return {
+      stackPath: `agents/${slug}/stack.json`,
+      stack,
+    } as any;
+  };
+  pluginBridgeDependencies.autoCommit = async (
+    path: string,
+    action: "Update" | "Add" | "Delete"
+  ) => {
+    autoCommitCalls.push({ path, action });
+  };
+  pluginBridgeDependencies.markGraphCacheDirty = () => {};
+  pluginBridgeDependencies.markDataviewCacheDirty = () => {};
+  pluginBridgeDependencies.syncGraphCacheAfterCreate = async () => {};
+  pluginBridgeDependencies.syncGraphCacheAfterDelete = async () => {};
+  pluginBridgeDependencies.syncGraphCacheAfterWrite = async () => {};
+  pluginBridgeDependencies.syncDataviewCacheAfterCreate = async () => {};
+  pluginBridgeDependencies.syncDataviewCacheAfterDelete = async () => {};
+  pluginBridgeDependencies.syncDataviewCacheAfterWrite = async () => {};
+  pluginBridgeDependencies.getFrontmatterTitle = () => "Previous Title";
   pluginBridgeDependencies.validatePluginSettingsPayload = defaultSettingsValidation;
   pluginBridgeDependencies.savePluginStateRecord = async (pluginId, record) => {
     savePluginStateRecordCalls.push({ pluginId, record });
     return record;
   };
   savePluginStateRecordCalls.length = 0;
+  createPageCalls.length = 0;
+  writePageCalls.length = 0;
+  deleteNodeCalls.length = 0;
+  autoCommitCalls.length = 0;
+  readAgentStackCalls.length = 0;
+  writeAgentStackCalls.length = 0;
 });
 
 describe("plugin bridge dispatcher", () => {
@@ -259,7 +349,7 @@ describe("plugin bridge dispatcher", () => {
       viewId: "main",
       request: {
         requestId: "req-3",
-        method: "agent.stack.read",
+        method: "plugin.unsupported",
       },
     });
 
@@ -268,7 +358,7 @@ describe("plugin bridge dispatcher", () => {
       ok: false,
       error: {
         code: "unknown_method",
-        message: "Plugin bridge method 'agent.stack.read' is not supported.",
+        message: "Plugin bridge method 'plugin.unsupported' is not supported.",
       },
     });
   });
@@ -334,18 +424,193 @@ describe("plugin bridge dispatcher", () => {
     });
   });
 
-  test("reads merged plugin settings through plugin.settings.read", async () => {
+  test("creates pages through page.create and triggers page side effects", async () => {
     const response = await dispatchPluginBridgeRequest({
       entryToken: "pek_123",
       viewId: "main",
       request: {
         requestId: "req-6",
-        method: "plugin.settings.read",
+        method: "page.create",
+        params: {
+          parentPath: "notes",
+          title: "New Page",
+        },
       },
     });
 
     expect(response).toEqual({
       requestId: "req-6",
+      ok: true,
+      result: {
+        newPath: "notes/New Page.md",
+      },
+    });
+    expect(createPageCalls).toEqual([{ parentPath: "notes", title: "New Page" }]);
+    expect(autoCommitCalls).toEqual([{ path: "notes/New Page.md", action: "Add" }]);
+  });
+
+  test("writes pages through page.write", async () => {
+    const response = await dispatchPluginBridgeRequest({
+      entryToken: "pek_123",
+      viewId: "main",
+      request: {
+        requestId: "req-7",
+        method: "page.write",
+        params: {
+          path: "notes/today.md",
+          content: "updated",
+          frontmatter: { title: "Today" },
+        },
+      },
+    });
+
+    expect(response).toEqual({
+      requestId: "req-7",
+      ok: true,
+      result: { saved: true },
+    });
+    expect(writePageCalls).toEqual([
+      {
+        path: "notes/today.md",
+        content: "updated",
+        frontmatter: { title: "Today" },
+      },
+    ]);
+    expect(autoCommitCalls).toEqual([{ path: "notes/today.md", action: "Update" }]);
+  });
+
+  test("deletes pages through page.delete", async () => {
+    const response = await dispatchPluginBridgeRequest({
+      entryToken: "pek_123",
+      viewId: "main",
+      request: {
+        requestId: "req-8",
+        method: "page.delete",
+        params: {
+          path: "notes/today.md",
+        },
+      },
+    });
+
+    expect(response).toEqual({
+      requestId: "req-8",
+      ok: true,
+      result: { deleted: true },
+    });
+    expect(deleteNodeCalls).toEqual(["notes/today.md"]);
+    expect(autoCommitCalls).toEqual([{ path: "notes/today.md", action: "Delete" }]);
+  });
+
+  test("lists agents through agents.read", async () => {
+    const response = await dispatchPluginBridgeRequest({
+      entryToken: "pek_123",
+      viewId: "main",
+      request: {
+        requestId: "req-9",
+        method: "agents.read",
+      },
+    });
+
+    expect(response).toEqual({
+      requestId: "req-9",
+      ok: true,
+      result: [
+        {
+          slug: "editor",
+          name: "Editor",
+          role: "editor",
+          active: true,
+        },
+      ],
+    });
+  });
+
+  test("reads agent stack data through agent.stack.read", async () => {
+    const response = await dispatchPluginBridgeRequest({
+      entryToken: "pek_123",
+      viewId: "main",
+      request: {
+        requestId: "req-10",
+        method: "agent.stack.read",
+        params: {
+          slug: "editor",
+        },
+      },
+    });
+
+    expect(response).toEqual({
+      requestId: "req-10",
+      ok: true,
+      result: {
+        stackPath: "agents/editor/stack.json",
+        stack: {
+          paths: { primary: "notes" },
+          skills: ["skills/release/SKILL.md"],
+        },
+        catalog: {
+          extensions: [
+            {
+              label: "Plugin Extension",
+              path: "@plugin/sample-plugin/ext/index.ts",
+              source: "plugin",
+            },
+          ],
+          skills: [],
+          skillsets: [],
+        },
+      },
+    });
+    expect(readAgentStackCalls).toEqual(["editor"]);
+  });
+
+  test("writes agent stack data through agent.stack.write", async () => {
+    const response = await dispatchPluginBridgeRequest({
+      entryToken: "pek_123",
+      viewId: "main",
+      request: {
+        requestId: "req-11",
+        method: "agent.stack.write",
+        params: {
+          slug: "editor",
+          stack: {
+            skills: ["@plugin/sample-plugin/skills/triage/SKILL.md"],
+          },
+        },
+      },
+    });
+
+    expect(response).toEqual({
+      requestId: "req-11",
+      ok: true,
+      result: {
+        stackPath: "agents/editor/stack.json",
+        stack: {
+          skills: ["@plugin/sample-plugin/skills/triage/SKILL.md"],
+        },
+      },
+    });
+    expect(writeAgentStackCalls).toEqual([
+      {
+        slug: "editor",
+        stack: {
+          skills: ["@plugin/sample-plugin/skills/triage/SKILL.md"],
+        },
+      },
+    ]);
+  });
+
+  test("reads merged plugin settings through plugin.settings.read", async () => {
+    const response = await dispatchPluginBridgeRequest({
+      entryToken: "pek_123",
+      viewId: "main",
+      request: {
+        requestId: "req-12",
+        method: "plugin.settings.read",
+      },
+    });
+
+    expect(response).toEqual({
+      requestId: "req-12",
       ok: true,
       result: {
         theme: "light",
@@ -358,7 +623,7 @@ describe("plugin bridge dispatcher", () => {
       entryToken: "pek_123",
       viewId: "main",
       request: {
-        requestId: "req-7",
+        requestId: "req-13",
         method: "plugin.settings.write",
         params: {
           settings: {
@@ -369,7 +634,7 @@ describe("plugin bridge dispatcher", () => {
     });
 
     expect(response).toEqual({
-      requestId: "req-7",
+      requestId: "req-13",
       ok: true,
       result: { saved: true },
     });
@@ -390,7 +655,7 @@ describe("plugin bridge dispatcher", () => {
       entryToken: "pek_123",
       viewId: "main",
       request: {
-        requestId: "req-8",
+        requestId: "req-14",
         method: "plugin.settings.write",
         params: {
           settings: {
@@ -401,7 +666,7 @@ describe("plugin bridge dispatcher", () => {
     });
 
     expect(response).toEqual({
-      requestId: "req-8",
+      requestId: "req-14",
       ok: false,
       error: {
         code: "invalid_params",
@@ -422,13 +687,13 @@ describe("plugin bridge dispatcher", () => {
       entryToken: "pek_123",
       viewId: "main",
       request: {
-        requestId: "req-9",
+        requestId: "req-15",
         method: "runtime.summary.read",
       },
     });
 
     expect(response).toEqual({
-      requestId: "req-9",
+      requestId: "req-15",
       ok: true,
       result: { runtime: "ok" },
     });

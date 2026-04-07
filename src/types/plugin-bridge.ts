@@ -3,6 +3,12 @@ import type { PluginCapability } from "@/types/plugins";
 export type PluginBridgeMethod =
   | "tree.read"
   | "page.read"
+  | "page.create"
+  | "page.write"
+  | "page.delete"
+  | "agents.read"
+  | "agent.stack.read"
+  | "agent.stack.write"
   | "plugin.settings.read"
   | "plugin.settings.write"
   | "runtime.summary.read";

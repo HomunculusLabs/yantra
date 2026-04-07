@@ -1,4 +1,14 @@
+import { listPersonas } from "@/lib/agents/persona-manager";
 import { buildRuntimeSettingsSummary } from "@/lib/agents/runtime-summary";
+import {
+  listAgentStackCatalog,
+  readAgentStack,
+  writeAgentStack,
+} from "@/lib/agents/stack-manager";
+import { autoCommit } from "@/lib/git/git-service";
+import { syncGraphCacheAfterCreate, syncGraphCacheAfterDelete, syncGraphCacheAfterWrite, markGraphCacheDirty } from "@/lib/graph/build-graph";
+import { getFrontmatterTitle } from "@/lib/markdown/frontmatter";
+import { syncDataviewCacheAfterCreate, syncDataviewCacheAfterDelete, syncDataviewCacheAfterWrite, markDataviewCacheDirty } from "@/lib/markdown/page-index";
 import {
   getPluginCapabilityDefinition,
   isPluginCapabilityAvailable,
@@ -9,10 +19,11 @@ import {
   validatePluginSettingsPayload,
 } from "@/lib/plugins/plugin-manager";
 import { savePluginStateRecord } from "@/lib/plugins/plugin-state-store";
-import { readPage } from "@/lib/storage/page-io";
+import { deleteNode } from "@/lib/storage/node-io";
+import { createPage, readPage, writePage } from "@/lib/storage/page-io";
 import { isRuntimeVirtualPath } from "@/lib/storage/path-utils";
 import { buildTree } from "@/lib/storage/tree-builder";
-import type { TreeNode, PageData } from "@/types";
+import type { FrontMatter, PageData, TreeNode } from "@/types";
 import type { RuntimeSettingsSummary } from "@/types/settings";
 import type { InstalledPluginSummary, PluginCapability, PluginTrust } from "@/types/plugins";
 import type {
@@ -51,13 +62,30 @@ class PluginBridgeDispatchError extends Error {
 }
 
 export const pluginBridgeDependencies = {
+  listPersonas,
   buildRuntimeSettingsSummary,
+  listAgentStackCatalog,
+  readAgentStack,
+  writeAgentStack,
   mergePluginSettingsWithDefaults,
   resolveHostedPluginView,
   validatePluginSettingsPayload,
   savePluginStateRecord,
+  createPage,
   readPage,
+  writePage,
+  deleteNode,
   buildTree,
+  autoCommit,
+  getFrontmatterTitle,
+  markGraphCacheDirty,
+  syncGraphCacheAfterCreate,
+  syncGraphCacheAfterDelete,
+  syncGraphCacheAfterWrite,
+  markDataviewCacheDirty,
+  syncDataviewCacheAfterCreate,
+  syncDataviewCacheAfterDelete,
+  syncDataviewCacheAfterWrite,
 };
 
 function createBridgeErrorResponse(
@@ -133,6 +161,50 @@ function mapTreeNode(node: TreeNode): PluginBridgeTreeNode {
   };
 }
 
+async function runMutationSideEffects(...effects: Array<Promise<unknown>>) {
+  const results = await Promise.allSettled(effects);
+  for (const result of results) {
+    if (result.status === "rejected") {
+      console.error("Plugin bridge page side effect failed:", result.reason);
+    }
+  }
+}
+
+function parsePagePath(value: unknown, method: string): string {
+  if (typeof value !== "string") {
+    throw new PluginBridgeDispatchError(
+      "invalid_params",
+      `${method} requires a string path.`
+    );
+  }
+
+  const nextPath = value.trim();
+  if (!nextPath) {
+    throw new PluginBridgeDispatchError(
+      "invalid_params",
+      `${method} path must be a non-empty string.`
+    );
+  }
+  if (nextPath.includes("\u0000") || nextPath.startsWith("/")) {
+    throw new PluginBridgeDispatchError("invalid_params", `${method} path is invalid.`);
+  }
+  if (isRuntimeVirtualPath(nextPath)) {
+    throw new PluginBridgeDispatchError(
+      "invalid_params",
+      `${method} cannot access runtime-prefixed paths in phase 1.`
+    );
+  }
+
+  return nextPath;
+}
+
+function parseOptionalParentPath(value: unknown, method: string): string {
+  if (value === undefined || value === null || value === "") {
+    return "";
+  }
+  return parsePagePath(value, method);
+}
+
 function parsePageReadParams(params: unknown): { path: string } {
   if (!isRecord(params) || typeof params.path !== "string") {
     throw new PluginBridgeDispatchError(
@@ -141,27 +213,103 @@ function parsePageReadParams(params: unknown): { path: string } {
     );
   }
 
-  const nextPath = params.path.trim();
-  if (!nextPath) {
+  return { path: parsePagePath(params.path, "page.read") };
+}
+
+function parsePageCreateParams(params: unknown): { parentPath: string; title: string } {
+  if (!isRecord(params) || typeof params.title !== "string") {
     throw new PluginBridgeDispatchError(
       "invalid_params",
-      "page.read path must be a non-empty string."
-    );
-  }
-  if (nextPath.includes("\u0000") || nextPath.startsWith("/")) {
-    throw new PluginBridgeDispatchError(
-      "invalid_params",
-      "page.read path is invalid."
-    );
-  }
-  if (isRuntimeVirtualPath(nextPath)) {
-    throw new PluginBridgeDispatchError(
-      "invalid_params",
-      "page.read cannot access runtime-prefixed paths in phase 1."
+      "page.create requires a params object with a string title."
     );
   }
 
-  return { path: nextPath };
+  const title = params.title.trim();
+  if (!title) {
+    throw new PluginBridgeDispatchError(
+      "invalid_params",
+      "page.create title must be a non-empty string."
+    );
+  }
+
+  return {
+    parentPath: parseOptionalParentPath(params.parentPath, "page.create"),
+    title,
+  };
+}
+
+function parsePageWriteParams(params: unknown): {
+  path: string;
+  content: string;
+  frontmatter: Partial<FrontMatter>;
+} {
+  if (!isRecord(params) || typeof params.path !== "string" || typeof params.content !== "string") {
+    throw new PluginBridgeDispatchError(
+      "invalid_params",
+      "page.write requires a params object with string path and content fields."
+    );
+  }
+  if (params.frontmatter !== undefined && !isRecord(params.frontmatter)) {
+    throw new PluginBridgeDispatchError(
+      "invalid_params",
+      "page.write frontmatter must be an object when provided."
+    );
+  }
+
+  return {
+    path: parsePagePath(params.path, "page.write"),
+    content: params.content,
+    frontmatter: (params.frontmatter ?? {}) as Partial<FrontMatter>,
+  };
+}
+
+function parsePageDeleteParams(params: unknown): { path: string } {
+  if (!isRecord(params) || typeof params.path !== "string") {
+    throw new PluginBridgeDispatchError(
+      "invalid_params",
+      "page.delete requires a params object with a string path."
+    );
+  }
+
+  return { path: parsePagePath(params.path, "page.delete") };
+}
+
+function parseAgentSlug(value: unknown, method: string): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new PluginBridgeDispatchError(
+      "invalid_params",
+      `${method} requires a non-empty string slug.`
+    );
+  }
+  return value.trim();
+}
+
+function parseAgentStackReadParams(params: unknown): { slug: string } {
+  if (!isRecord(params)) {
+    throw new PluginBridgeDispatchError(
+      "invalid_params",
+      "agent.stack.read requires a params object with a string slug."
+    );
+  }
+
+  return { slug: parseAgentSlug(params.slug, "agent.stack.read") };
+}
+
+function parseAgentStackWriteParams(params: unknown): {
+  slug: string;
+  stack: Record<string, unknown>;
+} {
+  if (!isRecord(params) || !isRecord(params.stack)) {
+    throw new PluginBridgeDispatchError(
+      "invalid_params",
+      "agent.stack.write requires a params object with slug and stack fields."
+    );
+  }
+
+  return {
+    slug: parseAgentSlug(params.slug, "agent.stack.write"),
+    stack: params.stack,
+  };
 }
 
 function parseSettingsWriteParams(params: unknown): Record<string, unknown> {
@@ -208,6 +356,85 @@ const PLUGIN_BRIDGE_METHODS: Record<
         }
         throw error;
       }
+    },
+  },
+  "page.create": {
+    capability: "page.create",
+    handler: async ({ params }) => {
+      const { parentPath, title } = parsePageCreateParams(params);
+      const newPath = await pluginBridgeDependencies.createPage(parentPath, title);
+      pluginBridgeDependencies.markGraphCacheDirty();
+      pluginBridgeDependencies.markDataviewCacheDirty();
+      void runMutationSideEffects(
+        pluginBridgeDependencies.syncGraphCacheAfterCreate(newPath),
+        pluginBridgeDependencies.syncDataviewCacheAfterCreate(newPath)
+      );
+      pluginBridgeDependencies.autoCommit(newPath, "Add");
+      return { newPath };
+    },
+  },
+  "page.write": {
+    capability: "page.write",
+    handler: async ({ params }) => {
+      const { path, content, frontmatter } = parsePageWriteParams(params);
+      const previousPage = await pluginBridgeDependencies.readPage(path).catch(() => null);
+      await pluginBridgeDependencies.writePage(path, content, frontmatter);
+      const page = await pluginBridgeDependencies.readPage(path);
+      await runMutationSideEffects(
+        pluginBridgeDependencies.syncGraphCacheAfterWrite(page.path, {
+          previousTitle: previousPage
+            ? pluginBridgeDependencies.getFrontmatterTitle(
+                previousPage.frontmatter,
+                previousPage.path
+              )
+            : null,
+        }),
+        pluginBridgeDependencies.syncDataviewCacheAfterWrite(page.path)
+      );
+      pluginBridgeDependencies.autoCommit(page.path, "Update");
+      return { saved: true };
+    },
+  },
+  "page.delete": {
+    capability: "page.delete",
+    handler: async ({ params }) => {
+      const { path } = parsePageDeleteParams(params);
+      const previousPage = await pluginBridgeDependencies.readPage(path).catch(() => null);
+      await pluginBridgeDependencies.deleteNode(path);
+      await runMutationSideEffects(
+        pluginBridgeDependencies.syncGraphCacheAfterDelete(previousPage?.path ?? path),
+        pluginBridgeDependencies.syncDataviewCacheAfterDelete(previousPage?.path ?? path)
+      );
+      pluginBridgeDependencies.autoCommit(path, "Delete");
+      return { deleted: true };
+    },
+  },
+  "agents.read": {
+    capability: "agents.read",
+    handler: async () => {
+      return pluginBridgeDependencies.listPersonas();
+    },
+  },
+  "agent.stack.read": {
+    capability: "agent.stack.read",
+    handler: async ({ params }) => {
+      const { slug } = parseAgentStackReadParams(params);
+      const [stackData, catalog] = await Promise.all([
+        pluginBridgeDependencies.readAgentStack(slug),
+        pluginBridgeDependencies.listAgentStackCatalog(),
+      ]);
+      return {
+        stackPath: stackData.stackPath,
+        stack: stackData.stack,
+        catalog,
+      };
+    },
+  },
+  "agent.stack.write": {
+    capability: "agent.stack.write",
+    handler: async ({ params }) => {
+      const { slug, stack } = parseAgentStackWriteParams(params);
+      return pluginBridgeDependencies.writeAgentStack(slug, stack);
     },
   },
   "plugin.settings.read": {
