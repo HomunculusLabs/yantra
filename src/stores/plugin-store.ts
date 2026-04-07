@@ -12,12 +12,19 @@ import {
   getPluginCatalogEntryKey,
   type PluginCatalogEntryKey,
 } from "@/lib/plugins/plugin-entry-key";
-import type { InstalledPluginSummary, PluginCapability, PluginManifest, PluginIssue } from "@/types/plugins";
+import type {
+  InstalledPluginSummary,
+  PluginCapability,
+  PluginManifest,
+  PluginIssue,
+  PluginTrust,
+} from "@/types/plugins";
 
 type PluginPendingOperation =
   | "approve"
   | "enable"
   | "disable"
+  | "set_trust"
   | "save_grants"
   | "load_settings"
   | "save_settings"
@@ -54,6 +61,7 @@ interface PluginStoreState {
   uninstallLocalPlugin: (entryKey: PluginCatalogEntryKey) => Promise<void>;
   selectPlugin: (entryKey: PluginCatalogEntryKey | null) => void;
   approveManifest: (entryKey: PluginCatalogEntryKey) => Promise<void>;
+  setTrust: (entryKey: PluginCatalogEntryKey, trust: PluginTrust) => Promise<void>;
   setEnabled: (entryKey: PluginCatalogEntryKey, enabled: boolean) => Promise<void>;
   saveGrantedCapabilities: (
     entryKey: PluginCatalogEntryKey,
@@ -338,6 +346,39 @@ export const usePluginStore = create<PluginStoreState>((set, get) => ({
         await get().refreshCatalog();
       }
       const message = error instanceof Error ? error.message : `Failed to approve ${pluginId}`;
+      setPluginPending(set, entryKey, null, message);
+      toast.error(message);
+      return;
+    }
+    setPluginPending(set, entryKey, null, null);
+  },
+
+  setTrust: async (entryKey, trust) => {
+    const plugin = get().catalogByEntryKey[entryKey];
+    const pluginId = plugin?.manifest?.id;
+    if (!pluginId) return;
+    if (hasPluginIssue(plugin, "duplicate_plugin_id")) {
+      setPluginPending(set, entryKey, null, getDuplicateIdGuardMessage(plugin));
+      return;
+    }
+    if (get().pendingOperationByEntryKey[entryKey]) return;
+    setPluginPending(set, entryKey, "set_trust");
+    try {
+      const refreshedPlugin = await patchPlugin(pluginId, { trust });
+      set((state) => ({
+        catalog: replaceCatalogEntry(state.catalog, entryKey, refreshedPlugin),
+        catalogByEntryKey: {
+          ...state.catalogByEntryKey,
+          [entryKey]: refreshedPlugin,
+        },
+      }));
+      toast.success(`Set ${refreshedPlugin.manifest?.name ?? pluginId} to ${trust} trust.`);
+    } catch (error) {
+      if (isRequestJsonError(error) && (error.status === 404 || error.status === 409)) {
+        await get().refreshCatalog();
+      }
+      const message =
+        error instanceof Error ? error.message : `Failed to update trust for ${pluginId}`;
       setPluginPending(set, entryKey, null, message);
       toast.error(message);
       return;

@@ -177,64 +177,106 @@ export async function GET(_request: Request, { params }: RouteParams) {
       }
 
       async function handleHostBridgeRequest(data) {
-        if (data.method !== 'desktop.selectDirectory') {
-          return false;
-        }
-
         const desktopBridge = window.yantraDesktop;
-        if (!desktopBridge || typeof desktopBridge.selectDirectory !== 'function') {
-          sendRpcResponse({
-            requestId: data.requestId,
-            ok: false,
-            error: {
-              code: 'runtime_blocked',
-              message: 'Desktop directory picker is unavailable in this runtime.',
-            },
-          });
+        if (data.method === 'desktop.selectDirectory') {
+          if (!desktopBridge || typeof desktopBridge.selectDirectory !== 'function') {
+            sendRpcResponse({
+              requestId: data.requestId,
+              ok: false,
+              error: {
+                code: 'runtime_blocked',
+                message: 'Desktop directory picker is unavailable in this runtime.',
+              },
+            });
+            return true;
+          }
+
+          const params = data.params;
+          if (params !== undefined && (!params || typeof params !== 'object' || Array.isArray(params))) {
+            invalidParamsResponse(data.requestId, 'desktop.selectDirectory requires an object when params are provided.');
+            return true;
+          }
+
+          const options = {};
+          if (params && 'title' in params) {
+            if (typeof params.title !== 'string') {
+              invalidParamsResponse(data.requestId, 'desktop.selectDirectory title must be a string when provided.');
+              return true;
+            }
+            options.title = params.title;
+          }
+          if (params && 'defaultPath' in params) {
+            if (typeof params.defaultPath !== 'string') {
+              invalidParamsResponse(data.requestId, 'desktop.selectDirectory defaultPath must be a string when provided.');
+              return true;
+            }
+            options.defaultPath = params.defaultPath;
+          }
+
+          try {
+            const selectedPath = await desktopBridge.selectDirectory(options);
+            sendRpcResponse({
+              requestId: data.requestId,
+              ok: true,
+              result: selectedPath,
+            });
+          } catch (error) {
+            sendRpcResponse({
+              requestId: data.requestId,
+              ok: false,
+              error: {
+                code: 'internal_error',
+                message: error instanceof Error ? error.message : 'Desktop directory picker failed.',
+              },
+            });
+          }
+
           return true;
         }
 
-        const params = data.params;
-        if (params !== undefined && (!params || typeof params !== 'object' || Array.isArray(params))) {
-          invalidParamsResponse(data.requestId, 'desktop.selectDirectory requires an object when params are provided.');
+        if (data.method === 'desktop.reloadKeybindings') {
+          if (!desktopBridge || typeof desktopBridge.reloadKeybindings !== 'function') {
+            sendRpcResponse({
+              requestId: data.requestId,
+              ok: false,
+              error: {
+                code: 'runtime_blocked',
+                message: 'Desktop keybinding reload is unavailable in this runtime.',
+              },
+            });
+            return true;
+          }
+
+          if (data.params !== undefined) {
+            invalidParamsResponse(
+              data.requestId,
+              'desktop.reloadKeybindings does not accept params.'
+            );
+            return true;
+          }
+
+          try {
+            const result = await desktopBridge.reloadKeybindings();
+            sendRpcResponse({
+              requestId: data.requestId,
+              ok: true,
+              result,
+            });
+          } catch (error) {
+            sendRpcResponse({
+              requestId: data.requestId,
+              ok: false,
+              error: {
+                code: 'internal_error',
+                message: error instanceof Error ? error.message : 'Desktop keybinding reload failed.',
+              },
+            });
+          }
+
           return true;
         }
 
-        const options = {};
-        if (params && 'title' in params) {
-          if (typeof params.title !== 'string') {
-            invalidParamsResponse(data.requestId, 'desktop.selectDirectory title must be a string when provided.');
-            return true;
-          }
-          options.title = params.title;
-        }
-        if (params && 'defaultPath' in params) {
-          if (typeof params.defaultPath !== 'string') {
-            invalidParamsResponse(data.requestId, 'desktop.selectDirectory defaultPath must be a string when provided.');
-            return true;
-          }
-          options.defaultPath = params.defaultPath;
-        }
-
-        try {
-          const selectedPath = await desktopBridge.selectDirectory(options);
-          sendRpcResponse({
-            requestId: data.requestId,
-            ok: true,
-            result: selectedPath,
-          });
-        } catch (error) {
-          sendRpcResponse({
-            requestId: data.requestId,
-            ok: false,
-            error: {
-              code: 'internal_error',
-              message: error instanceof Error ? error.message : 'Desktop directory picker failed.',
-            },
-          });
-        }
-
-        return true;
+        return false;
       }
 
       window.addEventListener('message', (event) => {

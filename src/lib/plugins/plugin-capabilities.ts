@@ -157,7 +157,7 @@ export const PLUGIN_CAPABILITY_DEFINITIONS = {
     label: "Reload keybindings",
     description: "Reload desktop keybindings through a trusted host bridge.",
     requiresTrust: "trusted-local",
-    availability: "phase-4",
+    availability: "phase-2",
     desktopOnly: true,
   },
 } satisfies Record<PluginCapability, PluginCapabilityDefinition>;

@@ -105,6 +105,27 @@ describe("plugin manifest validation", () => {
     expect(result.issues).toEqual([]);
   });
 
+  test("accepts trusted-local desktop reload capabilities in plugin manifests", async () => {
+    const pluginRoot = await writePluginDir({
+      folderName: "trusted-reload-plugin",
+      manifest: baseManifest({
+        requestedCapabilities: {
+          required: ["tree.read"],
+          optional: ["desktop.reloadKeybindings"],
+        },
+      }),
+      files: {
+        "index.html": "<html><body>plugin</body></html>",
+      },
+    });
+
+    const result = await readValidatedPluginDirectory(pluginRoot);
+    expect(result.manifest?.requestedCapabilities.optional).toEqual([
+      "desktop.reloadKeybindings",
+    ]);
+    expect(result.issues).toEqual([]);
+  });
+
   test("reports a missing plugin manifest file", async () => {
     const pluginRoot = await writePluginDir({
       folderName: "missing-manifest",

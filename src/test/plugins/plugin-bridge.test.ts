@@ -69,6 +69,7 @@ function createResolvedPlugin(
         required: ["tree.read"],
         optional: [
           "desktop.selectDirectory",
+          "desktop.reloadKeybindings",
           "graph.read",
           "page.read",
           "page.create",
@@ -294,6 +295,27 @@ describe("plugin bridge dispatcher", () => {
     });
 
     expect(methods).toEqual(["tree.read", "desktop.selectDirectory"]);
+  });
+
+  test("includes desktop.reloadKeybindings only for trusted-local plugins", () => {
+    const base = createResolvedPlugin();
+    const methods = getSupportedPluginBridgeMethods({
+      ...base,
+      manifest: {
+        ...base.manifest,
+        requestedCapabilities: {
+          required: ["tree.read"],
+          optional: ["desktop.reloadKeybindings"],
+        },
+      },
+      state: {
+        ...base.state,
+        trust: "trusted-local",
+        grantedCapabilities: ["tree.read", "desktop.reloadKeybindings"],
+      },
+    });
+
+    expect(methods).toEqual(["tree.read", "desktop.reloadKeybindings"]);
   });
 
   test("dispatches tree.read through the tree builder", async () => {

@@ -114,12 +114,6 @@ export async function PATCH(
       if (!isPluginTrust(body.trust)) {
         return NextResponse.json({ error: "trust must be 'sandboxed' or 'trusted-local'." }, { status: 400 });
       }
-      if (body.trust === "trusted-local") {
-        return NextResponse.json(
-          { error: "trusted-local trust is not supported yet." },
-          { status: 409 }
-        );
-      }
       if (
         body.trust === "sandboxed" &&
         nextState.grantedCapabilities.some(

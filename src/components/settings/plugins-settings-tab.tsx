@@ -75,6 +75,7 @@ export function PluginsSettingsTab() {
   const installLocalPlugin = usePluginStore((state) => state.installLocalPlugin);
   const uninstallLocalPlugin = usePluginStore((state) => state.uninstallLocalPlugin);
   const approveManifest = usePluginStore((state) => state.approveManifest);
+  const setTrust = usePluginStore((state) => state.setTrust);
   const setEnabled = usePluginStore((state) => state.setEnabled);
   const saveGrantedCapabilities = usePluginStore((state) => state.saveGrantedCapabilities);
   const loadSettingsDraft = usePluginStore((state) => state.loadSettingsDraft);
@@ -89,6 +90,8 @@ export function PluginsSettingsTab() {
     typeof window !== "undefined" && Boolean(window.yantraDesktop?.installPluginFromDirectory);
   const hasDesktopPluginUninstall =
     typeof window !== "undefined" && Boolean(window.yantraDesktop?.uninstallPlugin);
+  const hasDesktopTrustedBridge =
+    typeof window !== "undefined" && Boolean(window.yantraDesktop?.reloadKeybindings);
 
   useEffect(() => {
     if (catalog.length === 0 && !loading) {
@@ -330,7 +333,7 @@ export function PluginsSettingsTab() {
                             : "Plugin is currently disabled"}
                     </p>
                     <p className="mt-1">
-                      Trust stays sandboxed in phase 1. No runtime execution surface is exposed from this tab yet.
+                      This tab manages approval, trust, grants, and settings. Trusted-local methods remain limited to desktop host APIs.
                     </p>
                   </div>
                 </div>
@@ -428,6 +431,53 @@ export function PluginsSettingsTab() {
 
                         <Button
                           size="sm"
+                          variant={selectedPlugin.state.trust === "trusted-local" ? "default" : "outline"}
+                          className="h-8 gap-1.5 text-[12px]"
+                          onClick={() =>
+                            selectedPluginKey && void setTrust(selectedPluginKey, "trusted-local")
+                          }
+                          disabled={
+                            !selectedPlugin.manifest ||
+                            !hasDesktopTrustedBridge ||
+                            Boolean(pendingOperation) ||
+                            hasDuplicateIdIssue ||
+                            hasNonGrantBlockingIssues ||
+                            selectedPlugin.state.trust === "trusted-local"
+                          }
+                        >
+                          {pendingOperation === "set_trust" ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Shield className="h-3.5 w-3.5" />
+                          )}
+                          Trust locally
+                        </Button>
+
+                        <Button
+                          size="sm"
+                          variant={selectedPlugin.state.trust === "sandboxed" ? "default" : "outline"}
+                          className="h-8 gap-1.5 text-[12px]"
+                          onClick={() =>
+                            selectedPluginKey && void setTrust(selectedPluginKey, "sandboxed")
+                          }
+                          disabled={
+                            !selectedPlugin.manifest ||
+                            Boolean(pendingOperation) ||
+                            hasDuplicateIdIssue ||
+                            hasNonGrantBlockingIssues ||
+                            selectedPlugin.state.trust === "sandboxed"
+                          }
+                        >
+                          {pendingOperation === "set_trust" ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Shield className="h-3.5 w-3.5" />
+                          )}
+                          Sandbox
+                        </Button>
+
+                        <Button
+                          size="sm"
                           variant={selectedPlugin.state.enabled ? "outline" : "default"}
                           className="h-8 gap-1.5 text-[12px]"
                           onClick={() => selectedPluginKey && void setEnabled(selectedPluginKey, !selectedPlugin.state.enabled)}
@@ -460,7 +510,7 @@ export function PluginsSettingsTab() {
                       </div>
 
                       <div className="mt-4 rounded-lg border border-border/70 bg-card px-3 py-2 text-[11px] text-muted-foreground">
-                        Trust is read-only in phase 1. The backend only permits sandboxed plugins here.
+                        Current trust: {selectedPlugin.state.trust}. Trusted-local is desktop-only and only affects capabilities that explicitly require it.
                       </div>
                     </div>
 
@@ -469,7 +519,7 @@ export function PluginsSettingsTab() {
                         <div>
                           <h4 className="text-[13px] font-semibold text-foreground">Capability grants</h4>
                           <p className="mt-1 text-[11px] text-muted-foreground">
-                            Only requested, phase-1-supported sandbox capabilities can be granted.
+                            Only requested, current-phase-supported capabilities can be granted. Trusted-local methods also require trusted-local trust.
                           </p>
                         </div>
                         <Button
@@ -496,7 +546,17 @@ export function PluginsSettingsTab() {
                               <div className="space-y-2">
                                 {section.values.map((capability) => {
                                   const definition = getPluginCapabilityDefinition(capability);
-                                  const supported = isPluginCapabilityAvailable(capability, CURRENT_PLUGIN_CAPABILITY_PHASE) && definition.requiresTrust === "sandboxed";
+                                  const availableInPhase = isPluginCapabilityAvailable(
+                                    capability,
+                                    CURRENT_PLUGIN_CAPABILITY_PHASE
+                                  );
+                                  const trustSatisfied =
+                                    definition.requiresTrust === "sandboxed" ||
+                                    selectedPlugin.state.trust === "trusted-local";
+                                  const desktopSatisfied =
+                                    !definition.desktopOnly || hasDesktopTrustedBridge;
+                                  const supported =
+                                    availableInPhase && trustSatisfied && desktopSatisfied;
                                   const checked = grantedDraft.has(capability);
                                   return (
                                     <label key={capability} className="flex items-start gap-3 rounded-lg border border-border/70 bg-card px-3 py-2 text-[12px]">
@@ -518,7 +578,9 @@ export function PluginsSettingsTab() {
                                         <div className="flex flex-wrap items-center gap-2">
                                           <span className="font-medium text-foreground">{definition.label}</span>
                                           {section.required ? <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-300">required</span> : null}
-                                          {!supported ? <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] text-red-300">not grantable in phase 1</span> : null}
+                                          {!availableInPhase ? <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] text-red-300">not in current phase</span> : null}
+                                          {availableInPhase && !trustSatisfied ? <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] text-red-300">requires trusted-local</span> : null}
+                                          {availableInPhase && trustSatisfied && !desktopSatisfied ? <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] text-red-300">desktop only</span> : null}
                                         </div>
                                         <p className="mt-1 text-muted-foreground">{definition.description}</p>
                                       </div>

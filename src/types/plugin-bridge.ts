@@ -3,6 +3,7 @@ import type { PluginCapability } from "@/types/plugins";
 export type PluginBridgeMethod =
   | "tree.read"
   | "desktop.selectDirectory"
+  | "desktop.reloadKeybindings"
   | "graph.read"
   | "page.read"
   | "page.create"

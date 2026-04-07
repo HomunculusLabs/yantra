@@ -375,11 +375,14 @@ function parseSettingsWriteParams(params: unknown): Record<string, unknown> {
 }
 
 const HOST_LOCAL_PLUGIN_BRIDGE_METHODS: Record<
-  Extract<PluginBridgeMethod, "desktop.selectDirectory">,
+  Extract<PluginBridgeMethod, "desktop.selectDirectory" | "desktop.reloadKeybindings">,
   BridgeMethodCapabilityDefinition
 > = {
   "desktop.selectDirectory": {
     capability: "desktop.selectDirectory",
+  },
+  "desktop.reloadKeybindings": {
+    capability: "desktop.reloadKeybindings",
   },
 };
 
@@ -546,6 +549,15 @@ const PLUGIN_BRIDGE_METHODS: Record<
       throw new PluginBridgeDispatchError(
         "runtime_blocked",
         "Plugin bridge method 'desktop.selectDirectory' must be called through the host runtime."
+      );
+    },
+  },
+  "desktop.reloadKeybindings": {
+    capability: "desktop.reloadKeybindings",
+    handler: async () => {
+      throw new PluginBridgeDispatchError(
+        "runtime_blocked",
+        "Plugin bridge method 'desktop.reloadKeybindings' must be called through the host runtime."
       );
     },
   },

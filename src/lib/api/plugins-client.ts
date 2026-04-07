@@ -25,7 +25,7 @@ export async function patchPlugin(
     | { approveManifest: true }
     | { enabled: boolean }
     | { grantedCapabilities: PluginCapability[] }
-    | { trust: "sandboxed" }
+    | { trust: "sandboxed" | "trusted-local" }
 ): Promise<InstalledPluginSummary> {
   return requestJson<InstalledPluginSummary>(`/api/plugins/${encodeURIComponent(pluginId)}`, {
     method: "PATCH",

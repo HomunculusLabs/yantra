@@ -137,6 +137,51 @@ describe("GET /plugins/host/[entryKey]/[viewId]", () => {
     expect(html).toContain("Desktop directory picker is unavailable in this runtime.");
   });
 
+  test("includes desktop.reloadKeybindings in supportedMethods for trusted desktop plugins", async () => {
+    resolveHostedPluginViewImpl = async () => ({
+      ok: true as const,
+      entryKey: "plugin-entry-key",
+      entryFilePath: "/tmp/plugin/index.html",
+      plugin: {
+        manifest: {
+          id: "sample-plugin",
+          name: "Sample Plugin",
+          version: "1.0.0",
+          kind: "ui-sandbox",
+          apiVersion: 1,
+          requestedCapabilities: {
+            required: ["tree.read"],
+            optional: ["desktop.reloadKeybindings"],
+          },
+        },
+        state: {
+          grantedCapabilities: ["tree.read", "desktop.reloadKeybindings"],
+          trust: "trusted-local",
+        },
+      },
+      view: {
+        id: "main",
+        title: "Main View",
+        entry: "index.html",
+      },
+    });
+
+    const response = await GET(
+      new Request("http://localhost/plugins/host/pek_123/main"),
+      {
+        params: Promise.resolve({
+          entryKey: "pek_123",
+          viewId: "main",
+        }),
+      }
+    );
+
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toContain("desktop.reloadKeybindings");
+    expect(html).toContain("Desktop keybinding reload is unavailable in this runtime.");
+  });
+
   test("returns an html error shell for route resolution failures", async () => {
     resolveHostedPluginViewImpl = async () => ({
       ok: false as const,

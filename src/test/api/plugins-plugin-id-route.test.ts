@@ -97,4 +97,39 @@ describe("PATCH /api/plugins/[pluginId]", () => {
       "desktop.selectDirectory",
     ]);
   });
+
+  test("accepts trusted-local trust updates", async () => {
+    const base = createInstalledPlugin();
+    installedPlugin = {
+      ...base,
+      manifest: {
+        ...base.manifest!,
+        requestedCapabilities: {
+          required: ["tree.read"],
+          optional: ["desktop.reloadKeybindings"],
+        },
+      },
+    };
+
+    const response = await PATCH(
+      new Request("http://localhost/api/plugins/sample-plugin", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          trust: "trusted-local",
+        }),
+      }) as any,
+      {
+        params: Promise.resolve({ pluginId: "sample-plugin" }),
+      }
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.state.trust).toBe("trusted-local");
+    expect(savePluginStateRecordCalls.length).toBe(1);
+    expect(savePluginStateRecordCalls[0]?.record.trust).toBe("trusted-local");
+  });
 });

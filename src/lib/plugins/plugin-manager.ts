@@ -734,19 +734,11 @@ export function validatePluginSettingsPayload(
   }
 
   for (const capability of manifest.requestedCapabilities.required) {
-    const definition = getPluginCapabilityDefinition(capability);
     if (!isPluginCapabilityAvailable(capability, CURRENT_PLUGIN_CAPABILITY_PHASE)) {
       addIssue(
         issues,
         "unsupported_capability",
         `Plugin capability '${capability}' is not supported in ${CURRENT_PLUGIN_CAPABILITY_PHASE}.`
-      );
-    }
-    if (definition.requiresTrust === "trusted-local") {
-      addIssue(
-        issues,
-        "trusted_capability_not_supported",
-        `Plugin capability '${capability}' requires trusted-local execution, which is not supported in phase 1.`
       );
     }
   }
