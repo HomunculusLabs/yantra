@@ -176,6 +176,68 @@ export async function GET(_request: Request, { params }: RouteParams) {
         });
       }
 
+      async function readDaemonHealth() {
+        const desktopBridge = window.yantraDesktop;
+        if (!desktopBridge || typeof desktopBridge.getDaemonControlInfo !== 'function') {
+          throw new Error('Desktop daemon info is unavailable in this runtime.');
+        }
+
+        const info = await desktopBridge.getDaemonControlInfo();
+        if (!info.healthUrl) {
+          return {
+            available: Boolean(info.available),
+            managed: Boolean(info.managed),
+            ready: Boolean(info.ready),
+            restarting: Boolean(info.restarting),
+            restartingMode: info.restartingMode ?? null,
+            reachable: false,
+            health: null,
+            error: 'Daemon health URL is unavailable.',
+          };
+        }
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 2000);
+        try {
+          const response = await fetch(info.healthUrl, {
+            signal: controller.signal,
+            cache: 'no-store',
+          });
+          const payload = await response.json().catch(() => null);
+          if (!response.ok || !payload || payload.status !== 'ok') {
+            throw new Error(
+              payload && typeof payload === 'object' && 'error' in payload && typeof payload.error === 'string'
+                ? payload.error
+                : 'Daemon health check failed (' + response.status + ').'
+            );
+          }
+
+          return {
+            available: Boolean(info.available),
+            managed: Boolean(info.managed),
+            ready: Boolean(info.ready),
+            restarting: Boolean(info.restarting),
+            restartingMode: info.restartingMode ?? null,
+            reachable: true,
+            health: payload,
+            error: null,
+          };
+        } catch (error) {
+          return {
+            available: Boolean(info.available),
+            managed: Boolean(info.managed),
+            ready: Boolean(info.ready),
+            restarting: Boolean(info.restarting),
+            restartingMode: info.restartingMode ?? null,
+            reachable: false,
+            health: null,
+            error: error instanceof Error ? error.message : 'Daemon health check failed.',
+          };
+        } finally {
+          clearTimeout(timeout);
+        }
+      }
+
       async function handleHostBridgeRequest(data) {
         const desktopBridge = window.yantraDesktop;
         if (data.method === 'desktop.selectDirectory') {
@@ -269,6 +331,224 @@ export async function GET(_request: Request, { params }: RouteParams) {
               error: {
                 code: 'internal_error',
                 message: error instanceof Error ? error.message : 'Desktop keybinding reload failed.',
+              },
+            });
+          }
+
+          return true;
+        }
+
+        if (data.method === 'daemon.health.read') {
+          if (data.params !== undefined) {
+            invalidParamsResponse(
+              data.requestId,
+              'daemon.health.read does not accept params.'
+            );
+            return true;
+          }
+
+          try {
+            const result = await readDaemonHealth();
+            sendRpcResponse({
+              requestId: data.requestId,
+              ok: true,
+              result,
+            });
+          } catch (error) {
+            sendRpcResponse({
+              requestId: data.requestId,
+              ok: false,
+              error: {
+                code: 'internal_error',
+                message: error instanceof Error ? error.message : 'Daemon health request failed.',
+              },
+            });
+          }
+
+          return true;
+        }
+
+        if (data.method === 'desktop.restartDaemon') {
+          if (!desktopBridge || typeof desktopBridge.restartDaemon !== 'function') {
+            sendRpcResponse({
+              requestId: data.requestId,
+              ok: false,
+              error: {
+                code: 'runtime_blocked',
+                message: 'Desktop daemon restart is unavailable in this runtime.',
+              },
+            });
+            return true;
+          }
+
+          const params = data.params;
+          if (!params || typeof params !== 'object' || Array.isArray(params)) {
+            invalidParamsResponse(
+              data.requestId,
+              'desktop.restartDaemon requires an object with a mode field.'
+            );
+            return true;
+          }
+          if (!('mode' in params) || (params.mode !== 'soft' && params.mode !== 'force')) {
+            invalidParamsResponse(
+              data.requestId,
+              'desktop.restartDaemon mode must be \"soft\" or \"force\".'
+            );
+            return true;
+          }
+
+          try {
+            const result = await desktopBridge.restartDaemon(params.mode);
+            sendRpcResponse({
+              requestId: data.requestId,
+              ok: true,
+              result,
+            });
+          } catch (error) {
+            sendRpcResponse({
+              requestId: data.requestId,
+              ok: false,
+              error: {
+                code: 'internal_error',
+                message: error instanceof Error ? error.message : 'Desktop daemon restart failed.',
+              },
+            });
+          }
+
+          return true;
+        }
+
+        if (data.method === 'daemon.session.read') {
+          if (data.params !== undefined) {
+            invalidParamsResponse(
+              data.requestId,
+              'daemon.session.read does not accept params.'
+            );
+            return true;
+          }
+
+          try {
+            const response = await fetch('/api/daemon/sessions', {
+              cache: 'no-store',
+            });
+            const payload = await response.json().catch(() => null);
+            if (!response.ok) {
+              throw new Error(
+                payload && typeof payload === 'object' && 'error' in payload && typeof payload.error === 'string'
+                  ? payload.error
+                  : 'Daemon session list failed (' + response.status + ').'
+              );
+            }
+
+            sendRpcResponse({
+              requestId: data.requestId,
+              ok: true,
+              result: payload,
+            });
+          } catch (error) {
+            sendRpcResponse({
+              requestId: data.requestId,
+              ok: false,
+              error: {
+                code: 'internal_error',
+                message: error instanceof Error ? error.message : 'Daemon session list failed.',
+              },
+            });
+          }
+
+          return true;
+        }
+
+        if (data.method === 'daemon.session.create') {
+          const params = data.params;
+          if (!params || typeof params !== 'object' || Array.isArray(params)) {
+            invalidParamsResponse(
+              data.requestId,
+              'daemon.session.create requires an object payload.'
+            );
+            return true;
+          }
+
+          const prompt =
+            typeof params.prompt === 'string' ? params.prompt.trim() : '';
+          if (!prompt) {
+            invalidParamsResponse(
+              data.requestId,
+              'daemon.session.create requires a non-empty string prompt.'
+            );
+            return true;
+          }
+
+          const payload = {
+            prompt,
+            agentSlug:
+              typeof params.agentSlug === 'string' && params.agentSlug.trim()
+                ? params.agentSlug.trim()
+                : 'general',
+          };
+
+          if ('sessionId' in params) {
+            if (typeof params.sessionId !== 'string' || !params.sessionId.trim()) {
+              invalidParamsResponse(
+                data.requestId,
+                'daemon.session.create sessionId must be a non-empty string when provided.'
+              );
+              return true;
+            }
+            payload.sessionId = params.sessionId.trim();
+          }
+
+          if ('cwd' in params) {
+            if (typeof params.cwd !== 'string' || !params.cwd.trim()) {
+              invalidParamsResponse(
+                data.requestId,
+                'daemon.session.create cwd must be a non-empty string when provided.'
+              );
+              return true;
+            }
+            payload.cwd = params.cwd.trim();
+          }
+
+          if ('timeoutSeconds' in params) {
+            if (typeof params.timeoutSeconds !== 'number' || !Number.isFinite(params.timeoutSeconds)) {
+              invalidParamsResponse(
+                data.requestId,
+                'daemon.session.create timeoutSeconds must be a finite number when provided.'
+              );
+              return true;
+            }
+            payload.timeoutSeconds = params.timeoutSeconds;
+          }
+
+          try {
+            const response = await fetch('/api/daemon/sessions', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(payload),
+            });
+            const result = await response.json().catch(() => null);
+            if (!response.ok) {
+              throw new Error(
+                result && typeof result === 'object' && 'error' in result && typeof result.error === 'string'
+                  ? result.error
+                  : 'Daemon session create failed (' + response.status + ').'
+              );
+            }
+
+            sendRpcResponse({
+              requestId: data.requestId,
+              ok: true,
+              result,
+            });
+          } catch (error) {
+            sendRpcResponse({
+              requestId: data.requestId,
+              ok: false,
+              error: {
+                code: 'internal_error',
+                message: error instanceof Error ? error.message : 'Daemon session create failed.',
               },
             });
           }

@@ -132,4 +132,164 @@ describe("PATCH /api/plugins/[pluginId]", () => {
     expect(savePluginStateRecordCalls.length).toBe(1);
     expect(savePluginStateRecordCalls[0]?.record.trust).toBe("trusted-local");
   });
+
+  test("accepts trusted-local daemon health grants after trust is elevated", async () => {
+    const base = createInstalledPlugin();
+    installedPlugin = {
+      ...base,
+      manifest: {
+        ...base.manifest!,
+        requestedCapabilities: {
+          required: ["tree.read"],
+          optional: ["daemon.health.read"],
+        },
+      },
+      state: {
+        ...base.state,
+        trust: "trusted-local",
+      },
+    };
+
+    const response = await PATCH(
+      new Request("http://localhost/api/plugins/sample-plugin", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          grantedCapabilities: ["tree.read", "daemon.health.read"],
+        }),
+      }) as any,
+      {
+        params: Promise.resolve({ pluginId: "sample-plugin" }),
+      }
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.state.grantedCapabilities).toEqual([
+      "tree.read",
+      "daemon.health.read",
+    ]);
+  });
+
+  test("accepts trusted-local daemon restart grants after trust is elevated", async () => {
+    const base = createInstalledPlugin();
+    installedPlugin = {
+      ...base,
+      manifest: {
+        ...base.manifest!,
+        requestedCapabilities: {
+          required: ["tree.read"],
+          optional: ["desktop.restartDaemon"],
+        },
+      },
+      state: {
+        ...base.state,
+        trust: "trusted-local",
+      },
+    };
+
+    const response = await PATCH(
+      new Request("http://localhost/api/plugins/sample-plugin", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          grantedCapabilities: ["tree.read", "desktop.restartDaemon"],
+        }),
+      }) as any,
+      {
+        params: Promise.resolve({ pluginId: "sample-plugin" }),
+      }
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.state.grantedCapabilities).toEqual([
+      "tree.read",
+      "desktop.restartDaemon",
+    ]);
+  });
+
+  test("accepts trusted-local daemon session read grants after trust is elevated", async () => {
+    const base = createInstalledPlugin();
+    installedPlugin = {
+      ...base,
+      manifest: {
+        ...base.manifest!,
+        requestedCapabilities: {
+          required: ["tree.read"],
+          optional: ["daemon.session.read"],
+        },
+      },
+      state: {
+        ...base.state,
+        trust: "trusted-local",
+      },
+    };
+
+    const response = await PATCH(
+      new Request("http://localhost/api/plugins/sample-plugin", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          grantedCapabilities: ["tree.read", "daemon.session.read"],
+        }),
+      }) as any,
+      {
+        params: Promise.resolve({ pluginId: "sample-plugin" }),
+      }
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.state.grantedCapabilities).toEqual([
+      "tree.read",
+      "daemon.session.read",
+    ]);
+  });
+
+  test("accepts trusted-local daemon session create grants after trust is elevated", async () => {
+    const base = createInstalledPlugin();
+    installedPlugin = {
+      ...base,
+      manifest: {
+        ...base.manifest!,
+        requestedCapabilities: {
+          required: ["tree.read"],
+          optional: ["daemon.session.create"],
+        },
+      },
+      state: {
+        ...base.state,
+        trust: "trusted-local",
+      },
+    };
+
+    const response = await PATCH(
+      new Request("http://localhost/api/plugins/sample-plugin", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          grantedCapabilities: ["tree.read", "daemon.session.create"],
+        }),
+      }) as any,
+      {
+        params: Promise.resolve({ pluginId: "sample-plugin" }),
+      }
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.state.grantedCapabilities).toEqual([
+      "tree.read",
+      "daemon.session.create",
+    ]);
+  });
 });

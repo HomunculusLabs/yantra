@@ -70,6 +70,10 @@ function createResolvedPlugin(
         optional: [
           "desktop.selectDirectory",
           "desktop.reloadKeybindings",
+          "daemon.health.read",
+          "desktop.restartDaemon",
+          "daemon.session.read",
+          "daemon.session.create",
           "graph.read",
           "page.read",
           "page.create",
@@ -316,6 +320,90 @@ describe("plugin bridge dispatcher", () => {
     });
 
     expect(methods).toEqual(["tree.read", "desktop.reloadKeybindings"]);
+  });
+
+  test("includes daemon.health.read only for trusted-local plugins", () => {
+    const base = createResolvedPlugin();
+    const methods = getSupportedPluginBridgeMethods({
+      ...base,
+      manifest: {
+        ...base.manifest,
+        requestedCapabilities: {
+          required: ["tree.read"],
+          optional: ["daemon.health.read"],
+        },
+      },
+      state: {
+        ...base.state,
+        trust: "trusted-local",
+        grantedCapabilities: ["tree.read", "daemon.health.read"],
+      },
+    });
+
+    expect(methods).toEqual(["tree.read", "daemon.health.read"]);
+  });
+
+  test("includes desktop.restartDaemon only for trusted-local plugins", () => {
+    const base = createResolvedPlugin();
+    const methods = getSupportedPluginBridgeMethods({
+      ...base,
+      manifest: {
+        ...base.manifest,
+        requestedCapabilities: {
+          required: ["tree.read"],
+          optional: ["desktop.restartDaemon"],
+        },
+      },
+      state: {
+        ...base.state,
+        trust: "trusted-local",
+        grantedCapabilities: ["tree.read", "desktop.restartDaemon"],
+      },
+    });
+
+    expect(methods).toEqual(["tree.read", "desktop.restartDaemon"]);
+  });
+
+  test("includes daemon.session.read only for trusted-local plugins", () => {
+    const base = createResolvedPlugin();
+    const methods = getSupportedPluginBridgeMethods({
+      ...base,
+      manifest: {
+        ...base.manifest,
+        requestedCapabilities: {
+          required: ["tree.read"],
+          optional: ["daemon.session.read"],
+        },
+      },
+      state: {
+        ...base.state,
+        trust: "trusted-local",
+        grantedCapabilities: ["tree.read", "daemon.session.read"],
+      },
+    });
+
+    expect(methods).toEqual(["tree.read", "daemon.session.read"]);
+  });
+
+  test("includes daemon.session.create only for trusted-local plugins", () => {
+    const base = createResolvedPlugin();
+    const methods = getSupportedPluginBridgeMethods({
+      ...base,
+      manifest: {
+        ...base.manifest,
+        requestedCapabilities: {
+          required: ["tree.read"],
+          optional: ["daemon.session.create"],
+        },
+      },
+      state: {
+        ...base.state,
+        trust: "trusted-local",
+        grantedCapabilities: ["tree.read", "daemon.session.create"],
+      },
+    });
+
+    expect(methods).toEqual(["tree.read", "daemon.session.create"]);
   });
 
   test("dispatches tree.read through the tree builder", async () => {

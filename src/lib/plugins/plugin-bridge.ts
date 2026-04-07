@@ -375,7 +375,15 @@ function parseSettingsWriteParams(params: unknown): Record<string, unknown> {
 }
 
 const HOST_LOCAL_PLUGIN_BRIDGE_METHODS: Record<
-  Extract<PluginBridgeMethod, "desktop.selectDirectory" | "desktop.reloadKeybindings">,
+  Extract<
+    PluginBridgeMethod,
+    | "desktop.selectDirectory"
+    | "desktop.reloadKeybindings"
+    | "daemon.health.read"
+    | "desktop.restartDaemon"
+    | "daemon.session.read"
+    | "daemon.session.create"
+  >,
   BridgeMethodCapabilityDefinition
 > = {
   "desktop.selectDirectory": {
@@ -383,6 +391,18 @@ const HOST_LOCAL_PLUGIN_BRIDGE_METHODS: Record<
   },
   "desktop.reloadKeybindings": {
     capability: "desktop.reloadKeybindings",
+  },
+  "daemon.health.read": {
+    capability: "daemon.health.read",
+  },
+  "desktop.restartDaemon": {
+    capability: "desktop.restartDaemon",
+  },
+  "daemon.session.read": {
+    capability: "daemon.session.read",
+  },
+  "daemon.session.create": {
+    capability: "daemon.session.create",
   },
 };
 
@@ -558,6 +578,42 @@ const PLUGIN_BRIDGE_METHODS: Record<
       throw new PluginBridgeDispatchError(
         "runtime_blocked",
         "Plugin bridge method 'desktop.reloadKeybindings' must be called through the host runtime."
+      );
+    },
+  },
+  "daemon.health.read": {
+    capability: "daemon.health.read",
+    handler: async () => {
+      throw new PluginBridgeDispatchError(
+        "runtime_blocked",
+        "Plugin bridge method 'daemon.health.read' must be called through the host runtime."
+      );
+    },
+  },
+  "desktop.restartDaemon": {
+    capability: "desktop.restartDaemon",
+    handler: async () => {
+      throw new PluginBridgeDispatchError(
+        "runtime_blocked",
+        "Plugin bridge method 'desktop.restartDaemon' must be called through the host runtime."
+      );
+    },
+  },
+  "daemon.session.read": {
+    capability: "daemon.session.read",
+    handler: async () => {
+      throw new PluginBridgeDispatchError(
+        "runtime_blocked",
+        "Plugin bridge method 'daemon.session.read' must be called through the host runtime."
+      );
+    },
+  },
+  "daemon.session.create": {
+    capability: "daemon.session.create",
+    handler: async () => {
+      throw new PluginBridgeDispatchError(
+        "runtime_blocked",
+        "Plugin bridge method 'daemon.session.create' must be called through the host runtime."
       );
     },
   },

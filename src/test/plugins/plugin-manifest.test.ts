@@ -126,6 +126,90 @@ describe("plugin manifest validation", () => {
     expect(result.issues).toEqual([]);
   });
 
+  test("accepts trusted-local daemon health capabilities in plugin manifests", async () => {
+    const pluginRoot = await writePluginDir({
+      folderName: "trusted-daemon-health-plugin",
+      manifest: baseManifest({
+        requestedCapabilities: {
+          required: ["tree.read"],
+          optional: ["daemon.health.read"],
+        },
+      }),
+      files: {
+        "index.html": "<html><body>plugin</body></html>",
+      },
+    });
+
+    const result = await readValidatedPluginDirectory(pluginRoot);
+    expect(result.manifest?.requestedCapabilities.optional).toEqual([
+      "daemon.health.read",
+    ]);
+    expect(result.issues).toEqual([]);
+  });
+
+  test("accepts trusted-local daemon restart capabilities in plugin manifests", async () => {
+    const pluginRoot = await writePluginDir({
+      folderName: "trusted-daemon-restart-plugin",
+      manifest: baseManifest({
+        requestedCapabilities: {
+          required: ["tree.read"],
+          optional: ["desktop.restartDaemon"],
+        },
+      }),
+      files: {
+        "index.html": "<html><body>plugin</body></html>",
+      },
+    });
+
+    const result = await readValidatedPluginDirectory(pluginRoot);
+    expect(result.manifest?.requestedCapabilities.optional).toEqual([
+      "desktop.restartDaemon",
+    ]);
+    expect(result.issues).toEqual([]);
+  });
+
+  test("accepts trusted-local daemon session read capabilities in plugin manifests", async () => {
+    const pluginRoot = await writePluginDir({
+      folderName: "trusted-daemon-session-read-plugin",
+      manifest: baseManifest({
+        requestedCapabilities: {
+          required: ["tree.read"],
+          optional: ["daemon.session.read"],
+        },
+      }),
+      files: {
+        "index.html": "<html><body>plugin</body></html>",
+      },
+    });
+
+    const result = await readValidatedPluginDirectory(pluginRoot);
+    expect(result.manifest?.requestedCapabilities.optional).toEqual([
+      "daemon.session.read",
+    ]);
+    expect(result.issues).toEqual([]);
+  });
+
+  test("accepts trusted-local daemon session create capabilities in plugin manifests", async () => {
+    const pluginRoot = await writePluginDir({
+      folderName: "trusted-daemon-session-create-plugin",
+      manifest: baseManifest({
+        requestedCapabilities: {
+          required: ["tree.read"],
+          optional: ["daemon.session.create"],
+        },
+      }),
+      files: {
+        "index.html": "<html><body>plugin</body></html>",
+      },
+    });
+
+    const result = await readValidatedPluginDirectory(pluginRoot);
+    expect(result.manifest?.requestedCapabilities.optional).toEqual([
+      "daemon.session.create",
+    ]);
+    expect(result.issues).toEqual([]);
+  });
+
   test("reports a missing plugin manifest file", async () => {
     const pluginRoot = await writePluginDir({
       folderName: "missing-manifest",

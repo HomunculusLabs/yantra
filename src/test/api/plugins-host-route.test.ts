@@ -182,6 +182,186 @@ describe("GET /plugins/host/[entryKey]/[viewId]", () => {
     expect(html).toContain("Desktop keybinding reload is unavailable in this runtime.");
   });
 
+  test("includes daemon.health.read in supportedMethods for trusted desktop plugins", async () => {
+    resolveHostedPluginViewImpl = async () => ({
+      ok: true as const,
+      entryKey: "plugin-entry-key",
+      entryFilePath: "/tmp/plugin/index.html",
+      plugin: {
+        manifest: {
+          id: "sample-plugin",
+          name: "Sample Plugin",
+          version: "1.0.0",
+          kind: "ui-sandbox",
+          apiVersion: 1,
+          requestedCapabilities: {
+            required: ["tree.read"],
+            optional: ["daemon.health.read"],
+          },
+        },
+        state: {
+          grantedCapabilities: ["tree.read", "daemon.health.read"],
+          trust: "trusted-local",
+        },
+      },
+      view: {
+        id: "main",
+        title: "Main View",
+        entry: "index.html",
+      },
+    });
+
+    const response = await GET(
+      new Request("http://localhost/plugins/host/pek_123/main"),
+      {
+        params: Promise.resolve({
+          entryKey: "pek_123",
+          viewId: "main",
+        }),
+      }
+    );
+
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toContain("daemon.health.read");
+    expect(html).toContain("Desktop daemon info is unavailable in this runtime.");
+  });
+
+  test("includes desktop.restartDaemon in supportedMethods for trusted desktop plugins", async () => {
+    resolveHostedPluginViewImpl = async () => ({
+      ok: true as const,
+      entryKey: "plugin-entry-key",
+      entryFilePath: "/tmp/plugin/index.html",
+      plugin: {
+        manifest: {
+          id: "sample-plugin",
+          name: "Sample Plugin",
+          version: "1.0.0",
+          kind: "ui-sandbox",
+          apiVersion: 1,
+          requestedCapabilities: {
+            required: ["tree.read"],
+            optional: ["desktop.restartDaemon"],
+          },
+        },
+        state: {
+          grantedCapabilities: ["tree.read", "desktop.restartDaemon"],
+          trust: "trusted-local",
+        },
+      },
+      view: {
+        id: "main",
+        title: "Main View",
+        entry: "index.html",
+      },
+    });
+
+    const response = await GET(
+      new Request("http://localhost/plugins/host/pek_123/main"),
+      {
+        params: Promise.resolve({
+          entryKey: "pek_123",
+          viewId: "main",
+        }),
+      }
+    );
+
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toContain("desktop.restartDaemon");
+    expect(html).toContain("Desktop daemon restart is unavailable in this runtime.");
+  });
+
+  test("includes daemon.session.read in supportedMethods for trusted desktop plugins", async () => {
+    resolveHostedPluginViewImpl = async () => ({
+      ok: true as const,
+      entryKey: "plugin-entry-key",
+      entryFilePath: "/tmp/plugin/index.html",
+      plugin: {
+        manifest: {
+          id: "sample-plugin",
+          name: "Sample Plugin",
+          version: "1.0.0",
+          kind: "ui-sandbox",
+          apiVersion: 1,
+          requestedCapabilities: {
+            required: ["tree.read"],
+            optional: ["daemon.session.read"],
+          },
+        },
+        state: {
+          grantedCapabilities: ["tree.read", "daemon.session.read"],
+          trust: "trusted-local",
+        },
+      },
+      view: {
+        id: "main",
+        title: "Main View",
+        entry: "index.html",
+      },
+    });
+
+    const response = await GET(
+      new Request("http://localhost/plugins/host/pek_123/main"),
+      {
+        params: Promise.resolve({
+          entryKey: "pek_123",
+          viewId: "main",
+        }),
+      }
+    );
+
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toContain("daemon.session.read");
+    expect(html).toContain("/api/daemon/sessions");
+  });
+
+  test("includes daemon.session.create in supportedMethods for trusted desktop plugins", async () => {
+    resolveHostedPluginViewImpl = async () => ({
+      ok: true as const,
+      entryKey: "plugin-entry-key",
+      entryFilePath: "/tmp/plugin/index.html",
+      plugin: {
+        manifest: {
+          id: "sample-plugin",
+          name: "Sample Plugin",
+          version: "1.0.0",
+          kind: "ui-sandbox",
+          apiVersion: 1,
+          requestedCapabilities: {
+            required: ["tree.read"],
+            optional: ["daemon.session.create"],
+          },
+        },
+        state: {
+          grantedCapabilities: ["tree.read", "daemon.session.create"],
+          trust: "trusted-local",
+        },
+      },
+      view: {
+        id: "main",
+        title: "Main View",
+        entry: "index.html",
+      },
+    });
+
+    const response = await GET(
+      new Request("http://localhost/plugins/host/pek_123/main"),
+      {
+        params: Promise.resolve({
+          entryKey: "pek_123",
+          viewId: "main",
+        }),
+      }
+    );
+
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toContain("daemon.session.create");
+    expect(html).toContain("/api/daemon/sessions");
+  });
+
   test("returns an html error shell for route resolution failures", async () => {
     resolveHostedPluginViewImpl = async () => ({
       ok: false as const,
