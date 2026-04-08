@@ -35,7 +35,7 @@
     "typecheck": "bun x tsc --noEmit",
     "typecheck:conversation-history": "bun x tsc --noEmit -p tsconfig.conversation-history.json",
     "test": "bun test",
-    "test:conversation-history": "bun test src/test/agents/conversation-output-parser.test.ts src/test/agents/conversation-store.test.ts src/test/agents/conversation-thread.test.ts src/test/api/agents-personas-route.test.ts src/test/api/agents-conversations-route.test.ts src/test/api/agents-conversations-id-route.test.ts src/test/api/agents-conversations-id-events-route.test.ts",
+    "test:conversation-history": "bun test src/test/agents/conversation-output-parser.test.ts src/test/agents/conversation-runtime-progress.test.ts src/test/agents/conversation-store.test.ts src/test/agents/conversation-thread.test.ts src/test/api/agents-personas-route.test.ts src/test/api/agents-conversations-route.test.ts src/test/api/agents-conversations-id-route.test.ts src/test/api/agents-conversations-id-events-route.test.ts",
     "verify:conversation-history": "bun run lint:conversation-history && bun run typecheck:conversation-history && bun run test:conversation-history"
   },
   "dependencies": {

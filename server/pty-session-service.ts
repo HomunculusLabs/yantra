@@ -20,6 +20,10 @@ import {
   parseYantraBlock,
 } from "../src/lib/agents/conversation-output-parser";
 import {
+  advanceRuntimeSummaryHistory,
+  buildRuntimeMilestoneParts,
+} from "../src/lib/agents/conversation-runtime-progress";
+import {
   getYantraRoots,
   isWithinRuntimeRoot,
   resolveVaultPath,
@@ -72,6 +76,8 @@ interface PtySession {
   runtimeSubscribers: Set<(snapshot: ConversationRuntimeSnapshot) => void>;
   runtimeFlushTimer?: NodeJS.Timeout;
   runtimeLastVersion?: string;
+  runtimeSummaryHistory: string[];
+  runtimeLatestSummary?: string;
 }
 
 export interface CreatePtySessionInput {
@@ -216,7 +222,13 @@ export function createPtySessionService(
 
   function buildRuntimeSnapshot(
     session: PtySession
-  ): Omit<ConversationRuntimeSnapshot, "sequence" | "updatedAt"> | null {
+  ):
+    | {
+        snapshot: Omit<ConversationRuntimeSnapshot, "sequence" | "updatedAt">;
+        summaryHistory: string[];
+        latestSummary?: string;
+      }
+    | null {
     if (!session.supportsStructuredEvents) {
       return null;
     }
@@ -240,6 +252,11 @@ export function createPtySessionService(
         : status === "failed"
           ? "Run failed."
           : "Completed.");
+    const summaryState = advanceRuntimeSummaryHistory({
+      previousSummaries: session.runtimeSummaryHistory,
+      latestSummary: session.runtimeLatestSummary,
+      nextSummary: summary,
+    });
     const body = parsed.summary
       ? excerpt
       : excerptLines.length > 1
@@ -273,6 +290,7 @@ export function createPtySessionService(
             : "error",
       detail: statusDetail,
     });
+    parts.push(...buildRuntimeMilestoneParts(session.id, summaryState.summaryHistory));
 
     if (body) {
       parts.push({
@@ -318,30 +336,35 @@ export function createPtySessionService(
     }
 
     return {
-      sessionId: session.id,
-      status,
-      runtimeSession: {
-        launchTransport: session.launchTransport,
-        startedAt: session.createdAt.toISOString(),
-        tmuxSessionName: session.tmuxSessionName,
-        tmuxAttachCommand: session.tmuxAttachCommand,
-        exitedAt: session.exited ? new Date().toISOString() : undefined,
-        exitCode: session.exited ? session.exitCode : undefined,
-        eventStreamFormat: "structured_v1",
-      },
-      assistant: {
-        summary,
-        parts,
+      summaryHistory: summaryState.summaryHistory,
+      latestSummary: summaryState.latestSummary,
+      snapshot: {
+        sessionId: session.id,
+        status,
+        runtimeSession: {
+          launchTransport: session.launchTransport,
+          startedAt: session.createdAt.toISOString(),
+          tmuxSessionName: session.tmuxSessionName,
+          tmuxAttachCommand: session.tmuxAttachCommand,
+          exitedAt: session.exited ? new Date().toISOString() : undefined,
+          exitCode: session.exited ? session.exitCode : undefined,
+          eventStreamFormat: "structured_v1",
+        },
+        assistant: {
+          summary,
+          parts,
+        },
       },
     };
   }
 
   function emitRuntimeSnapshot(session: PtySession): void {
-    const nextSnapshot = buildRuntimeSnapshot(session);
-    if (!nextSnapshot) {
+    const nextRuntimeState = buildRuntimeSnapshot(session);
+    if (!nextRuntimeState) {
       return;
     }
 
+    const nextSnapshot = nextRuntimeState.snapshot;
     const version = JSON.stringify({
       status: nextSnapshot.status,
       runtimeSession: nextSnapshot.runtimeSession,
@@ -353,6 +376,8 @@ export function createPtySessionService(
 
     session.runtimeLastVersion = version;
     session.runtimeSequence += 1;
+    session.runtimeSummaryHistory = nextRuntimeState.summaryHistory;
+    session.runtimeLatestSummary = nextRuntimeState.latestSummary;
     session.runtimeSnapshot = {
       ...nextSnapshot,
       sequence: session.runtimeSequence,
@@ -595,6 +620,8 @@ export function createPtySessionService(
         runtimeSequence: 0,
         runtimeSnapshot: null,
         runtimeSubscribers: new Set(),
+        runtimeSummaryHistory: [],
+        runtimeLatestSummary: undefined,
       },
       {}
     );
@@ -693,6 +720,8 @@ export function createPtySessionService(
       runtimeSequence: 0,
       runtimeSnapshot: null,
       runtimeSubscribers: new Set(),
+      runtimeSummaryHistory: [],
+      runtimeLatestSummary: undefined,
     };
 
     if (tmuxSessionName) {
