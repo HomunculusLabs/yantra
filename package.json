@@ -81,7 +81,7 @@
     "graphology": "^0.26.0",
     "graphology-layout-forceatlas2": "^0.10.1",
     "gray-matter": "4.0.3",
-    "html2canvas": "1.4.1",
+    "html-to-image": "1.11.13",
     "js-yaml": "4.1.1",
     "jspdf": "4.2.1",
     "lowlight": "3.3.0",
