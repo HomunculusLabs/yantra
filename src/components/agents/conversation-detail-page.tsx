@@ -6,6 +6,11 @@ import { useMemo, useState } from "react";
 import { ArrowLeft, Bot, ExternalLink, Loader2 } from "lucide-react";
 import { ConversationThreadView } from "@/components/ai-panel/conversation-thread-view";
 import { buttonVariants } from "@/components/ui/button";
+import { CopyButton } from "@/components/agents/conversation-detail/copy-button";
+import {
+  ContentViewer,
+  TranscriptViewer,
+} from "@/components/agents/conversation-detail/transcript-viewer";
 import { useConversationThread } from "@/components/ai-panel/use-conversation-thread";
 import { useAgentCreationDraftStore } from "@/stores/agent-creation-draft-store";
 import { useTreeStore } from "@/stores/tree-store";
@@ -202,14 +207,19 @@ export function ConversationDetailPage({
                     The original request that started this run.
                   </p>
                 </div>
-                {loading && !detail ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                ) : null}
+                <div className="flex items-center gap-2">
+                  {hasPrompt ? <CopyButton text={detail?.prompt || ""} /> : null}
+                  {loading && !detail ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  ) : null}
+                </div>
               </div>
               <div className="max-h-[24rem] overflow-auto rounded-2xl bg-muted/30 p-4">
-                <pre className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground">
-                  {hasPrompt ? detail?.prompt : "No prompt captured."}
-                </pre>
+                {hasPrompt ? (
+                  <ContentViewer text={detail?.prompt || ""} />
+                ) : (
+                  <p className="text-sm text-muted-foreground">No prompt captured.</p>
+                )}
               </div>
             </div>
 
@@ -270,7 +280,7 @@ export function ConversationDetailPage({
             </div>
           </section>
 
-          <section className="min-h-[32rem] rounded-3xl border border-border bg-card/80 shadow-sm">
+          <section className="min-h-[32rem] overflow-hidden rounded-3xl border border-border bg-card/80 shadow-sm">
             <ConversationThreadView
               detail={detail}
               loading={loading && !detail}
@@ -287,6 +297,8 @@ export function ConversationDetailPage({
             />
           </section>
         </div>
+
+        {detail?.transcript?.trim() ? <TranscriptViewer text={detail.transcript} /> : null}
       </div>
     </main>
   );
