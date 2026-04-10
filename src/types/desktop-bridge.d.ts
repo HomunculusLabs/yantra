@@ -44,6 +44,10 @@ declare global {
         title?: string;
         defaultPath?: string;
       }) => Promise<string | null>;
+      openDataDirectory: () => Promise<{ ok: true }>;
+      openRepositoryRoot: (input: {
+        virtualPath: string;
+      }) => Promise<{ ok: true; openedPath: string }>;
       installPluginFromDirectory: () => Promise<DesktopPluginInstallResult | null>;
       uninstallPlugin: (input: {
         pluginPath: string;

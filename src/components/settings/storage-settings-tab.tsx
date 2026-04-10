@@ -6,6 +6,7 @@ import {
   Bot,
   Check,
   ChevronDown,
+  FolderOpen,
   FolderTree,
   Loader2,
   ListTodo,
@@ -140,6 +141,9 @@ export function StorageSettingsTab({
     () => [{ path: ".", label: "Vault root", depth: 0 }, ...collectFolderOptions(treeNodes)],
     [treeNodes]
   );
+  const hasDesktopDataOpen =
+    typeof window !== "undefined" &&
+    Boolean(window.yantraDesktop?.openDataDirectory);
 
   const folderLabelByPath = useMemo(
     () =>
@@ -188,6 +192,21 @@ export function StorageSettingsTab({
       </div>
 
       <div className="space-y-3 rounded-lg border border-border bg-card p-4">
+        {hasDesktopDataOpen ? (
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 text-[12px]"
+              onClick={() => {
+                void window.yantraDesktop?.openDataDirectory?.();
+              }}
+            >
+              <FolderOpen className="h-3.5 w-3.5" />
+              Open vault folder
+            </Button>
+          </div>
+        ) : null}
         <label className="block space-y-1.5">
           <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
             Vault root

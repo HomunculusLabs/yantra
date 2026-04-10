@@ -11,6 +11,8 @@ import {
   FileDown,
   Columns2,
   History,
+  Orbit,
+  GitBranch,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,7 +28,12 @@ import { useTreeStore } from "@/stores/tree-store";
 import { VersionHistory } from "@/components/editor/version-history";
 import { ThemePicker } from "@/components/layout/theme-picker";
 import { renderMarkdown } from "@/lib/api/client";
+import {
+  getFrontmatterTitle,
+  stringifyMarkdownWithFrontmatter,
+} from "@/lib/markdown/frontmatter";
 import { cn } from "@/lib/utils";
+import { useUIStore } from "@/stores/ui-store";
 
 export function Header() {
   const {
@@ -48,19 +55,29 @@ export function Header() {
   const openEditorPanel = useAIPanelStore((s) => s.openEditorPanel);
   const openAgentPanel = useAIPanelStore((s) => s.openAgentPanel);
   const openTasksPanel = useAIPanelStore((s) => s.openTasksPanel);
-  const { terminalOpen, toggleTerminal } = useAppStore();
+  const { section, setSection, terminalOpen, toggleTerminal } = useAppStore();
+  const openSearch = useUIStore((s) => s.openSearch);
+  const hasDesktopRepoOpen =
+    typeof window !== "undefined" &&
+    Boolean(window.yantraDesktop?.openRepositoryRoot);
 
   const isBusy = pageLoadState === "loading" || pageLoadState === "preparing";
+  const isMarkdownPage =
+    pageKind === "markdown" || pageKind === "directory-index";
   const title =
-    frontmatter?.title ||
-    selectedNode?.frontmatter?.title ||
+    getFrontmatterTitle(frontmatter, "") ||
+    getFrontmatterTitle(selectedNode?.frontmatter, "") ||
     selectedNode?.name ||
     currentPath?.split("/").pop() ||
     "Yantra";
 
   const handleCopyMarkdown = async () => {
-    if (!content || isBusy) return;
-    await navigator.clipboard.writeText(content);
+    if ((!content && !frontmatter) || isBusy) return;
+    await navigator.clipboard.writeText(
+      isMarkdownPage
+        ? stringifyMarkdownWithFrontmatter(content, frontmatter)
+        : content
+    );
   };
 
   const handleCopyHTML = async () => {
@@ -78,14 +95,22 @@ export function Header() {
   };
 
   const handleDownloadMarkdown = () => {
-    if (!content || !frontmatter || isBusy) return;
-    const blob = new Blob([content], { type: "text/markdown" });
+    if ((!content && !frontmatter) || isBusy) return;
+    const markdown = isMarkdownPage
+      ? stringifyMarkdownWithFrontmatter(content, frontmatter)
+      : content;
+    const blob = new Blob([markdown], { type: "text/markdown" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${frontmatter.title || "page"}.md`;
+    a.download = `${getFrontmatterTitle(frontmatter, "page")}.md`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleOpenLinkedRepo = async () => {
+    if (!currentPath || !hasDesktopRepoOpen || !window.yantraDesktop?.openRepositoryRoot) return;
+    await window.yantraDesktop.openRepositoryRoot({ virtualPath: currentPath });
   };
 
   return (
@@ -100,11 +125,7 @@ export function Header() {
           variant="ghost"
           size="sm"
           className="h-7 gap-1.5 text-xs text-muted-foreground/60 hover:text-muted-foreground hidden sm:flex"
-          onClick={() => {
-            window.dispatchEvent(
-              new KeyboardEvent("keydown", { key: "k", metaKey: true })
-            );
-          }}
+          onClick={openSearch}
         >
           <Search className="h-3.5 w-3.5" />
           <kbd className="pointer-events-none text-[10px] font-mono bg-muted px-1 py-0.5 rounded">
@@ -138,6 +159,17 @@ export function Header() {
                 <Download className="h-4 w-4 mr-2" />
                 Download .md
               </DropdownMenuItem>
+              {hasDesktopRepoOpen ? (
+                <DropdownMenuItem
+                  disabled={isBusy || !currentPath}
+                  onClick={() => {
+                    void handleOpenLinkedRepo();
+                  }}
+                >
+                  <GitBranch className="h-4 w-4 mr-2" />
+                  Open Linked Repo
+                </DropdownMenuItem>
+              ) : null}
               <DropdownMenuItem
                 disabled={isBusy}
                 onClick={async () => {
@@ -178,6 +210,16 @@ export function Header() {
           title={isSplitView ? "Close split view" : "Open current file in a second pane"}
         >
           <Columns2 className="h-4 w-4" />
+        </Button>
+
+        <Button
+          variant="ghost"
+          size="icon"
+          className={cn("h-8 w-8", section.type === "graph" && "text-primary")}
+          onClick={() => setSection({ type: "graph" })}
+          title="Open graph view"
+        >
+          <Orbit className="h-4 w-4" />
         </Button>
 
         <Button

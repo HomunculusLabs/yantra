@@ -17,6 +17,7 @@ import { AIPanel } from "@/components/ai-panel/ai-panel";
 import { SearchDialog } from "@/components/search/search-dialog";
 import { KeyboardShortcuts } from "@/components/shortcuts/keyboard-shortcuts";
 import { StatusBar } from "@/components/layout/status-bar";
+import { HashRouteSync } from "@/components/layout/hash-route-sync";
 import { shouldRememberPreviousSection } from "@/components/layout/app-shell-state";
 import { OnboardingWizard } from "@/components/onboarding/onboarding-wizard";
 import { useTreeStore } from "@/stores/tree-store";
@@ -228,8 +229,9 @@ export function AppShell() {
 
   return (
     <div className="flex h-screen bg-background text-foreground">
+      <HashRouteSync />
       <Sidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <main className="min-h-0 flex-1 flex flex-col overflow-hidden">{renderContent()}</main>
         {terminalOpen && <TerminalTabs />}
         <StatusBar />

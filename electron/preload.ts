@@ -21,6 +21,9 @@ contextBridge.exposeInMainWorld("yantraDesktop", {
   getDaemonControlInfo: () => ipcRenderer.invoke("yantra:daemon:info"),
   selectDirectory: (options: { title?: string; defaultPath?: string } | undefined) =>
     ipcRenderer.invoke("yantra:select-directory", options),
+  openDataDirectory: () => ipcRenderer.invoke("yantra:open-data-directory"),
+  openRepositoryRoot: (input: { virtualPath: string }) =>
+    ipcRenderer.invoke("yantra:open-repository-root", input),
   installPluginFromDirectory: () =>
     ipcRenderer.invoke("yantra:plugins:install-from-directory"),
   uninstallPlugin: (input: { pluginPath: string; pluginId?: string | null }) =>

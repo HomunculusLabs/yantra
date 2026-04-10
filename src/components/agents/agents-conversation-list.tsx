@@ -1,7 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { CheckCircle2, Loader2, RefreshCw, XCircle } from "lucide-react";
+import Link from "next/link";
+import { CheckCircle2, ExternalLink, Loader2, RefreshCw, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -169,6 +170,14 @@ export function AgentsConversationList({
                         >
                           {TRIGGER_LABELS[conversation.trigger]}
                         </span>
+                        <Link
+                          href={`/agents/conversations/${conversation.id}`}
+                          onClick={(event) => event.stopPropagation()}
+                          className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                          title="Open transcript page"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                        </Link>
                       </div>
                       <p className="mt-1 text-[11px] text-muted-foreground">
                         {agent?.name || conversation.agentSlug} ·{" "}

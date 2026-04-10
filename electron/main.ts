@@ -8,8 +8,10 @@ import {
   type MenuItemConstructorOptions,
 } from "electron";
 import fs from "fs/promises";
+import fsSync from "fs";
 import path from "path";
-import { spawn, type ChildProcess } from "child_process";
+import { execFileSync, spawn, type ChildProcess } from "child_process";
+import yaml from "js-yaml";
 import {
   getDesktopRuntimeSpec,
   type DesktopRuntimeSpec,
@@ -22,9 +24,11 @@ import {
 } from "../src/lib/desktop-commands";
 import { loadKeybindingsConfigSync } from "../src/lib/agents/keybindings-manager";
 import { getYantraAppPaths } from "../src/lib/config/app-paths";
+import { getYantraRoots } from "../src/lib/config/yantra-roots";
 import { listInstalledPlugins } from "../src/lib/plugins/plugin-manager";
 import { readValidatedPluginDirectory } from "../src/lib/plugins/plugin-manifest";
 import type { YantraKeybindingAction } from "../src/lib/keybindings";
+import { resolveContentPath } from "../src/lib/storage/path-utils";
 
 type DesktopDaemonRestartMode = "soft" | "force";
 
@@ -47,6 +51,25 @@ let mainWindow: BrowserWindow | null = null;
 let currentRuntime: DesktopRuntimeSpec | null = null;
 let quitting = false;
 
+const HEALTH_CHECK_REQUEST_TIMEOUT_MS = 2000;
+const EXISTING_SERVICE_HEALTH_TIMEOUT_MS = 5000;
+
+interface ProcessSnapshot {
+  pid: number;
+  ppid: number;
+  command: string;
+}
+
+interface NextDevLockSnapshot {
+  pid: number;
+  port?: number;
+  hostname?: string;
+  appUrl?: string;
+  startedAt?: number;
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 function initializeRuntime(): DesktopRuntimeSpec {
   if (currentRuntime) {
     return currentRuntime;
@@ -67,6 +90,328 @@ function initializeRuntime(): DesktopRuntimeSpec {
   return runtime;
 }
 
+function normalizeProcessCommand(command: string): string {
+  return command.replaceAll("\\", "/");
+}
+
+function getHealthPort(url: string): number | null {
+  try {
+    const parsed = new URL(url);
+    if (parsed.port) {
+      return Number(parsed.port);
+    }
+    return parsed.protocol === "https:" ? 443 : 80;
+  } catch {
+    return null;
+  }
+}
+
+function listListeningProcessIds(port: number): number[] {
+  if (process.platform === "win32") {
+    return [];
+  }
+
+  try {
+    const output = execFileSync("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-Fp"], {
+      encoding: "utf-8",
+    });
+    return [...new Set(
+      output
+        .split(/\r?\n/)
+        .filter((line) => line.startsWith("p"))
+        .map((line) => Number(line.slice(1)))
+        .filter((pid) => Number.isInteger(pid) && pid > 0)
+    )];
+  } catch {
+    return [];
+  }
+}
+
+function readProcessSnapshot(pid: number): ProcessSnapshot | null {
+  if (process.platform === "win32") {
+    return null;
+  }
+
+  try {
+    const output = execFileSync("ps", ["-o", "pid=,ppid=,command=", "-p", String(pid)], {
+      encoding: "utf-8",
+    }).trim();
+    if (!output) {
+      return null;
+    }
+
+    const match = output.match(/^\s*(\d+)\s+(\d+)\s+([\s\S]+)$/);
+    if (!match) {
+      return null;
+    }
+
+    return {
+      pid: Number(match[1]),
+      ppid: Number(match[2]),
+      command: match[3].trim(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function readProcessLineage(pid: number, maxDepth = 4): ProcessSnapshot[] {
+  const lineage: ProcessSnapshot[] = [];
+  let currentPid: number | null = pid;
+
+  while (currentPid && currentPid > 1 && lineage.length < maxDepth) {
+    const snapshot = readProcessSnapshot(currentPid);
+    if (!snapshot) {
+      break;
+    }
+
+    lineage.push(snapshot);
+    if (snapshot.ppid === currentPid) {
+      break;
+    }
+    currentPid = snapshot.ppid;
+  }
+
+  return lineage;
+}
+
+function isYantraServiceCommand(
+  key: "web" | "daemon",
+  command: string,
+  spec: DesktopChildSpec
+): boolean {
+  const normalizedCommand = normalizeProcessCommand(command);
+  const normalizedCwd = normalizeProcessCommand(path.resolve(spec.cwd));
+
+  if (key === "web") {
+    return (
+      normalizedCommand.includes(`${normalizedCwd}/node_modules/.bin/next`) ||
+      normalizedCommand.includes(`${normalizedCwd}/scripts/run-web-dev.mjs`) ||
+      normalizedCommand.includes(`${normalizedCwd}/.next/standalone`) ||
+      normalizedCommand.includes("/app-runtime/web/server.js")
+    );
+  }
+
+  return (
+    normalizedCommand.includes(`${normalizedCwd}/scripts/run-daemon-dev.mjs`) ||
+    normalizedCommand.includes(`${normalizedCwd}/server/yantra-daemon.ts`) ||
+    normalizedCommand.includes(`${normalizedCwd}/dist/daemon/yantra-daemon.js`) ||
+    normalizedCommand.includes("/app-runtime/daemon/yantra-daemon.js")
+  );
+}
+
+function looksLikeYantraServiceProcess(
+  key: "web" | "daemon",
+  lineage: ProcessSnapshot[],
+  spec: DesktopChildSpec
+): boolean {
+  return lineage.some((entry) => isYantraServiceCommand(key, entry.command, spec));
+}
+
+function getServicePidsFromLineage(
+  key: "web" | "daemon",
+  lineage: ProcessSnapshot[],
+  spec: DesktopChildSpec
+): number[] {
+  if (!looksLikeYantraServiceProcess(key, lineage, spec) || lineage.length === 0) {
+    return [];
+  }
+
+  const pids = new Set<number>([lineage[0].pid]);
+  for (const entry of lineage.slice(1)) {
+    if (isYantraServiceCommand(key, entry.command, spec)) {
+      pids.add(entry.pid);
+    }
+  }
+
+  return [...pids];
+}
+
+function isProcessAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return false;
+  }
+
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForProcessesToExit(pids: number[], timeoutMs = 5000): Promise<boolean> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (pids.every((pid) => !isProcessAlive(pid))) {
+      return true;
+    }
+    await sleep(250);
+  }
+
+  return pids.every((pid) => !isProcessAlive(pid));
+}
+
+async function waitForPortToClear(port: number, timeoutMs = 5000): Promise<boolean> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (listListeningProcessIds(port).length === 0) {
+      return true;
+    }
+    await sleep(250);
+  }
+  return listListeningProcessIds(port).length === 0;
+}
+
+async function readNextDevLockSnapshot(spec: DesktopChildSpec): Promise<{
+  lockPath: string;
+  snapshot: NextDevLockSnapshot;
+} | null> {
+  const lockPath = path.join(spec.cwd, ".next", "dev", "lock");
+
+  try {
+    const raw = await fs.readFile(lockPath, "utf-8");
+    const parsed = JSON.parse(raw) as Partial<NextDevLockSnapshot>;
+    if (typeof parsed.pid !== "number" || !Number.isInteger(parsed.pid) || parsed.pid <= 0) {
+      return null;
+    }
+
+    const pid = parsed.pid;
+
+    return {
+      lockPath,
+      snapshot: {
+        pid,
+        port: typeof parsed.port === "number" ? parsed.port : undefined,
+        hostname: typeof parsed.hostname === "string" ? parsed.hostname : undefined,
+        appUrl: typeof parsed.appUrl === "string" ? parsed.appUrl : undefined,
+        startedAt: typeof parsed.startedAt === "number" ? parsed.startedAt : undefined,
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function reclaimStaleNextDevLockProcess(
+  spec: DesktopChildSpec,
+  expectedService: string
+): Promise<void> {
+  const lock = await readNextDevLockSnapshot(spec);
+  if (!lock) {
+    return;
+  }
+
+  const expectedPort = getHealthPort(spec.healthUrl);
+  if (
+    typeof lock.snapshot.port === "number" &&
+    typeof expectedPort === "number" &&
+    lock.snapshot.port !== expectedPort
+  ) {
+    return;
+  }
+
+  if (!isProcessAlive(lock.snapshot.pid)) {
+    await fs.rm(lock.lockPath, { force: true }).catch(() => {});
+    return;
+  }
+
+  if (await waitForHealth(spec.healthUrl, expectedService, 10000)) {
+    return;
+  }
+
+  const lineage = readProcessLineage(lock.snapshot.pid, 6);
+  if (lineage.length === 0) {
+    return;
+  }
+  if (!looksLikeYantraServiceProcess("web", lineage, spec)) {
+    return;
+  }
+
+  const pidsToKill = getServicePidsFromLineage("web", lineage, spec).filter(
+    (pid) => pid !== process.pid
+  );
+  if (pidsToKill.length === 0) {
+    return;
+  }
+
+  console.warn(
+    `[yantra:desktop] reclaiming stale web service from Next dev lock: ${pidsToKill.join(", ")}`
+  );
+
+  for (const signal of ["SIGTERM", "SIGKILL"] as const) {
+    for (const pid of pidsToKill) {
+      try {
+        process.kill(pid, signal);
+      } catch {
+        // Process may already be gone.
+      }
+    }
+
+    if (await waitForProcessesToExit(pidsToKill, signal === "SIGTERM" ? 3000 : 2000)) {
+      await fs.rm(lock.lockPath, { force: true }).catch(() => {});
+      return;
+    }
+  }
+
+  throw new Error(
+    `Next dev lock process stayed alive after reclaim attempt: ${pidsToKill.join(", ")}`
+  );
+}
+
+async function reclaimStaleServiceProcess(
+  key: "web" | "daemon",
+  spec: DesktopChildSpec
+): Promise<void> {
+  const port = getHealthPort(spec.healthUrl);
+  if (!port) {
+    return;
+  }
+
+  const listenerPids = listListeningProcessIds(port);
+  if (listenerPids.length === 0) {
+    return;
+  }
+
+  const lineages = listenerPids.map((pid) => readProcessLineage(pid)).filter((lineage) => lineage.length > 0);
+  const yantraLineages = lineages.filter((lineage) => looksLikeYantraServiceProcess(key, lineage, spec));
+
+  if (yantraLineages.length === 0) {
+    const processList = lineages
+      .flatMap((lineage) => lineage.map((entry) => `${entry.pid}:${entry.command}`))
+      .join("; ");
+    throw new Error(
+      `Port ${port} is already in use by another process${processList ? ` (${processList})` : ""}.`
+    );
+  }
+
+  const pidsToKill = [...new Set(
+    yantraLineages
+      .flatMap((lineage) => getServicePidsFromLineage(key, lineage, spec))
+      .filter((pid) => pid !== process.pid)
+  )];
+
+  console.warn(
+    `[yantra:desktop] reclaiming stale ${key} service on port ${port}: ${pidsToKill.join(", ")}`
+  );
+
+  for (const signal of ["SIGTERM", "SIGKILL"] as const) {
+    for (const pid of pidsToKill) {
+      try {
+        process.kill(pid, signal);
+      } catch {
+        // Process may already be gone.
+      }
+    }
+
+    if (await waitForPortToClear(port, signal === "SIGTERM" ? 3000 : 2000)) {
+      return;
+    }
+  }
+
+  throw new Error(`Port ${port} stayed busy after reclaiming the stale ${key} service.`);
+}
+
 async function waitForHealth(
   url: string,
   expectedService: string,
@@ -74,8 +419,17 @@ async function waitForHealth(
 ): Promise<boolean> {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
+    const elapsedMs = Date.now() - startedAt;
+    const remainingMs = timeoutMs - elapsedMs;
+    const controller = new AbortController();
+    const requestTimeoutMs = Math.max(
+      250,
+      Math.min(HEALTH_CHECK_REQUEST_TIMEOUT_MS, remainingMs)
+    );
+    const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
+
     try {
-      const response = await fetch(url);
+      const response = await fetch(url, { signal: controller.signal });
       if (response.ok) {
         const data = (await response.json()) as {
           service?: string;
@@ -87,8 +441,11 @@ async function waitForHealth(
       }
     } catch {
       // keep polling
+    } finally {
+      clearTimeout(timeout);
     }
-    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    await sleep(500);
   }
   return false;
 }
@@ -203,12 +560,26 @@ async function ensureService(
   const fatalOnFailure = options?.fatalOnFailure !== false;
   managedServices[key].healthUrl = spec.healthUrl;
 
-  if (await waitForHealth(spec.healthUrl, expectedService, 1000)) {
+  if (await waitForHealth(spec.healthUrl, expectedService, EXISTING_SERVICE_HEALTH_TIMEOUT_MS)) {
     managedServices[key].owned = false;
     managedServices[key].ready = true;
     managedServices[key].stopping = false;
     managedServices[key].restartingMode = null;
     return;
+  }
+
+  await reclaimStaleServiceProcess(key, spec);
+
+  if (key === "web") {
+    await reclaimStaleNextDevLockProcess(spec, expectedService);
+
+    if (await waitForHealth(spec.healthUrl, expectedService, 1000)) {
+      managedServices[key].owned = false;
+      managedServices[key].ready = true;
+      managedServices[key].stopping = false;
+      managedServices[key].restartingMode = null;
+      return;
+    }
   }
 
   const child = spawn(spec.command, spec.args, {
@@ -599,6 +970,56 @@ async function uninstallLocalPlugin(
   };
 }
 
+async function openPathInOs(targetPath: string, reveal = false): Promise<void> {
+  if (reveal) {
+    shell.showItemInFolder(targetPath);
+    return;
+  }
+
+  const error = await shell.openPath(targetPath);
+  if (error) {
+    throw new Error(error);
+  }
+}
+
+async function findLinkedRepoRootFromVirtualPath(virtualPath: string): Promise<string> {
+  const resolvedPath = resolveContentPath(virtualPath);
+  let currentPath = resolvedPath;
+  const stat = await fs.stat(currentPath).catch(() => null);
+  if (stat?.isFile()) {
+    currentPath = path.dirname(currentPath);
+  }
+
+  const { vaultRoot } = getYantraRoots();
+  while (currentPath.startsWith(vaultRoot)) {
+    const repoYamlPath = path.join(currentPath, ".repo.yaml");
+    if (fsSync.existsSync(repoYamlPath)) {
+      const raw = await fs.readFile(repoYamlPath, "utf-8");
+      const parsed = (yaml.load(raw) as Record<string, unknown> | null) ?? {};
+      const localPath =
+        typeof parsed.local === "string" && parsed.local.trim()
+          ? path.resolve(parsed.local.trim())
+          : null;
+      if (localPath && fsSync.existsSync(localPath)) {
+        return localPath;
+      }
+
+      const linkedSourcePath = path.join(currentPath, "source");
+      if (fsSync.existsSync(linkedSourcePath)) {
+        return linkedSourcePath;
+      }
+
+      return currentPath;
+    }
+
+    const parentPath = path.dirname(currentPath);
+    if (parentPath === currentPath) break;
+    currentPath = parentPath;
+  }
+
+  throw new Error("No linked repository found for this item.");
+}
+
 function sendAppCommand(command: YantraAppCommand): void {
   restoreOrCreateWindow();
 
@@ -860,6 +1281,24 @@ ipcMain.handle(
     }
 
     return result.filePaths[0] ?? null;
+  }
+);
+
+ipcMain.handle("yantra:open-data-directory", async () => {
+  const targetPath = getYantraRoots().vaultRoot;
+  await openPathInOs(targetPath);
+  return { ok: true } as const;
+});
+
+ipcMain.handle(
+  "yantra:open-repository-root",
+  async (_event, input: { virtualPath: string }) => {
+    const openedPath = await findLinkedRepoRootFromVirtualPath(input.virtualPath);
+    await openPathInOs(openedPath);
+    return {
+      ok: true,
+      openedPath,
+    } as const;
   }
 );
 
