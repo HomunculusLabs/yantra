@@ -1,37 +1,12 @@
 import { NextResponse } from "next/server";
-import fs from "fs/promises";
 import { listPersonas } from "@/lib/agents/persona-manager";
 import { getGoalState } from "@/lib/agents/goal-manager";
 import {
   buildRespondingAgentPayload,
   detectSlackActivity,
 } from "@/lib/agents/slack-monitor";
-import { DATA_DIR } from "@/lib/storage/path-utils";
-import { getYantraRoots } from "@/lib/config/yantra-roots";
 import { getRunningConversationCounts } from "@/lib/agents/conversation-store";
-
-async function getDataDirVersion(): Promise<string> {
-  try {
-    const stat = await fs.stat(DATA_DIR);
-    const entries = await fs.readdir(DATA_DIR, { recursive: false });
-    const { runtimeAgentsRoot } = getYantraRoots();
-
-    // Also watch .agents dir so agent add/remove triggers a refresh
-    let agentsSig = "";
-    try {
-      const agentsDir = runtimeAgentsRoot;
-      const agentStat = await fs.stat(agentsDir);
-      const agentEntries = await fs.readdir(agentsDir);
-      agentsSig = `${agentStat.mtimeMs}-${agentEntries.length}`;
-    } catch {
-      /* ignore if .agents doesn't exist yet */
-    }
-
-    return `${stat.mtimeMs}-${entries.length}-${agentsSig}`;
-  } catch {
-    return "0";
-  }
-}
+import { getTreeVersion } from "@/lib/storage/tree-version";
 
 /**
  * GET /api/agents/events — Server-Sent Events for real-time Mission Control updates.
@@ -54,7 +29,7 @@ export async function GET() {
 
       // Track last known state for diffing
       let lastSlackCursor: Record<string, string | null> = {};
-      let lastDataVersion = await getDataDirVersion();
+      let lastDataVersion = await getTreeVersion();
 
       const tick = async () => {
         if (closed) return;
@@ -128,7 +103,7 @@ export async function GET() {
           });
 
           // Tree change detection — notify client to reload sidebar
-          const currentDataVersion = await getDataDirVersion();
+          const currentDataVersion = await getTreeVersion();
           if (currentDataVersion !== lastDataVersion) {
             lastDataVersion = currentDataVersion;
             send("tree_changed", {});

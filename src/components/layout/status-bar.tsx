@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { GitBranch, RefreshCw, Check, CloudDownload } from "lucide-react";
 import { useEditorStore } from "@/stores/editor-store";
 import { useTreeStore } from "@/stores/tree-store";
@@ -12,7 +12,7 @@ export function StatusBar() {
   const [pullStatus, setPullStatus] = useState<"idle" | "pulling" | "pulled" | "up-to-date" | "error">("idle");
   const [pulling, setPulling] = useState(false);
 
-  const fetchGitStatus = async () => {
+  const fetchGitStatus = useCallback(async () => {
     try {
       const res = await fetch("/api/git/commit");
       if (res.ok) {
@@ -22,7 +22,7 @@ export function StatusBar() {
     } catch {
       // ignore
     }
-  };
+  }, []);
 
   const pullAndRefresh = useCallback(async () => {
     if (pulling) return;
@@ -51,18 +51,24 @@ export function StatusBar() {
     }
   }, [pulling, loadTree]);
 
-  // Auto-pull on mount (page load)
+  // Poll git status after the shell has had a chance to paint.
   useEffect(() => {
-    pullAndRefresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    let cancelled = false;
+    const timeout = window.setTimeout(() => {
+      if (!cancelled) {
+        void fetchGitStatus();
+      }
+    }, 1500);
+    const interval = window.setInterval(() => {
+      void fetchGitStatus();
+    }, 15000);
 
-  // Poll git status
-  useEffect(() => {
-    fetchGitStatus();
-    const interval = setInterval(fetchGitStatus, 15000);
-    return () => clearInterval(interval);
-  }, []);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+      window.clearInterval(interval);
+    };
+  }, [fetchGitStatus]);
 
   return (
     <div className="flex items-center justify-between px-3 py-1 border-t border-border text-[11px] text-muted-foreground/60 bg-background">

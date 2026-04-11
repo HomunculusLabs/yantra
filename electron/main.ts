@@ -53,6 +53,7 @@ let quitting = false;
 
 const HEALTH_CHECK_REQUEST_TIMEOUT_MS = 2000;
 const EXISTING_SERVICE_HEALTH_TIMEOUT_MS = 5000;
+const WEB_APP_ROUTE_READY_TIMEOUT_MS = 60000;
 
 interface ProcessSnapshot {
   pid: number;
@@ -447,6 +448,38 @@ async function waitForHealth(
 
     await sleep(500);
   }
+  return false;
+}
+
+async function waitForWebAppRoute(url: string, timeoutMs = WEB_APP_ROUTE_READY_TIMEOUT_MS): Promise<boolean> {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const elapsedMs = Date.now() - startedAt;
+    const remainingMs = timeoutMs - elapsedMs;
+    const controller = new AbortController();
+    const requestTimeoutMs = Math.max(
+      250,
+      Math.min(HEALTH_CHECK_REQUEST_TIMEOUT_MS, remainingMs)
+    );
+    const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
+
+    try {
+      const response = await fetch(url, { signal: controller.signal });
+      const contentType = response.headers.get("content-type") || "";
+      if (response.ok && contentType.includes("text/html")) {
+        await response.arrayBuffer();
+        return true;
+      }
+    } catch {
+      // keep polling until the root route has compiled and can serve HTML
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    await sleep(500);
+  }
+
   return false;
 }
 
@@ -1228,6 +1261,13 @@ async function boot(): Promise<void> {
     ensureService("web", runtime.web, "yantra-web"),
     ensureService("daemon", runtime.daemon, "yantra-daemon"),
   ]);
+
+  console.log(`[yantra:desktop] waiting for web app route ${runtime.appUrl}`);
+  const webAppReady = await waitForWebAppRoute(runtime.appUrl);
+  if (!webAppReady) {
+    throw new Error(`Timed out waiting for web app route at ${runtime.appUrl}`);
+  }
+  console.log(`[yantra:desktop] web app route ready ${runtime.appUrl}`);
 
   createWindow(runtime);
 }

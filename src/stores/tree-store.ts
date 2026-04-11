@@ -329,6 +329,8 @@ function insertTreeNode(
 }
 
 export const useTreeStore = create<TreeState>((set, get) => {
+  let loadTreePromise: Promise<void> | null = null;
+
   const buildDerivedState = (
     nodes: TreeNode[],
     expandedPaths: Set<string>,
@@ -482,29 +484,37 @@ export const useTreeStore = create<TreeState>((set, get) => {
     recentlyChangedPath: null,
 
     loadTree: async () => {
-      const state = get();
-      const fallbackPath = state.focusedPath || state.selectedPath;
-      const fallbackIndex = fallbackPath
-        ? state.visibleIndexByPath[fallbackPath]
-        : undefined;
+      if (loadTreePromise) return loadTreePromise;
 
-      set({ loading: true });
-      try {
-        const nodes = await fetchTree();
-        const latest = get();
-        const derived = buildDerivedState(
-          nodes,
-          latest.expandedPaths,
-          latest.focusedPath,
-          latest.selectedPath,
-          fallbackIndex,
-          { revealPreferredPaths: true, hiddenFolderPaths: latest.hiddenFolderPaths }
-        );
-        set({ ...derived, loading: false });
-        saveExpandedPaths(derived.expandedPaths);
-      } catch {
-        set({ loading: false });
-      }
+      loadTreePromise = (async () => {
+        const state = get();
+        const fallbackPath = state.focusedPath || state.selectedPath;
+        const fallbackIndex = fallbackPath
+          ? state.visibleIndexByPath[fallbackPath]
+          : undefined;
+
+        set({ loading: true });
+        try {
+          const nodes = await fetchTree();
+          const latest = get();
+          const derived = buildDerivedState(
+            nodes,
+            latest.expandedPaths,
+            latest.focusedPath,
+            latest.selectedPath,
+            fallbackIndex,
+            { revealPreferredPaths: true, hiddenFolderPaths: latest.hiddenFolderPaths }
+          );
+          set({ ...derived, loading: false });
+          saveExpandedPaths(derived.expandedPaths);
+        } catch {
+          set({ loading: false });
+        } finally {
+          loadTreePromise = null;
+        }
+      })();
+
+      return loadTreePromise;
     },
 
     selectPage: (path) => {

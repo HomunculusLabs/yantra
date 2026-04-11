@@ -1,3 +1,4 @@
+import fs from "fs";
 import path from "path";
 
 export interface DesktopChildSpec {
@@ -58,8 +59,40 @@ function sharedDesktopEnv(input: {
 
 const moduleDir = __dirname;
 
+function isDevProjectRoot(candidate: string): boolean {
+  return (
+    fs.existsSync(path.join(candidate, "package.json")) &&
+    fs.existsSync(path.join(candidate, "scripts", "run-web-dev.mjs")) &&
+    fs.existsSync(path.join(candidate, "scripts", "run-daemon-dev.mjs"))
+  );
+}
+
 function inferDevProjectRoot(): string {
-  return path.resolve(moduleDir, "..");
+  const candidates = [
+    process.env.YANTRA_PROJECT_ROOT,
+    process.env.INIT_CWD,
+    process.env.PWD,
+    process.cwd(),
+    path.resolve(moduleDir, "../.."),
+    path.resolve(moduleDir, ".."),
+  ];
+  const seen = new Set<string>();
+
+  for (const candidate of candidates) {
+    if (!candidate?.trim()) continue;
+
+    const resolved = path.resolve(candidate);
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+
+    if (isDevProjectRoot(resolved)) {
+      return resolved;
+    }
+  }
+
+  throw new Error(
+    `Could not infer Yantra dev project root. Checked: ${[...seen].join(", ")}`
+  );
 }
 
 export function getDesktopRuntimeSpec(input: {
@@ -69,9 +102,7 @@ export function getDesktopRuntimeSpec(input: {
   const appUrl = "http://127.0.0.1:3000";
 
   if (!input.isPackaged) {
-    const projectRoot = path.resolve(
-      process.env.YANTRA_PROJECT_ROOT || inferDevProjectRoot()
-    );
+    const projectRoot = inferDevProjectRoot();
     const configRoot = projectRoot;
     const defaultVaultRoot = path.join(projectRoot, "data");
     const defaultRuntimeRoot = path.join(projectRoot, "data");

@@ -9,6 +9,17 @@ import {
 } from "./path-utils";
 import { listDirectory, readFileContent, fileExists } from "./fs-operations";
 import { getYantraRoots } from "@/lib/config/yantra-roots";
+import { getTreeVersion } from "@/lib/storage/tree-version";
+
+const TREE_BUILD_FRESH_MS = 500;
+let inFlightTreeBuild: { version: string; promise: Promise<TreeNode[]> } | null = null;
+let cachedTree:
+  | {
+      version: string;
+      nodes: TreeNode[];
+      cachedAt: number;
+    }
+  | null = null;
 
 const TEXT_EXTENSIONS = new Set([
   ".json",
@@ -168,6 +179,46 @@ async function buildTreeRecursive(dirPath: string): Promise<TreeNode[]> {
   return nodes;
 }
 
-export async function buildTree(): Promise<TreeNode[]> {
+export async function buildTreeFresh(): Promise<TreeNode[]> {
   return buildTreeRecursive(DATA_DIR);
+}
+
+export function clearInMemoryTreeCache(): void {
+  cachedTree = null;
+}
+
+export async function buildTree(): Promise<TreeNode[]> {
+  const version = await getTreeVersion();
+  const now = Date.now();
+
+  if (
+    cachedTree &&
+    cachedTree.version === version &&
+    now - cachedTree.cachedAt <= TREE_BUILD_FRESH_MS
+  ) {
+    return cachedTree.nodes;
+  }
+
+  if (inFlightTreeBuild?.version === version) {
+    return inFlightTreeBuild.promise;
+  }
+
+  const promise = (async () => {
+    const nodes = await buildTreeFresh();
+    cachedTree = {
+      version,
+      nodes,
+      cachedAt: Date.now(),
+    };
+    return nodes;
+  })();
+  inFlightTreeBuild = { version, promise };
+
+  try {
+    return await promise;
+  } finally {
+    if (inFlightTreeBuild?.promise === promise) {
+      inFlightTreeBuild = null;
+    }
+  }
 }
