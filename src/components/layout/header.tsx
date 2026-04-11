@@ -176,20 +176,16 @@ export function Header() {
                   if (isBusy) return;
                   const editorEl = document.querySelector(".tiptap");
                   if (!editorEl) return;
-                  const { toPng } = await import("html-to-image");
+                  const html2canvas = (await import("html2canvas")).default;
                   const { jsPDF } = await import("jspdf");
-                  const imgData = await toPng(editorEl as HTMLElement, {
+                  const canvas = await html2canvas(editorEl as HTMLElement, {
                     backgroundColor: "#ffffff",
-                    pixelRatio: 2,
+                    scale: 2,
                   });
-                  const img = new Image();
-                  img.src = imgData;
-                  await new Promise((resolve) => {
-                    img.onload = resolve;
-                  });
+                  const imgData = canvas.toDataURL("image/png");
                   const pdf = new jsPDF("p", "mm", "a4");
                   const pdfWidth = pdf.internal.pageSize.getWidth();
-                  const pdfHeight = (img.height * pdfWidth) / img.width;
+                  const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
                   pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
                   pdf.save(`${frontmatter?.title || "page"}.pdf`);
                 }}
